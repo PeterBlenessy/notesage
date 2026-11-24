@@ -12,6 +12,9 @@ import type { ToolResult } from '@/lib/ai/types';
 import { isToolCallAllowed, isPathAllowed, normalizeAbsolutePath } from '@/lib/ai/path-filter';
 import { hashPath } from '@/lib/comment-storage';
 import { getDocumentId } from '@/lib/frontmatter';
+import { isMcpToolName } from '@/lib/mcp/tool-naming';
+import { resolveMcpTool } from '@/lib/mcp/chat-tools';
+import { callMcpTool } from '@/lib/mcp/tool-call';
 
 export interface ToolCallScope {
   projectRoots: string[];
@@ -154,6 +157,18 @@ export interface ToolCallOptions {
    * Only meaningful for skill-script tools.
    */
   expectedSkillScriptHash?: string | null;
+  /**
+   * Project scope of the conversation, used to resolve an `mcp__…` tool name
+   * to its server (the same scope the tool definitions were built with).
+   * Falls back to `scope.projectRoots`, then to global servers only.
+   */
+  mcpProjectPaths?: string[];
+  /**
+   * Aborted when the turn is stopped. An MCP call cannot be cancelled in the
+   * backend, so on abort the call stops being waited for and returns an
+   * error result at once; a late reply is discarded.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -646,6 +661,23 @@ export async function executeToolCall(
       }
 
       default: {
+        // MCP tool routing: mcp__{server}__{tool} → `mcp_call_tool` with the
+        // server id and the tool's ORIGINAL name. Callers gate this on the
+        // user's approval (see `mcpPermissionKey`); nothing here allows it.
+        if (isMcpToolName(name)) {
+          const target = resolveMcpTool(name, options?.mcpProjectPaths ?? scope?.projectRoots ?? []);
+          if (!target) {
+            throw new Error(
+              `Unknown MCP tool: ${name}. Its server may have been removed or disabled.`,
+            );
+          }
+          const outcome = await callMcpTool(target, args, { signal: options?.signal });
+          return {
+            tool_call_id: toolCallId,
+            content: outcome.content,
+            is_error: outcome.isError,
+          };
+        }
         // Skill tool routing: skill__{skill}__{script}
         if (name.startsWith(SKILL_TOOL_PREFIX)) {
           content = await executeSkillTool(name, args, options?.expectedSkillScriptHash);

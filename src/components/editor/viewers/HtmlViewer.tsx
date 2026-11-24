@@ -1,9 +1,19 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { Eye, ShieldAlert, Search, ChevronUp, ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
 import { resolveLocalScriptPath } from "@/lib/html-local-script";
+import {
+  stripExternalResources,
+  prepareHtmlBody,
+  mountPreparedHtml,
+  preparedHtmlCost,
+  htmlSanitiseCache,
+  htmlSanitiseVariant,
+  HTML_DEFER_MIN_CHARS,
+  type PreparedHtmlBody,
+} from "@/lib/html-viewer-sanitise";
+import { log, PERF } from "@/lib/logger";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import {
   injectFindScript,
@@ -28,64 +38,78 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Strip attributes containing external (http/https) URLs from a raw HTML string.
-// Applied before content reaches any render path when blockExternal is ON,
-// so the guarantee holds for the sanitised-div, allowScripts iframe, and
-// unsafe-preview iframe paths equally.
-function stripExternalResources(html: string): string {
-  // Preserve DOCTYPE — DOMParser strips it from outerHTML serialisation.
-  const doctypeMatch = html.match(/^(\s*<!DOCTYPE[^>]*>)/i);
-  const doctype = doctypeMatch ? doctypeMatch[1] : "";
+/**
+ * Run `work` once the browser has had a chance to paint, so the viewer's
+ * chrome is on screen before a large document is sanitised. Returns a cancel
+ * function; a cancelled job never runs.
+ *
+ * `requestAnimationFrame` does not fire in a hidden or occluded window, so a
+ * plain timer backs it up.
+ */
+function afterNextPaint(work: () => void): () => void {
+  let settled = false;
+  let frame = 0;
+  let afterFrame = 0;
+  const cancel = () => {
+    settled = true;
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
+    window.clearTimeout(afterFrame);
+    window.clearTimeout(fallback);
+  };
+  const run = () => {
+    if (settled) return;
+    cancel();
+    work();
+  };
+  const fallback = window.setTimeout(run, 150);
+  if (typeof requestAnimationFrame === "function") {
+    frame = requestAnimationFrame(() => {
+      afterFrame = window.setTimeout(run, 0);
+    });
+  }
+  return cancel;
+}
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  const externalPattern = /^https?:/i;
-  const cssUrlExternal = /url\(\s*['"]?https?:[^'")\s]+['"]?\s*\)/gi;
+interface DeferredBody {
+  content: string;
+  blockExternal: boolean;
+  prepared: PreparedHtmlBody;
+}
 
-  for (const el of Array.from(doc.querySelectorAll("[src]"))) {
-    const val = el.getAttribute("src");
-    if (val && externalPattern.test(val)) el.removeAttribute("src");
-  }
-  for (const el of Array.from(doc.querySelectorAll("[href]"))) {
-    const val = el.getAttribute("href");
-    if (val && externalPattern.test(val)) el.removeAttribute("href");
-  }
-  for (const el of Array.from(doc.querySelectorAll("[srcset]"))) {
-    const val = el.getAttribute("srcset");
-    if (val) {
-      const filtered = val
-        .split(",")
-        .filter((s) => !externalPattern.test(s.trim()))
-        .join(",");
-      if (filtered.trim()) {
-        el.setAttribute("srcset", filtered);
-      } else {
-        el.removeAttribute("srcset");
-      }
+interface SanitisedHtmlBodyProps {
+  prepared: PreparedHtmlBody | null;
+  hostRef: React.RefObject<HTMLDivElement | null>;
+  zoom: number;
+  fileName: string;
+}
+
+/**
+ * The sanitised render surface. Its children are written by hand rather than
+ * through `dangerouslySetInnerHTML`, because large inlined images are put
+ * back on the parsed elements after the (small) sanitised string is parsed.
+ */
+function SanitisedHtmlBody({ prepared, hostRef, zoom, fileName }: SanitisedHtmlBodyProps) {
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    if (prepared === null) {
+      host.replaceChildren();
+      return;
     }
-  }
-  // Strip CSS url(https://…) from inline style attributes.
-  for (const el of Array.from(doc.querySelectorAll("[style]"))) {
-    const val = el.getAttribute("style");
-    if (val) {
-      const stripped = val.replace(cssUrlExternal, "url()");
-      if (stripped !== val) el.setAttribute("style", stripped);
-    }
-  }
-  // Strip CSS url(https://…) from <style> block text content.
-  for (const el of Array.from(doc.querySelectorAll("style"))) {
-    if (el.textContent) {
-      el.textContent = el.textContent.replace(cssUrlExternal, "url()");
-    }
-  }
-  // Strip external URLs from additional resource-bearing attributes.
-  for (const attr of ["poster", "formaction", "ping", "action", "data"]) {
-    for (const el of Array.from(doc.querySelectorAll(`[${attr}]`))) {
-      const val = el.getAttribute(attr);
-      if (val && externalPattern.test(val)) el.removeAttribute(attr);
-    }
-  }
-  return doctype + doc.documentElement.outerHTML;
+    mountPreparedHtml(host, prepared, true);
+  }, [prepared, hostRef]);
+
+  return (
+    <div className="p-6">
+      <div
+        ref={hostRef}
+        className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
+        style={{ zoom }}
+        aria-label={`Rendered HTML: ${fileName}`}
+        aria-busy={prepared === null ? true : undefined}
+      />
+    </div>
+  );
 }
 
 interface HtmlViewerProps {
@@ -271,26 +295,69 @@ export function HtmlViewer({
   // Whether the content is empty or whitespace-only (triggers placeholder)
   const isEmpty = content.trim() === "";
 
-  // Strip the `<head>` chunk before rendering — global selectors in the
-  // file's stylesheet would bleed into the surrounding app chrome.
-  // `<body>` content is rendered as a sanitised inline tree.
-  const sanitisedBody = useMemo(() => {
-    // Use DOMParser to extract body content — handles false </body> tags
-    // inside <pre> blocks or HTML comments that would truncate the regex approach.
-    const parsed = new DOMParser().parseFromString(content, "text/html");
-    const fragment = parsed.body.innerHTML || content;
+  // Whether the sanitised inline tree is what is on screen. Source mode and
+  // the two iframe paths never show it, so they never pay for it — this used
+  // to be recomputed on every keystroke in source mode.
+  const sanitisedActive =
+    !sourceMode && !unsafeMode && !isEmpty && !(allowScripts && unsafeHtml !== null);
 
-    // Apply external-resource stripping before DOMPurify so the guarantee
-    // is consistent with the iframe render paths (which use the same utility).
-    const processedFragment = blockExternal
-      ? stripExternalResources(fragment)
-      : fragment;
+  // The `<head>` is stripped before rendering — global selectors in the
+  // file's stylesheet would bleed into the surrounding app chrome. `<body>`
+  // content is rendered as a sanitised inline tree (see
+  // `lib/html-viewer-sanitise.ts` for the pipeline).
+  //
+  // A small document, or a large one that was prepared recently, is ready
+  // during render. A large one that was not is prepared after a paint (below).
+  const readyBody = useMemo(() => {
+    if (!sanitisedActive) return null;
+    if (content.length < HTML_DEFER_MIN_CHARS) return prepareHtmlBody(content, blockExternal);
+    return htmlSanitiseCache.get(filePath, htmlSanitiseVariant(blockExternal), content);
+  }, [sanitisedActive, content, blockExternal, filePath]);
 
-    return DOMPurify.sanitize(processedFragment, {
-      ALLOW_DATA_ATTR: false,
-      FORBID_TAGS: ["script", "iframe", "object", "embed"],
+  const [deferredBody, setDeferredBody] = useState<DeferredBody | null>(null);
+  const [deferredError, setDeferredError] = useState<unknown>(null);
+  const needsDeferredBody = sanitisedActive && readyBody === null;
+
+  // A saved web page is megabytes of inlined images. Preparing it inside
+  // render kept the previous document on screen, frozen, until it finished;
+  // here the viewer's chrome paints first. Stepping to another item before
+  // the work starts cancels it, so ⌘↓ ⌘↓ ⌘↓ prepares one document, not three.
+  useEffect(() => {
+    if (!needsDeferredBody) return;
+    return afterNextPaint(() => {
+      const startedAt = performance.now();
+      try {
+        const prepared = prepareHtmlBody(content, blockExternal);
+        htmlSanitiseCache.set(
+          filePath,
+          htmlSanitiseVariant(blockExternal),
+          content,
+          prepared,
+          preparedHtmlCost(content, prepared),
+        );
+        log.perf(PERF.docLoad, "html viewer prepared", {
+          chars: content.length,
+          sanitisedChars: prepared.sanitisedChars,
+          liftedImages: prepared.lifted.originals.size,
+          liftedChars: prepared.lifted.chars,
+          ms: Math.round(performance.now() - startedAt),
+        });
+        setDeferredBody({ content, blockExternal, prepared });
+      } catch (err) {
+        setDeferredError(err);
+      }
     });
-  }, [content, blockExternal]);
+  }, [needsDeferredBody, content, blockExternal, filePath]);
+
+  // A deferred result is only ever shown for the document it was made from,
+  // whatever order things finish in.
+  const preparedBody =
+    readyBody ??
+    (deferredBody !== null &&
+    deferredBody.content === content &&
+    deferredBody.blockExternal === blockExternal
+      ? deferredBody.prepared
+      : null);
 
   // When allow-scripts is ON, pre-process the raw HTML: read same-directory
   // <script src="./..."> files via Tauri read_file and rewrite them as inline
@@ -332,10 +399,13 @@ export function HtmlViewer({
 
   // Content for the unsafe-preview iframe, with optional external-resource
   // stripping when blockExternal is ON. Memoised to avoid re-parsing on every
-  // render when the content has not changed.
+  // render when the content has not changed. Only built while the unsafe
+  // preview is on: with "block external resources" set, this parsed and
+  // re-serialised the whole file on every open for an iframe nobody had
+  // asked for.
   const unsafePreviewContent = useMemo(
-    () => (blockExternal ? stripExternalResources(content) : content),
-    [content, blockExternal],
+    () => (!unsafeMode ? "" : blockExternal ? stripExternalResources(content) : content),
+    [content, blockExternal, unsafeMode],
   );
 
   // The HTML shown in the sandboxed iframe (unsafe-preview or allow-scripts
@@ -524,6 +594,18 @@ export function HtmlViewer({
     [isIframeMode, postFind, getSearchContainer],
   );
 
+  // A large document arrives after the find bar can already be open with a
+  // query typed into it. Run that query over the tree once it is there (the
+  // tree is mounted in a layout effect, which has run by now).
+  useEffect(() => {
+    if (deferredBody === null) return;
+    if (findBarOpenRef.current && searchQueryRef.current) {
+      handleSearch(searchQueryRef.current);
+    }
+    // Keyed on the arrival only; `handleSearch` is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredBody]);
+
   const scrollToMatch = useCallback((index: number, marks: HTMLElement[]) => {
     for (const m of marks) m.classList.remove("dom-find-highlight-active");
     marks[index]?.classList.add("dom-find-highlight-active");
@@ -585,6 +667,10 @@ export function HtmlViewer({
     setFindClosing(true);
     findCloseTimerRef.current = window.setTimeout(finish, 240);
   }, [isIframeMode, postFind, getSearchContainer, reducedMotion]);
+
+  // A sanitising failure used to surface from render, to the error boundary.
+  // Keep that for the deferred path.
+  if (deferredError !== null) throw deferredError;
 
   if (sourceMode) {
     return (
@@ -790,15 +876,12 @@ export function HtmlViewer({
               style={{ minHeight: "60vh", zoom }}
             />
           ) : (
-            <div className="p-6">
-              <div
-                ref={renderRef}
-                className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
-                style={{ zoom }}
-                aria-label={`Rendered HTML: ${fileName}`}
-                dangerouslySetInnerHTML={{ __html: sanitisedBody }}
-              />
-            </div>
+            <SanitisedHtmlBody
+              prepared={preparedBody}
+              hostRef={renderRef}
+              zoom={zoom}
+              fileName={fileName}
+            />
           )}
         </div>
       </div>

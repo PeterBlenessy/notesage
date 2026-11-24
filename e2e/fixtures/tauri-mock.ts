@@ -160,6 +160,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         // MCP
         mcp_list_servers: () => [],
         mcp_discover_configs: () => [],
+        mcp_config_problems: () => [],
 
         // Local AI
         local_inference_status: () => ({ running: false, port: null, model: null }),

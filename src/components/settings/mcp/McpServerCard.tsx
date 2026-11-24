@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   MoreHorizontal, Play, Square, RotateCcw,
   ChevronDown, Wrench, Trash2,
-  Lock, LogOut,
+  Lock, LogOut, Copy,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,8 @@ import {
   useMcpStore,
   isSecretEnvValue,
   mcpSecretService,
+  mcpHeaderSecretService,
+  mcpOAuthService,
   type McpServerEntry,
 } from '@/stores/mcp-store';
 import { useMcpOperations } from '@/hooks/useMcpOperations';
@@ -31,7 +33,9 @@ import { cn } from '@/lib/utils';
 import { ToolRow } from './ToolRow';
 import { AddEditServerDialog } from './AddEditServerDialog';
 import { t } from '@/lib/i18n';
-import { McpConfigUnreadableError, readMcpServersForUpdate } from './mcp-config-file';
+import { McpConfigUnreadableError, mcpConfigPathFor, readMcpServersForUpdate } from './mcp-config-file';
+import { joinCommandLine } from './command-line';
+import { deleteCredential } from './mcp-credentials';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -72,6 +76,7 @@ function sourceLabel(source: McpServerEntry['source']) {
 export function McpServerCard({ server }: { server: McpServerEntry }) {
   const toggleServer = useMcpStore((s) => s.toggleServer);
   const removeServer = useMcpStore((s) => s.removeServer);
+  const setServerEnabled = useMcpStore((s) => s.setServerEnabled);
   const { startServer, stopServer, restartServer, oauthAuthorize, oauthLogout } = useMcpOperations();
 
   const handleReauth = useCallback(async () => {
@@ -93,7 +98,25 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
     }
   }, [server.id, server.name, oauthLogout]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+
+  // Start from the menu. A server that is switched off is switched on first:
+  // a running server that is off offers its tools to no chat, which looks
+  // exactly like a server that does not work.
+  const handleStart = useCallback(async () => {
+    if (!server.enabled) setServerEnabled(server.id, true);
+    const fresh = useMcpStore.getState().getServer(server.id) ?? { ...server, enabled: true };
+    await startServer(fresh);
+  }, [server, setServerEnabled, startServer]);
+
+  const handleCopyError = useCallback(() => {
+    if (!server.error) return;
+    navigator.clipboard.writeText(server.error).then(
+      () => toast.success(t("common.copiedPlain")),
+      () => toast.error(t("mcpc.copyFailed")),
+    );
+  }, [server.error]);
 
   const handleToggle = useCallback(async (checked: boolean) => {
     toggleServer(server.id);
@@ -109,34 +132,30 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
   const handleRemove = useCallback(async () => {
     // Read the config file BEFORE removing anything: if it cannot be read,
     // rewriting it would drop every other server, so the removal is refused.
-    // (Project config removal is not yet supported — nothing on disk to edit.)
+    // The file is the one the server is defined in: the project's own
+    // mcp.json for a project-scoped server, the global one otherwise.
     let configPath: string | null = null;
     let configs: Record<string, unknown> | null = null;
-    if (server.source !== 'notesage-project') {
-      try {
-        const home = await invoke<string>('get_home_dir');
-        configPath = `${home}/.notesage/mcp.json`;
-        configs = await readMcpServersForUpdate(configPath);
-      } catch (err) {
-        toast.error(err instanceof McpConfigUnreadableError ? t("mcp.configUnreadable") : `${t("mcp.configSaveFailed")}: ${err}`);
-        return;
-      }
+    try {
+      configPath = await mcpConfigPathFor(server);
+      configs = await readMcpServersForUpdate(configPath);
+    } catch (err) {
+      toast.error(err instanceof McpConfigUnreadableError ? t("mcp.configUnreadable") : `${t("mcp.configSaveFailed")}: ${err}`);
+      return;
     }
 
-    if (server.status === 'running') {
+    if (server.status !== 'stopped') {
       await stopServer(server.id);
     }
     removeServer(server.id);
-    // Delete any keychain-stored secrets for this server.
+    // Delete any keychain-stored secrets for this server (best-effort).
     for (const [key, value] of Object.entries(server.env)) {
-      if (isSecretEnvValue(value)) {
-        try {
-          await invoke('delete_credential', { service: mcpSecretService(server.id, key) });
-        } catch {
-          // best-effort cleanup
-        }
-      }
+      if (isSecretEnvValue(value)) await deleteCredential(mcpSecretService(server.id, key));
     }
+    for (const [key, value] of Object.entries(server.headers ?? {})) {
+      if (isSecretEnvValue(value)) await deleteCredential(mcpHeaderSecretService(server.id, key));
+    }
+    if (server.transport === 'http') await deleteCredential(mcpOAuthService(server.id));
     // Remove from config file on disk — only if the server is actually in it
     // (a missing file, or a server discovered elsewhere, needs no write).
     if (configPath && configs && server.name in configs) {
@@ -155,7 +174,11 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
   const isRemote = server.transport === 'http';
   const commandDisplay = isRemote
     ? (server.url ?? 'remote')
-    : [server.command, ...server.args].join(' ');
+    : joinCommandLine([server.command, ...server.args]);
+  const toolCount = server.tools.length;
+  // Long enough to be cut off by the two-line summary, or more than one line
+  // (a start failure carries the server's own output after the reason).
+  const errorIsLong = !!server.error && (server.error.length > 120 || server.error.includes('\n'));
 
   return (
     <>
@@ -171,10 +194,13 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
               {commandDisplay}
             </p>
             <div className="flex items-center gap-2 mt-1">
-              {server.tools.length > 0 && (
+              {toolCount > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''}
+                  {toolCount} tool{toolCount !== 1 ? 's' : ''}
                 </span>
+              )}
+              {toolCount === 0 && server.status === 'running' && (
+                <span className="text-xs text-muted-foreground">{t("mcpc.noTools")}</span>
               )}
               <Badge variant="outline" className="text-xs px-1.5 py-0">
                 {sourceLabel(server.source)}
@@ -183,20 +209,61 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
                 {isRemote ? t("common.remote") : t("conns.local")}
               </Badge>
             </div>
+            {toolCount === 0 && server.status === 'running' && (
+              <p className="text-xs text-muted-foreground mt-1">{t("mcpc.noToolsHint")}</p>
+            )}
+            {server.status === 'running' && !server.enabled && (
+              <p className="text-xs text-muted-foreground mt-1">{t("mcpc.runningButOff")}</p>
+            )}
             {server.error && (
-              <p className="text-xs text-destructive mt-1 line-clamp-2">{server.error}</p>
+              <div className="mt-1 space-y-1">
+                {errorExpanded ? (
+                  <pre
+                    tabIndex={0}
+                    aria-label={t("mcpc.fullError")}
+                    className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs font-mono text-destructive whitespace-pre-wrap break-words select-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    {server.error}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-destructive line-clamp-2 whitespace-pre-wrap break-words">{server.error}</p>
+                )}
+                <div className="flex items-center gap-3">
+                  {errorIsLong && (
+                    <button
+                      type="button"
+                      aria-expanded={errorExpanded}
+                      onClick={() => setErrorExpanded((v) => !v)}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      {errorExpanded ? t("mcpc.hideFullError") : t("mcpc.showFullError")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCopyError}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <Copy className="h-3 w-3" strokeWidth={1.5} />
+                    {t("mcpc.copyError")}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <button
+                  aria-label={t("mcpc.serverActions", { name: server.name })}
+                  className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 {server.status !== 'running' && (
-                  <DropdownMenuItem onClick={() => startServer(server)}>
+                  <DropdownMenuItem onClick={handleStart}>
                     <Play className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                     {t("localai.start")}
                   </DropdownMenuItem>
@@ -238,6 +305,7 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
             <Switch
               checked={server.enabled}
               onCheckedChange={handleToggle}
+              aria-label={t("mcpc.enableServer", { name: server.name })}
             />
           </div>
         </div>

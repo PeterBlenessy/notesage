@@ -1626,23 +1626,37 @@ pub struct TranscriptionState {
 
 ## MCP Operations
 
-Located in `src-tauri/src/commands/mcp/mod.rs` (helpers in `mcp/{transport,state,types,config,validation,catalog,stderr_drain}.rs`) and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
+Located in `src-tauri/src/commands/mcp/mod.rs` (helpers in `mcp/{transport,launch,state,types,config,validation,catalog,stderr_drain}.rs`) and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
 
 | Command | Signature (abridged) | Purpose |
 | --- | --- | --- |
-| `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools; register in `McpState`. Resolves secret env refs from the keychain at spawn. |
-| `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout`. |
-| `mcp_stop_server` / `mcp_restart_server` | `(server_id)` | Lifecycle. http servers have no child process. |
-| `mcp_list_tools` | `(server_id, refresh?)` | Cache-first read-through: returns the handle's cached tools when non-empty; live `tools/list` (updating the cache) when empty or `refresh: true`. |
-| `mcp_call_tool` | `(server_id, …)` | Call a tool on a running server. |
-| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. Wired to the Settings > MCP "Refresh status" button, which reconciles each card's running/stopped/tool-count state. |
+| `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools (all `tools/list` pages); register in `McpState`. Resolves secret env/header refs from the keychain. A failed start rejects with the error (server output included), emits `error`, and stays registered as `error` so it can be restarted. |
+| `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering, 120 s budget. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout \| blocked_command`. |
+| `mcp_stop_server` | `(server_id)` | Stop and unregister. Emits `stopped` only. http servers have no child process. |
+| `mcp_restart_server` | `(server_id) -> McpServerInfo` | Stop, then start again. Works for a server that failed, exited or was stopped: the config comes from its handle, else from the last start in this session, else from `~/.notesage/mcp.json`. |
+| `mcp_list_tools` | `(server_id, refresh?)` | Cache-first read-through: returns the handle's cached tools when non-empty; live `tools/list` (updating the cache) when empty or `refresh: true`. Rejects for a server that is not running. |
+| `mcp_call_tool` | `(server_id, tool_name, arguments, timeout_ms?)` | Call a tool on a running server. |
+| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all registered servers, including ones in `error` (failed start, exited process). Wired to the Settings > MCP "Refresh status" button, which reconciles each card's running/stopped/tool-count state. |
 | `mcp_catalog_list` | `() -> Vec<McpCatalogItem>` | Curated catalog manifest (embedded `mcp-catalog.json`). |
-| `mcp_discover_configs` / `mcp_import_configs` / `mcp_save_config` / `mcp_check_import_sources` | — | Read/import/write `mcp.json`; import sources (Claude Desktop, Cursor, VS Code). |
+| `mcp_discover_configs` | `(base_dirs: Vec<String>) -> Vec<McpServerConfig>` | The servers in each project's `.notesage/mcp.json` and the global `~/.notesage/mcp.json`. Tolerant: an entry that cannot be read is left out, the rest of the file still loads. Always `enabled: false` (the frontend's enable override decides). |
+| `mcp_config_problems` | `(project_paths: Vec<String>) -> Vec<McpConfigProblem>` | What discovery left out and why: `{ name, source, reason }` per bad entry (`name` = server key) or per unreadable file (`name` = file path); `source` ∈ `notesage_project \| notesage_global`. Empty when everything loaded. |
+| `mcp_import_configs` / `mcp_check_import_sources` | `(source)` / `()` | Import sources: `claude-desktop` (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS; `%APPDATA%`/`~/.config` elsewhere), `cursor` (`~/.cursor/mcp.json`), `vscode` (`User/mcp.json` key `servers`, plus the legacy `settings.json` key `mcp.servers`). JSONC (comments, trailing commas) is accepted; imported entries keep `transport`/`url`/`headers`. |
+| `mcp_save_config` | `(path, configs: Map<String, JSON object>)` | Write `configs` as the file's `mcpServers`. Entries are written verbatim (unknown keys and entries the app cannot parse survive); other top-level keys of the file are kept. |
 | `mcp_oauth_authorize` | `(server_id, server_url, scope?) -> OAuthStatus` | Full browser OAuth: discovery (RFC 9728→8414) → DCR (RFC 7591) → PKCE → loopback callback → token exchange → keychain store. |
 | `mcp_oauth_status` | `(server_id) -> OAuthStatus` | `{ authorized, expires_at }` — never returns token material. |
 | `mcp_oauth_logout` | `(server_id)` | Clear stored tokens. |
 
-**`McpEnvValue`** (env value in `McpServerConfig`/`McpServerInfo`/`McpConfigEntry`): a bare JSON string is inline plaintext; `{ "secret": true }` is a keychain reference (value at `notesage:mcp:<server_id>:<KEY>`, resolved only at spawn).
+**`McpServerConfig` / `McpServerInfo`** (snake_case fields): `id, name, command, args, env, source, enabled, transport ("stdio" \| "http"), url, headers, cwd` (+ `status, error, tools` on the info). `headers` (remote only) has the same value shape as `env`; `cwd` (stdio only, `~` allowed) defaults to the user's home directory when absent.
+
+**`McpEnvValue`** (a value in `env` or `headers`): a bare JSON string is inline plaintext; `{ "secret": true }` is a keychain reference (value at `notesage:mcp:<server_id>:<KEY or Header-Name>`, resolved only when the server is started). Values are never logged.
+
+**`mcp.json` entry:** `{ command, args, env, disabled, transport, type, url, headers, cwd }`, all optional. `transport` (`stdio` \| `http`) is what the app writes; on read, `type` (`stdio` \| `http` \| `streamable-http` \| `sse`) is accepted when `transport` is absent (the last two mean `http`), and an entry with only a `url` is remote.
+
+**Wire format:** stdio servers speak newline-delimited JSON (one JSON-RPC message per line), not LSP's `Content-Length` framing; non-JSON lines on stdout are skipped. Server-initiated requests are answered (`ping` → `{}`, anything else → JSON-RPC "method not found"). Remote servers: Streamable HTTP only, with the configured headers, the OAuth bearer (unless `headers` sets `Authorization`) and `MCP-Protocol-Version` after `initialize`; a legacy HTTP+SSE endpoint is reported as unsupported.
+
+**Spawn environment (stdio):** `~` is expanded in `command`, `cwd` and any argument that is `~` or starts with `~/`, then the launch guard runs on the result; PATH is the login shell's (or the inherited one plus the usual tool directories when the shell did not answer).
+
+**Event `mcp-server-status`:** `{ serverId, status: "starting" \| "running" \| "stopped" \| "error", error?, tools? }`. When a running server's process exits, the backend marks it `error` in `McpState` (no tools) and emits `error` with the exit code and the server's last output.
 
 **Deep link:** `notesage://mcp/install?...` (scheme via `tauri-plugin-deep-link`) opens the validate-first Add dialog pre-filled — parsed by `src/lib/mcp/deeplink.ts`, surfaced by `McpDeepLinkInstaller`.
 

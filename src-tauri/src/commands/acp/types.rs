@@ -151,6 +151,11 @@ pub struct AcpMcpServerInput {
     /// Endpoint URL for `http` (remote) servers. `None` for stdio.
     #[serde(default)]
     pub url: Option<String>,
+    /// Static request headers for `http` servers (an API key, say). Same value
+    /// shape as `env`: plaintext, or a `{ "secret": true }` reference resolved
+    /// from `notesage:mcp:<id>:<Header-Name>` in the keychain at build time.
+    #[serde(default)]
+    pub headers: HashMap<String, crate::commands::mcp::McpEnvValue>,
 }
 
 /// Outcome of `acp_agent_smoke_test` — a bounded end-to-end verification that the

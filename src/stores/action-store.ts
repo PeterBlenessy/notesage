@@ -48,6 +48,13 @@ interface ActionStore {
    * once per debounce window however many paths under it are reported.
    */
   incrementalUpdate(filePath: string): Promise<void>;
+  /**
+   * Rescan one whole root (a project, an explorer folder or the notes root)
+   * because its index was just (re)built. Coalesced like `incrementalUpdate`.
+   */
+  refreshRoot(root: string): Promise<void>;
+  /** Run a window's worth of dirty roots. Internal. */
+  _scanRoots(roots: string[]): Promise<void>;
   /** Rescan one root now. Internal: callers go through `incrementalUpdate`. */
   _scanRoot(scanRoot: string): Promise<void>;
   toggleTaskDone(action: ActionItem): Promise<void>;
@@ -349,16 +356,26 @@ export const useActionStore = create<ActionStore>()(
         const scanRoot = findScanRoot(filePath);
         if (!scanRoot) return;
 
-        return scheduleRootScan(scanRoot, async (roots) => {
-          if (roots.length > FULL_SCAN_ROOT_THRESHOLD) {
-            await get().fullScan();
-            return;
-          }
-          await whenDocumentIndexIdle(DOC_INDEX_WAIT_MS);
-          for (const root of roots) {
-            await get()._scanRoot(root);
-          }
-        });
+        return scheduleRootScan(scanRoot, get()._scanRoots);
+      },
+
+      async refreshRoot(root: string) {
+        if (indexStillBuilding()) return;
+        // Only what a full scan would cover: a project that was removed while
+        // its index was being built must not come back into the list.
+        if (!getAllScanPaths().includes(root)) return;
+        return scheduleRootScan(root, get()._scanRoots);
+      },
+
+      async _scanRoots(roots: string[]) {
+        if (roots.length > FULL_SCAN_ROOT_THRESHOLD) {
+          await get().fullScan();
+          return;
+        }
+        await whenDocumentIndexIdle(DOC_INDEX_WAIT_MS);
+        for (const root of roots) {
+          await get()._scanRoot(root);
+        }
       },
 
       async _scanRoot(scanRoot: string) {

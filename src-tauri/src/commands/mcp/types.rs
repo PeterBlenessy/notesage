@@ -28,6 +28,16 @@ pub struct McpServerConfig {
     /// Endpoint URL for `http` (remote) servers. `None` for stdio.
     #[serde(default)]
     pub url: Option<String>,
+    /// Static HTTP headers sent with every request to an `http` server (an
+    /// API key, a tenant id). Same value shape as `env`: a plain string, or a
+    /// `{ "secret": true }` reference resolved from the keychain under
+    /// `notesage:mcp:<server_id>:<Header-Name>`. Ignored for stdio.
+    #[serde(default)]
+    pub headers: HashMap<String, McpEnvValue>,
+    /// Working directory for a stdio server (`~` allowed). `None` means the
+    /// user's home directory. Ignored for http.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -134,6 +144,10 @@ pub struct McpServerInfo {
     pub tools: Vec<McpToolInfo>,
     pub transport: McpTransport,
     pub url: Option<String>,
+    #[serde(default)]
+    pub headers: HashMap<String, McpEnvValue>,
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -148,6 +162,10 @@ pub struct McpToolInfo {
 pub struct McpToolResult {
     pub content: Vec<McpContent>,
     pub is_error: bool,
+    /// The result's `structuredContent`, when the server sent one. Some
+    /// servers return their answer only here, with empty `content`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<serde_json::Value>,
 }
 
 /// Result of a dry-run validation (`mcp_validate_server`). Reports whether a
@@ -162,7 +180,8 @@ pub struct McpValidationResult {
     /// The server's `serverInfo` block from the `initialize` response, if any.
     pub server_info: Option<Value>,
     pub error: Option<String>,
-    /// One of: "binary_not_found", "spawn_failed", "init_failed", "timeout".
+    /// One of: "binary_not_found", "spawn_failed", "init_failed", "timeout",
+    /// "blocked_command" (refused by the launch guard).
     pub error_kind: Option<String>,
     /// Last lines of the process stderr, surfaced for debugging.
     pub stderr_tail: Option<String>,
@@ -188,29 +207,38 @@ pub enum McpTransport {
     Http,
 }
 
-/// Config file entry (matches Claude Desktop format).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// One server entry of a config file (Claude Desktop format plus the remote
+/// fields), after it has been read.
+///
+/// This is deliberately NOT `Deserialize`: entries are read one at a time by
+/// `config::parse_entry`, which accepts the spellings other tools write
+/// (`"type"` for `"transport"`, `"streamable-http"`, `"sse"`) and reports what
+/// is wrong with a bad entry instead of failing the whole file.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct McpConfigEntry {
     /// Required for stdio entries; absent for http entries.
-    #[serde(default)]
     pub command: String,
-    #[serde(default)]
     pub args: Vec<String>,
-    #[serde(default)]
     pub env: HashMap<String, McpEnvValue>,
-    #[serde(default)]
     pub disabled: bool,
-    #[serde(default)]
     pub transport: McpTransport,
-    #[serde(default)]
     pub url: Option<String>,
+    pub headers: HashMap<String, McpEnvValue>,
+    pub cwd: Option<String>,
 }
 
-/// Config file format.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct McpConfigFile {
-    #[serde(rename = "mcpServers", default)]
-    pub mcp_servers: HashMap<String, McpConfigEntry>,
+/// A config-file entry (or a whole file) that could not be loaded, for
+/// `mcp_config_problems`. The valid entries of the same file still load.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct McpConfigProblem {
+    /// The server's key in the file, or the file's path when the problem is
+    /// with the file as a whole.
+    pub name: String,
+    /// Where the file belongs, spelled like `McpServerConfig.source`
+    /// (`"notesage_global"`, `"notesage_project"`).
+    pub source: String,
+    /// What is wrong, in a sentence. Never contains env or header values.
+    pub reason: String,
 }
 
 #[cfg(test)]
@@ -247,6 +275,8 @@ mod tests {
             enabled: true,
             transport: McpTransport::Stdio,
             url: None,
+            headers: HashMap::new(),
+            cwd: None,
         };
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["source"], "vscode");
@@ -275,6 +305,8 @@ mod tests {
             enabled: true,
             transport: McpTransport::Stdio,
             url: None,
+            headers: HashMap::new(),
+            cwd: None,
         };
 
         let json = serde_json::to_string(&original).expect("serialize");
@@ -331,14 +363,67 @@ mod tests {
     }
 
     #[test]
-    fn config_entry_with_secret_env_parses() {
-        // A persisted mcp.json entry mixing a plaintext and a secret-ref env var.
-        let json = r#"{ "command": "node", "env": { "PORT": "8080", "TOKEN": { "secret": true } } }"#;
-        let entry: McpConfigEntry = serde_json::from_str(json).expect("parse");
-        assert_eq!(entry.env.get("PORT").unwrap(), &McpEnvValue::Plain("8080".to_string()));
-        assert_eq!(
-            entry.env.get("TOKEN").unwrap(),
-            &McpEnvValue::Secret(McpSecretRef { secret: true })
-        );
+    fn server_config_ipc_shape_has_headers_and_cwd_under_those_names() {
+        // The names are the contract with the frontend (`src/lib/tauri.ts`).
+        let mut headers = HashMap::new();
+        headers.insert("X-Api-Key".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+        headers.insert("X-Tenant".to_string(), McpEnvValue::Plain("acme".to_string()));
+        let config = McpServerConfig {
+            id: "global:remote".to_string(),
+            name: "remote".to_string(),
+            command: String::new(),
+            args: vec![],
+            env: HashMap::new(),
+            source: McpConfigSource::NotesageGlobal,
+            enabled: true,
+            transport: McpTransport::Http,
+            url: Some("https://example.com/mcp".to_string()),
+            headers,
+            cwd: Some("~/work".to_string()),
+        };
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["headers"]["X-Api-Key"], serde_json::json!({"secret": true}));
+        assert_eq!(json["headers"]["X-Tenant"], "acme");
+        assert_eq!(json["cwd"], "~/work");
+        assert_eq!(json["transport"], "http");
+    }
+
+    #[test]
+    fn server_config_without_the_new_fields_still_deserializes() {
+        // What a frontend that predates `headers`/`cwd` sends.
+        let json = r#"{"id":"global:a","name":"a","command":"npx","args":["-y","pkg"],"env":{},"source":"notesage_global","enabled":true}"#;
+        let config: McpServerConfig = serde_json::from_str(json).expect("old shape");
+        assert!(config.headers.is_empty());
+        assert_eq!(config.cwd, None);
+        assert_eq!(config.transport, McpTransport::Stdio);
+        // `cwd: null` is what discovery sends back.
+        let json = r#"{"id":"global:a","name":"a","source":"notesage_global","cwd":null,"headers":{}}"#;
+        assert_eq!(serde_json::from_str::<McpServerConfig>(json).expect("null cwd").cwd, None);
+    }
+
+    #[test]
+    fn secret_headers_resolve_through_the_same_keychain_path_as_env() {
+        let mut headers = HashMap::new();
+        headers.insert("X-Api-Key".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+        headers.insert("X-Tenant".to_string(), McpEnvValue::Plain("acme".to_string()));
+        let resolved = resolve_env_with("global:remote", &headers, |conn_id| {
+            assert_eq!(conn_id, "mcp:global:remote:X-Api-Key");
+            Some("k-123".to_string())
+        });
+        assert_eq!(resolved.get("X-Api-Key").map(String::as_str), Some("k-123"));
+        assert_eq!(resolved.get("X-Tenant").map(String::as_str), Some("acme"));
+    }
+
+    #[test]
+    fn config_problem_wire_shape() {
+        let problem = McpConfigProblem {
+            name: "broken".to_string(),
+            source: "notesage_global".to_string(),
+            reason: "\"transport\" is \"carrier-pigeon\"".to_string(),
+        };
+        let json = serde_json::to_value(&problem).unwrap();
+        let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["name", "reason", "source"]);
     }
 }

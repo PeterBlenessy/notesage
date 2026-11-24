@@ -10,13 +10,14 @@ import { renderHook, act } from '@testing-library/react';
 
 import { emitMockEvent, getListenerCount } from '@/test/tauri-mock';
 
-const { fullScan, incrementalUpdate } = vi.hoisted(() => ({
+const { fullScan, incrementalUpdate, refreshRoot } = vi.hoisted(() => ({
   fullScan: vi.fn(async () => undefined),
   incrementalUpdate: vi.fn(async () => undefined),
+  refreshRoot: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/stores/action-store', () => ({
-  useActionStore: { getState: () => ({ fullScan, incrementalUpdate }) },
+  useActionStore: { getState: () => ({ fullScan, incrementalUpdate, refreshRoot }) },
 }));
 
 import { useActionScanner } from '../useActionScanner';
@@ -27,6 +28,7 @@ const flush = () => act(async () => { await Promise.resolve(); });
 beforeEach(() => {
   fullScan.mockClear();
   incrementalUpdate.mockClear();
+  refreshRoot.mockClear();
   useSettingsStore.setState({ startupReady: false, indexReady: false });
 });
 
@@ -83,6 +85,32 @@ describe('useActionScanner', () => {
     expect(incrementalUpdate.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/lib/Alpha/saved.md']);
   });
 
+  it('rescans a project when its index pass finishes after startup', async () => {
+    renderHook(() => useActionScanner());
+    act(() => useSettingsStore.setState({ indexReady: true }));
+    await flush();
+    expect(getListenerCount('index-ready')).toBe(1);
+
+    // A project added mid-session: its tasks are in the index only now, and
+    // no file changed to announce them.
+    emitMockEvent('index-ready', { project_path: '/lib/Added' });
+
+    expect(refreshRoot.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['/lib/Added']);
+    expect(fullScan).toHaveBeenCalledTimes(1);
+
+    // The global database's pass names no project.
+    emitMockEvent('index-ready', { project_path: null });
+    expect(refreshRoot).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the index passes of startup itself: the full scan covers them', async () => {
+    renderHook(() => useActionScanner());
+    act(() => useSettingsStore.setState({ startupReady: true }));
+    await flush();
+
+    expect(getListenerCount('index-ready')).toBe(0);
+  });
+
   it('stops listening on unmount', async () => {
     const { unmount } = renderHook(() => useActionScanner());
     act(() => useSettingsStore.setState({ indexReady: true }));
@@ -93,5 +121,6 @@ describe('useActionScanner', () => {
 
     expect(getListenerCount('file-changed-batch')).toBe(0);
     expect(getListenerCount('links-reindexed')).toBe(0);
+    expect(getListenerCount('index-ready')).toBe(0);
   });
 });

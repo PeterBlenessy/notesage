@@ -15,6 +15,7 @@ import { openCopilotStream, resetCopilotStreams } from '@/lib/ai/copilot-correla
 import { usePermissionStore } from '@/stores/permission-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useActivityStore } from '@/stores/activity-store';
+import { useMcpStore, type McpServerEntry } from '@/stores/mcp-store';
 import { executeToolCall } from '@/lib/tool-executor';
 import type { Connection } from '@/lib/ai/connections';
 
@@ -58,6 +59,7 @@ describe('Copilot LSP agent task', () => {
     useActivityStore.setState({ tasks: [] });
     usePermissionStore.setState({ toolCallSession: new Set(), toolCallAlways: [] });
     useSettingsStore.setState({ requireAllToolConfirmations: false });
+    useMcpStore.setState({ servers: [], enabledOverrides: {}, rescanCounter: 0 });
     vi.mocked(executeToolCall).mockClear();
 
     calls = [];
@@ -171,6 +173,81 @@ describe('Copilot LSP agent task', () => {
     usePermissionStore.getState().allowToolAlways('write_file', connection.id, '/proj');
     await emit('copilot-tool-call', toolCall('write_file'));
     expect(executeToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  // --- MCP tools -----------------------------------------------------------
+  // An MCP tool is approved per server + tool (`mcp:<serverId>:<tool>`), is
+  // never on the built-in read-only list, and a background task has nobody
+  // to ask: it runs one only when the user already allowed it in chat.
+
+  const MCP_TOOL = 'mcp__files__read_file';
+  const mcpServer = (overrides: Partial<McpServerEntry> = {}): McpServerEntry => ({
+    id: 'global:files',
+    name: 'files',
+    command: 'npx',
+    args: [],
+    env: {},
+    source: 'notesage-global',
+    enabled: true,
+    status: 'running',
+    // Named like a built-in read-only tool on purpose.
+    tools: [{ name: 'read_file', description: null, input_schema: { type: 'object' }, server_id: 'global:files' }],
+    transport: 'stdio',
+    projectRoot: null,
+    ...overrides,
+  });
+
+  it('does not run an MCP tool the user has not already allowed', async () => {
+    useMcpStore.setState({ servers: [mcpServer()] });
+    await startBound();
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+
+    expect(executeToolCall).not.toHaveBeenCalled();
+    const results = callsTo('copilot_lsp_tool_result');
+    expect(results).toHaveLength(1);
+    expect(results[0].args.result).toMatchObject({ status: 'error' });
+    expect(JSON.stringify(results[0].args.result)).toContain('Permission denied');
+    expect(activities.some((a) => a.event === 'tool_denied' && a.label.includes(MCP_TOOL))).toBe(true);
+  });
+
+  it('does not run an MCP tool on an approval stored under its model-facing name', async () => {
+    useMcpStore.setState({ servers: [mcpServer()] });
+    usePermissionStore.getState().allowToolSession(MCP_TOOL);
+    usePermissionStore.getState().allowToolAlways(MCP_TOOL, null, null);
+    await startBound();
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+    expect(executeToolCall).not.toHaveBeenCalled();
+  });
+
+  it('runs an MCP tool the user always-allowed for this server, tool and connection', async () => {
+    useMcpStore.setState({ servers: [mcpServer()] });
+    usePermissionStore.getState().allowToolAlways('mcp:global:files:read_file', 'another-connection', null);
+    await startBound();
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+    expect(executeToolCall).not.toHaveBeenCalled();
+
+    usePermissionStore.getState().allowToolAlways('mcp:global:files:read_file', connection.id, null);
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(executeToolCall).mock.calls[0][1]).toBe(MCP_TOOL);
+  });
+
+  it('does not run an MCP tool of another project or of an unknown server', async () => {
+    useMcpStore.setState({ servers: [mcpServer({ id: 'project:files', projectRoot: '/other-project' })] });
+    usePermissionStore.getState().allowToolAlways('mcp:project:files@/other-project:read_file', connection.id, '/other-project');
+    await startBound();
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+    await emit('copilot-tool-call', toolCall('mcp__ghost__tool'));
+    expect(executeToolCall).not.toHaveBeenCalled();
+  });
+
+  it('runs no MCP tool when every tool call needs confirmation', async () => {
+    useMcpStore.setState({ servers: [mcpServer()] });
+    usePermissionStore.getState().allowToolAlways('mcp:global:files:read_file', connection.id, null);
+    useSettingsStore.setState({ requireAllToolConfirmations: true });
+    await startBound();
+    await emit('copilot-tool-call', toolCall(MCP_TOOL));
+    expect(executeToolCall).not.toHaveBeenCalled();
   });
 
   it('runs nothing when every tool call needs confirmation', async () => {

@@ -497,6 +497,7 @@ pub fn run() {
             mcp_call_tool,
             mcp_get_server_status,
             mcp_discover_configs,
+            mcp_config_problems,
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,

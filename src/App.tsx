@@ -22,6 +22,7 @@ const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").th
 // actually fires `SIDEBAR_COMMIT_FILE_EVENT`.
 const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
+import { useProjectIndexSync } from "@/hooks/useProjectIndexSync";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { initBuildChannel } from "@/lib/build-channel";
@@ -207,6 +208,9 @@ function App() {
   useAutomationRunner();
   useLocalAI();
   useSandboxViolations();
+  // Indexes a project that joins the workspace after startup (the startup
+  // pass only covers the projects known at launch).
+  useProjectIndexSync();
   useActionScanner();
   useTraySync();
   useApprovalMigrationToast();

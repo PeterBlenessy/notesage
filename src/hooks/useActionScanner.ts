@@ -29,7 +29,7 @@ export function useActionScanner() {
   // save path) and drops paths that cannot hold actions, so nothing is
   // debounced or filtered a second time here.
   //
-  // Two events, because neither covers everything:
+  // Two events for changed files, because neither covers everything:
   //  - `file-changed-batch` is every external change, comment sidecars
   //    included, but leaves out the app's own saves;
   //  - `links-reindexed` fires once the index has actually taken a change in,
@@ -68,6 +68,18 @@ export function useActionScanner() {
       const paths = event.payload;
       if (!Array.isArray(paths) || paths.length === 0) return;
       report(paths);
+    }).then(keep);
+
+    // A project's index pass finished after startup: a project that was added,
+    // renamed or moved mid-session (`useProjectIndexSync`), or one whose index
+    // was rebuilt. Its tasks and goals are in the index only now, and no file
+    // changed to say so. The startup pass's own `index-ready` events come
+    // before this listener exists; the full scan above covers those.
+    listen<{ project_path?: string | null }>('index-ready', (event) => {
+      if (!mounted) return;
+      const root = event.payload?.project_path;
+      if (typeof root !== 'string' || root === '') return;
+      void useActionStore.getState().refreshRoot(root);
     }).then(keep);
 
     return () => {

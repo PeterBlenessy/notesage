@@ -161,6 +161,8 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('get_outlinks', () => []);
   setMockInvokeHandler('get_broken_links', () => []);
   setMockInvokeHandler('resolve_wikilink', () => []);
+  // MCP: no config entries failed to load.
+  setMockInvokeHandler('mcp_config_problems', () => []);
 }
 
 // ---------------------------------------------------------------------------

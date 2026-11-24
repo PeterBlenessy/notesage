@@ -14,6 +14,8 @@ import {
   type ToolCallDecision,
 } from '@/stores/tool-permission-store';
 import { executeToolCall } from '@/lib/tool-executor';
+import { isMcpToolName } from '@/lib/mcp/tool-naming';
+import { resolveMcpTool, mcpPermissionKey } from '@/lib/mcp/chat-tools';
 import { formatToolLabel } from '@/lib/ai/acp-utils';
 import {
   mapCopilotProgressStatus,
@@ -267,6 +269,10 @@ export function useCopilotChat({
       // Checked after every await: once it has, the assistant message is
       // finalized and the Copilot conversation may be gone.
       isCancelled: () => boolean,
+      // MCP routing for this turn: the conversation's project scope (the one
+      // the tool list was built with), the connection approvals are scoped
+      // to, and a signal aborted when the turn is cleaned up.
+      mcp: { scopePaths: string[]; connectionId: string | null; signal: AbortSignal },
     ) => {
       /** Answer the LSP's pending request so it is not left waiting, without
        *  touching the finalized message. Best effort: the conversation may
@@ -278,10 +284,23 @@ export function useCopilotChat({
         }).catch(() => {});
       };
 
-      // Check permission
-      const tier = usePermissionStore.getState().isToolAllowed(name, null, null);
+      // Check permission. MCP tools are approved per server + tool (never by
+      // the built-in auto-allow list, never on the server's own annotations),
+      // scoped to this connection and, for a project server, its project;
+      // "confirm every tool call" applies to them.
+      const isMcpTool = isMcpToolName(name);
+      const mcpTarget = isMcpTool ? resolveMcpTool(name, mcp.scopePaths) : null;
+      const mcpKey = mcpTarget ? mcpPermissionKey(mcpTarget) : null;
+      const tier = mcpTarget && mcpKey
+        ? (useSettingsStore.getState().requireAllToolConfirmations
+            ? 'none'
+            : usePermissionStore.getState().isToolAllowed(mcpKey, mcp.connectionId, mcpTarget.projectRoot))
+        : usePermissionStore.getState().isToolAllowed(name, null, null);
+      // An `mcp__…` name that resolves to no server has nothing to approve:
+      // no card, and execution reports the error to the model.
+      const mcpUnresolved = isMcpTool && !mcpTarget;
 
-      if (tier === 'none') {
+      if (tier === 'none' && !mcpUnresolved) {
         const decision = await new Promise<ToolCallDecision>((resolve) => {
           useToolPermissionStore.getState().setPending({
             id: toolCallId,
@@ -289,6 +308,9 @@ export function useCopilotChat({
             arguments: args,
             resolve,
             conversationId,
+            ...(mcpTarget
+              ? { mcp: { serverName: mcpTarget.serverName, toolName: mcpTarget.toolName } }
+              : {}),
           });
         });
         // Stop pressed while the card was up: `cleanup` cleared the pending
@@ -317,7 +339,13 @@ export function useCopilotChat({
           return;
         }
 
-        if (decision === 'session') {
+        if (mcpTarget && mcpKey) {
+          if (decision === 'session') {
+            usePermissionStore.getState().allowToolSession(mcpKey);
+          } else if (decision === 'always') {
+            usePermissionStore.getState().allowToolAlways(mcpKey, mcp.connectionId, mcpTarget.projectRoot);
+          }
+        } else if (decision === 'session') {
           usePermissionStore.getState().allowToolSession(name);
         } else if (decision === 'always') {
           usePermissionStore.getState().allowToolAlways(name, null, null);
@@ -325,7 +353,9 @@ export function useCopilotChat({
       }
 
       // Push running tool call segment
-      const toolLabel = formatToolLabel(name, args);
+      const toolLabel = mcpTarget
+        ? `${mcpTarget.serverName}: ${mcpTarget.toolName}`
+        : formatToolLabel(name, args);
       const toolDetail =
         Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : undefined;
 
@@ -356,7 +386,13 @@ export function useCopilotChat({
       const toolSegIdx = (updatedMsg?.segments?.length ?? 1) - 1;
 
       // Execute the tool
-      const result = await executeToolCall(toolCallId, name, args);
+      // The scope argument stays undefined (filesystem tools keep their
+      // existing gate); the MCP scope travels in the options. Stop aborts the
+      // signal so a slow MCP call is not waited for.
+      const result = await executeToolCall(toolCallId, name, args, undefined, {
+        mcpProjectPaths: mcp.scopePaths,
+        signal: mcp.signal,
+      });
 
       // Cancelled while the tool ran: the message is finalized, so write
       // nothing more to it.
@@ -470,6 +506,22 @@ export function useCopilotChat({
         // Track whether this streaming session has been cleaned up
         let cancelled = false;
         let toolCallCount = 0;
+        // Aborted by `cleanup`, so a tool loop waiting on an MCP call (which
+        // the backend cannot cancel) is released when the turn ends.
+        const toolAbort = new AbortController();
+        // Project scope of this conversation, fixed for the turn: the MCP
+        // tools offered and the tools a call resolves to come from one set.
+        const mcpScopePaths = opts?.sandboxPaths ?? selectProjectPaths({
+          conversations: useChatStore.getState().conversations,
+          // The conversation that owns this send, which is not always the
+          // one in the foreground (a cap-deferred or background send).
+          activeConversationId: runConvId ?? useChatStore.getState().activeConversationId,
+        });
+        const mcpContext = {
+          scopePaths: mcpScopePaths,
+          connectionId: effectiveConnection?.id ?? null,
+          signal: toolAbort.signal,
+        };
 
         // Segment tracking for thinking blocks
         let thinkingSegmentIndex = -1;
@@ -524,7 +576,11 @@ export function useCopilotChat({
         let tools: ToolDefinition[] | undefined;
         const toolCallingEnabled = useSettingsStore.getState().toolCallingEnabled;
         if (toolCallingEnabled) {
-          tools = useSkillStore.getState().getToolDefinitions();
+          // Built-in and skill tools, plus the tools of enabled, running MCP
+          // servers in this conversation's project scope. The LSP takes the
+          // tool list at `conversation/create` only, so a server started
+          // later is picked up by the next new conversation.
+          tools = useSkillStore.getState().getToolDefinitions(undefined, { mcpProjectPaths: mcpScopePaths });
           if (tools.length === 0) tools = undefined;
         }
 
@@ -642,7 +698,7 @@ export function useCopilotChat({
               }
 
               // Handle tool call asynchronously
-              handleToolCall(requestId, id, name, args, assistantMessageId, runConvId, () => cancelled).catch((err) => {
+              handleToolCall(requestId, id, name, args, assistantMessageId, runConvId, () => cancelled, mcpContext).catch((err) => {
                 log.error('ai', 'Tool call execution failed', err);
               });
             },
@@ -654,6 +710,11 @@ export function useCopilotChat({
               const { requestId, name, arguments: args } = event.payload;
               log.debug('ai', `Copilot tool confirmation request: ${name}`);
 
+              // An MCP tool is shown, and its approval stored, per server +
+              // tool (see `handleToolCall`).
+              const mcpTarget = isMcpToolName(name) ? resolveMcpTool(name, mcpScopePaths) : null;
+              const mcpKey = mcpTarget ? mcpPermissionKey(mcpTarget) : null;
+
               // Show permission card and wait for user decision
               const decision$ = new Promise<ToolCallDecision>((resolve) => {
                 useToolPermissionStore.getState().setPending({
@@ -662,6 +723,9 @@ export function useCopilotChat({
                   arguments: args,
                   resolve,
                   conversationId: runConvId,
+                  ...(mcpTarget
+                    ? { mcp: { serverName: mcpTarget.serverName, toolName: mcpTarget.toolName } }
+                    : {}),
                 });
               });
 
@@ -677,7 +741,13 @@ export function useCopilotChat({
                 useToolPermissionStore.getState().setPending(null, runConvId);
                 const accepted = decision !== 'deny';
 
-                if (decision === 'session') {
+                if (mcpTarget && mcpKey) {
+                  if (decision === 'session') {
+                    usePermissionStore.getState().allowToolSession(mcpKey);
+                  } else if (decision === 'always') {
+                    usePermissionStore.getState().allowToolAlways(mcpKey, mcpContext.connectionId, mcpTarget.projectRoot);
+                  }
+                } else if (decision === 'session') {
                   usePermissionStore.getState().allowToolSession(name);
                 } else if (decision === 'always') {
                   usePermissionStore.getState().allowToolAlways(name, null, null);
@@ -825,6 +895,7 @@ export function useCopilotChat({
           if (cancelled) return;
           cancelled = true;
           clearInterval(flushInterval);
+          toolAbort.abort();
           unlistenBegin();
           unlistenChunk();
           unlistenThinking();

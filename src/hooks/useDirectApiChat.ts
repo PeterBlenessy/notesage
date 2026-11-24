@@ -9,6 +9,8 @@ import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment, ImageAttac
 import type { Connection } from '@/lib/ai/connections';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 import { executeToolCall, isSkillScriptTool, resolveSkillScriptTarget } from '@/lib/tool-executor';
+import { isMcpToolName } from '@/lib/mcp/tool-naming';
+import { resolveMcpTool, mcpPermissionKey } from '@/lib/mcp/chat-tools';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -370,6 +372,18 @@ export function useDirectApiChat({
         // — a continuation after Stop would spawn a fresh provider stream whose
         // events land on torn-down channels (invisible, but billed).
         let cancelled = false;
+        // Aborted by `cleanup`. An MCP tool call cannot be cancelled in the
+        // backend, so Stop makes the tool loop stop waiting for it instead.
+        const toolAbort = new AbortController();
+        // Project scope of this conversation, fixed for the turn so the MCP
+        // tools offered to the model and the tools its calls resolve to come
+        // from the same set of servers.
+        const mcpScopePaths = opts?.sandboxPaths ?? selectProjectPaths({
+          conversations: useChatStore.getState().conversations,
+          // The conversation that owns this send, which is not always the
+          // one in the foreground (a cap-deferred or background send).
+          activeConversationId: conversationId ?? useChatStore.getState().activeConversationId,
+        });
 
         // Tracks messages accumulated during multi-turn tool call loops.
         // Starts with the initial history + user message, then grows with
@@ -468,16 +482,30 @@ export function useDirectApiChat({
               // Stop pressed while hashing — `cleanup` already finalized.
               if (cancelled) return;
             }
+            // MCP tools are approved per SERVER + TOOL, under a key built from
+            // the server id and the tool's original name, scoped to this
+            // connection and (for a project server) its project. They are
+            // never auto-allowed: the server's own annotations (`readOnlyHint`
+            // and the like) are third-party claims and are not consulted.
+            const isMcpTool = isMcpToolName(call.name);
+            const mcpTarget = isMcpTool ? resolveMcpTool(call.name, mcpScopePaths) : null;
+            const mcpKey = mcpTarget ? mcpPermissionKey(mcpTarget) : null;
+            const permissionConnectionId = effectiveConnection?.id ?? resolved.connectionId ?? null;
             const rawTier = isSkillScript
               ? (scriptTarget && scriptHash
                   ? usePermissionStore.getState().isSkillScriptAllowed(scriptTarget.skillName, null, null, scriptHash)
                   : 'none')
-              : usePermissionStore.getState().isToolAllowed(call.name, null, null);
+              : mcpTarget && mcpKey
+                ? usePermissionStore.getState().isToolAllowed(mcpKey, permissionConnectionId, mcpTarget.projectRoot)
+                : usePermissionStore.getState().isToolAllowed(call.name, null, null);
+            // An `mcp__…` name that resolves to no server has nothing to
+            // approve: no card, and execution reports the error to the model.
+            const mcpUnresolved = isMcpTool && !mcpTarget;
             const tier = requireAll ? 'none' : rawTier;
             // Tracks how this specific call was authorized — recorded on the activity.
             let approvalMode: import('@/lib/ai/types').ActivityApprovalMode = 'auto';
 
-            if (tier === 'none') {
+            if (tier === 'none' && !mcpUnresolved) {
               // Show permission card and wait for user decision
               log.info('ai', `Requesting permission for tool: ${call.name}`);
               runAwaitingPermission(conversationId, call.id);
@@ -488,6 +516,9 @@ export function useDirectApiChat({
                   arguments: call.arguments,
                   resolve,
                   conversationId,
+                  ...(mcpTarget
+                    ? { mcp: { serverName: mcpTarget.serverName, toolName: mcpTarget.toolName } }
+                    : {}),
                 });
               });
               useToolPermissionStore.getState().setPending(null, conversationId);
@@ -547,6 +578,12 @@ export function useDirectApiChat({
                     usePermissionStore.getState().allowSkillScriptAlways(scriptTarget.skillName, null, null, scriptHash);
                   }
                 }
+              } else if (mcpTarget && mcpKey) {
+                if (decision === 'session') {
+                  usePermissionStore.getState().allowToolSession(mcpKey);
+                } else if (decision === 'always') {
+                  usePermissionStore.getState().allowToolAlways(mcpKey, permissionConnectionId, mcpTarget.projectRoot);
+                }
               } else if (decision === 'session') {
                 usePermissionStore.getState().allowToolSession(call.name);
               } else if (decision === 'always') {
@@ -568,7 +605,9 @@ export function useDirectApiChat({
             // Push tool call segment (running). Read the segment count from THIS
             // send's own conversation (not the foreground one) so the index is
             // correct when a background stream is mid-flight (task #3).
-            const toolLabel = formatToolLabel(call.name, call.arguments);
+            const toolLabel = mcpTarget
+              ? `${mcpTarget.serverName}: ${mcpTarget.toolName}`
+              : formatToolLabel(call.name, call.arguments);
             const toolDetail = Object.keys(call.arguments).length > 0
               ? JSON.stringify(call.arguments, null, 2) : undefined;
             const convForIdx = useChatStore.getState().conversations
@@ -593,6 +632,8 @@ export function useDirectApiChat({
               // The backend re-verifies the body matches what was just hashed
               // and approved, closing the check → exec window.
               expectedSkillScriptHash: scriptHash ?? null,
+              mcpProjectPaths: mcpScopePaths,
+              signal: toolAbort.signal,
             });
 
             // Stop pressed while the tool executed — `cleanup` already tore
@@ -678,6 +719,8 @@ export function useDirectApiChat({
           if (cancelled) return;
           cancelled = true;
           clearInterval(flushInterval);
+          // Release a tool loop that is waiting on an MCP call.
+          toolAbort.abort();
           for (const unlisten of unlisteners) unlisten();
           unlisteners = [];
           // Unblock a tool-permission decision this turn may be awaiting (Stop
@@ -819,7 +862,9 @@ export function useDirectApiChat({
         const toolCallingEnabled = useSettingsStore.getState().toolCallingEnabled;
         if (toolCallingEnabled) {
           // All tools available to all agents — user controls access via permission system
-          tools = useSkillStore.getState().getToolDefinitions();
+          // MCP tools (enabled, running servers in this conversation's project
+          // scope) are offered alongside the built-in and skill tools.
+          tools = useSkillStore.getState().getToolDefinitions(undefined, { mcpProjectPaths: mcpScopePaths });
           // Cap the schemas against a local model's window. JSON Schema is
           // verbose and this overhead is paid on every turn, so an unbounded
           // tool list can eat a large share of a 32K context before the user's

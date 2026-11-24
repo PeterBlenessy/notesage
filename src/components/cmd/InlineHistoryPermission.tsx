@@ -39,7 +39,11 @@ export function InlineHistoryPermission({ conversationId }: { conversationId: st
   }
 
   if (directPending) {
-    const label = `Tool call: ${directPending.name}`;
+    // An MCP tool is named by its server and its own name (see
+    // `ToolCallPermissionCard`), not by the model-facing identifier.
+    const label = directPending.mcp
+      ? `${t('chat.mcpToolCall', { tool: directPending.mcp.toolName })} · ${t('chat.mcpToolServer', { server: directPending.mcp.serverName })}`
+      : `Tool call: ${directPending.name}`;
     const onDecide = (tier: ApprovalTier) => resolveDirectPermission(directPending, tier);
     return (
       <Shell label={label} preview={formatToolArgsPreview(directPending.arguments)} onDecide={onDecide} />

@@ -1,4 +1,4 @@
-import type { McpTransport } from '@/stores/mcp-store';
+import type { McpCatalogRequiredArg, McpTransport } from '@/stores/mcp-store';
 
 /**
  * One editable env-var row. `secret` marks it for keychain storage (the value
@@ -20,6 +20,12 @@ export interface CatalogPrefill {
   env: EnvRow[];
   transport?: McpTransport;
   url?: string | null;
+  /**
+   * Arguments only the user can supply (the folder the Filesystem server may
+   * read). The dialog shows a field for each and appends the answers to the
+   * arguments; a required one blocks Test and Add until it is filled.
+   */
+  requiredArgs?: McpCatalogRequiredArg[];
   /**
    * `true` when the prefill came from an attacker-controllable source (a
    * `notesage://mcp/install` deep link). The Add dialog renders a warning

@@ -54,3 +54,35 @@ describe('ToolCallPermissionCard — foreground-aware auto-deny (task #7)', () =
     expect(resolve).toHaveBeenCalledWith('deny');
   });
 });
+
+describe('ToolCallPermissionCard — MCP tool calls', () => {
+  const mcpRequest = () =>
+    makeRequest({
+      name: 'mcp__My_Server__files_read',
+      arguments: { path: '/notes/a.md', recursive: true },
+      mcp: { serverName: 'My Server', toolName: 'files/read' },
+    });
+
+  it('names the server and the original tool, and shows the arguments', () => {
+    const { container, getByTestId } = render(<ToolCallPermissionCard request={mcpRequest()} />);
+    expect(getByTestId('mcp-tool-name').textContent).toBe('MCP tool call: files/read');
+    expect(getByTestId('mcp-server-name').textContent).toBe('MCP server: My Server');
+    expect(container.querySelector('pre')?.textContent).toBe('path: /notes/a.md\nrecursive: true');
+    // The model-facing identifier is not what the user is asked about.
+    expect(container.textContent).not.toContain('mcp__My_Server__files_read');
+  });
+
+  it('keeps the plain label for a built-in tool', () => {
+    const { container, queryByTestId } = render(<ToolCallPermissionCard request={makeRequest()} />);
+    expect(queryByTestId('mcp-server-name')).toBeNull();
+    expect(container.textContent).toContain('Tool call: write_file');
+  });
+
+  it('confirms the decision with the server and tool name', () => {
+    const request = mcpRequest();
+    const { container } = render(<ToolCallPermissionCard request={request} />);
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(request.resolve).toHaveBeenCalledWith('deny');
+    expect(container.textContent).toContain('"My Server: files/read" timed out');
+  });
+});

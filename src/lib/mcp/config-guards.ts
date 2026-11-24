@@ -30,6 +30,10 @@ export interface McpServerConfig {
   enabled: boolean;
   transport?: 'stdio' | 'http';
   url?: string | null;
+  /** Static headers for a remote server; same value shape as `env`. */
+  headers?: Record<string, McpEnvValue> | null;
+  /** Working directory for a stdio server. */
+  cwd?: string | null;
 }
 
 const MCP_SOURCES = new Set([
@@ -68,6 +72,14 @@ export function isImportedMcpConfig(v: unknown): v is McpServerConfig {
   if (typeof v.enabled !== 'boolean') return false;
   if (v.transport !== undefined && v.transport !== 'stdio' && v.transport !== 'http') return false;
   if (v.url !== undefined && v.url !== null && typeof v.url !== 'string') return false;
+  if (
+    v.headers !== undefined &&
+    v.headers !== null &&
+    !(isRecord(v.headers) && Object.values(v.headers).every(isMcpEnvValue))
+  ) {
+    return false;
+  }
+  if (v.cwd !== undefined && v.cwd !== null && typeof v.cwd !== 'string') return false;
   return true;
 }
 
