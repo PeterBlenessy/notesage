@@ -1,11 +1,48 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useFileOperations } from "@/hooks/useFileOperations";
+import { refreshGitForPath, useFileOperations } from "@/hooks/useFileOperations";
 import { useInboxStore, type InboxItem } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { t } from "@/lib/i18n";
 import { parseFileError } from "@/lib/file-errors";
+
+/**
+ * Filing on its own, with NO store subscriptions.
+ *
+ * Every sidebar row accepts a drop from the Inbox (`useMoveIntoFolder`), and
+ * used to get it through `useInboxActions` — which subscribes to `projects`
+ * and `pinnedFiles`. So every visible row re-rendered on every tree refresh
+ * and every pin, for a callback that reads neither.
+ */
+export function useInboxFileTo() {
+  const { renamePath, refreshFileTree } = useFileOperations();
+  const fileTo = useCallback(
+    async (paths: string[], projectPath: string) => {
+      if (paths.length === 0) return [];
+      // With `refreshFileTree` the store moves the files itself and refreshes
+      // each affected tree once, instead of twice per file through `renamePath`.
+      const moved = await useInboxStore
+        .getState()
+        .fileTo(paths, projectPath, { renamePath, refreshFileTree, refreshGit: (path) => refreshGitForPath(path) });
+      const name = projectPath.slice(projectPath.lastIndexOf("/") + 1);
+      if (moved.length > 0) {
+        toast.success(
+          moved.length === 1
+            ? t("inbox.filedOne", { project: name })
+            : t("inbox.filedMany", { count: moved.length, project: name }),
+        );
+      }
+      if (moved.length < paths.length) {
+        toast.error(t("inbox.fileFailed", { count: paths.length - moved.length }));
+      }
+      return moved;
+    },
+    [renamePath, refreshFileTree],
+  );
+
+  return fileTo;
+}
 
 /**
  * The Inbox's triage verbs, shared by the list, the gallery, the context
@@ -13,7 +50,7 @@ import { parseFileError } from "@/lib/file-errors";
  * trash, open original. One place, so the row, the menu and `e` cannot drift.
  */
 export function useInboxActions() {
-  const { openFile, renamePath } = useFileOperations();
+  const { openFile } = useFileOperations();
   const projects = useWorkspaceStore((s) => s.projects);
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
@@ -35,25 +72,7 @@ export function useInboxActions() {
     [openFile],
   );
 
-  const fileTo = useCallback(
-    async (paths: string[], projectPath: string) => {
-      if (paths.length === 0) return [];
-      const moved = await useInboxStore.getState().fileTo(paths, projectPath, { renamePath });
-      const name = projectPath.slice(projectPath.lastIndexOf("/") + 1);
-      if (moved.length > 0) {
-        toast.success(
-          moved.length === 1
-            ? t("inbox.filedOne", { project: name })
-            : t("inbox.filedMany", { count: moved.length, project: name }),
-        );
-      }
-      if (moved.length < paths.length) {
-        toast.error(t("inbox.fileFailed", { count: paths.length - moved.length }));
-      }
-      return moved;
-    },
-    [renamePath],
-  );
+  const fileTo = useInboxFileTo();
 
   /**
    * `e` — file to the LAST destination, and only that. It never guesses: an

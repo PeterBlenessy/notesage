@@ -1089,3 +1089,13 @@ Two of the three have been red since v0.53.1 (see the 2026-08-25 entry, which
 was written for exactly this reason), and v0.60.0's content is sidebar
 drag-and-drop and an HTML preview — neither goes anywhere near the markdown
 parser. Recorded rather than chased: the gate is measuring the machine.
+
+## Metric change: `startup ready` no longer includes indexing (2026-11-24)
+
+From the build after v0.62.0, `[perf:startup] ready` means "the UI is ready" and excludes the index pass, which runs in the background. A new line, `[perf:startup] index ready {ok, ms, sinceStartMs}`, reports the index pass (`ms`) and when it finished on the same clock as `ready` (`sinceStartMs`).
+
+- Do not compare `ready.totalMs` across this change. Compare an older `ready` with the newer `index ready.sinceStartMs`.
+- The backend line `[perf:index] build: project= files= read= changed= skipped_dataless= links_written= pruned= ms=` is now info level. On an unchanged launch `read` should be about 0; the first launch after the upgrade reads every local file once (schema migration).
+- New lines: `[perf:index] doc-index build {files, filesRead, wrote, ms}`, `[perf:watcher] watch registered`, and `perf:inbox` (load, view mount, thumbnails, file, trash).
+
+No measurements are recorded here yet: these changes were verified by call, read and render counts in tests, not by a launch on a shipped build. The first real entry needs an A/B on one Mac, minutes apart.

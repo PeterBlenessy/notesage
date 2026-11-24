@@ -55,7 +55,7 @@ describe("inbox-store", () => {
         ? { title: "Riksbanken lämnar räntan oförändrad", excerpt: "Beskedet var väntat", minutes: 4, site: "di.se", sourceUrl: "https://di.se/x" }
         : null;
     });
-    setMockInvokeHandler("trash_path", () => undefined);
+    setMockInvokeHandler("trash_paths", () => []);
     vi.useFakeTimers();
   });
 
@@ -83,6 +83,10 @@ describe("inbox-store", () => {
     // device's knowledge); they are pruned where the file is rewritten.
     expect(Object.keys(s.progress.items).sort()).toEqual(["Riksbanken.html", "gone.html"]);
     expect(s.unreadCount()).toBe(2);
+    // The listing itself reads no header; the rows on screen ask for theirs.
+    await vi.runAllTimersAsync();
+    expect(useInboxStore.getState().meta).toEqual({});
+    for (const item of s.items) s.ensureMeta(item);
     await vi.runAllTimersAsync();
     expect(useInboxStore.getState().meta[`${INBOX}/Riksbanken.html`]?.site).toBe("di.se");
   });
@@ -322,8 +326,270 @@ describe("inbox-store", () => {
     const [a, b, c] = useInboxStore.getState().items.map((i) => i.path);
     expect(useInboxStore.getState().neighbour(a, 1)?.path).toBe(b);
     expect(useInboxStore.getState().neighbour(c, 1)).toBeNull();
+    // Setting a filter is what asks for the headers it matches on.
     useInboxStore.getState().setFilter("di.se");
+    await vi.runAllTimersAsync();
     expect(useInboxStore.getState().visible().map((i) => i.path)).toEqual([a]);
+  });
+
+  // -------------------------------------------------------------------------
+  // What things cost (perf review 2026-11, Inbox section). N = 350, the size
+  // of the Inbox the review was written against.
+  // -------------------------------------------------------------------------
+
+  function captures(count: number) {
+    return Array.from({ length: count }, (_, i) => entry(`Article ${String(i).padStart(3, "0")}.html`, 1_756_000_000 + i));
+  }
+
+  it("I-H3: listing 350 captures is three calls and reads no capture; the badge needs only the sidecar", async () => {
+    listing = captures(350);
+    const opened: Record<string, { fraction: number; openedAt: string; updatedAt: string }> = {};
+    for (const e of listing.slice(0, 100)) opened[e.name] = { fraction: 0.2, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-02T21:14:07Z" };
+    const calls: string[] = [];
+    setMockInvokeHandler("allow_asset_dir", () => {
+      calls.push("allow_asset_dir");
+    });
+    setMockInvokeHandler("list_files_shallow", () => {
+      calls.push("list_files_shallow");
+      return listing;
+    });
+    setMockInvokeHandler("read_file", () => {
+      calls.push("read_file");
+      return JSON.stringify({ version: 2, items: opened });
+    });
+    setMockInvokeHandler("inbox_card_meta", () => {
+      calls.push("inbox_card_meta");
+      return null;
+    });
+    await useInboxStore.getState().load();
+    await vi.runAllTimersAsync();
+    expect(calls).toEqual(["allow_asset_dir", "list_files_shallow", "read_file"]);
+    expect(useInboxStore.getState().unreadCount()).toBe(250);
+    expect(useInboxStore.getState().meta).toEqual({});
+  });
+
+  it("I-H3: headers are read once per capture and land in ONE store update, not one each", async () => {
+    listing = captures(350);
+    const read: string[] = [];
+    setMockInvokeHandler("inbox_card_meta", (args) => {
+      read.push((args as { path: string }).path);
+      return { title: "T", excerpt: "E", minutes: 1, site: "s", sourceUrl: null };
+    });
+    await useInboxStore.getState().load();
+    let metaUpdates = 0;
+    const unsubscribe = useInboxStore.subscribe((s, p) => {
+      if (s.meta !== p.meta) metaUpdates += 1;
+    });
+    const rows = useInboxStore.getState().items.slice(0, 40);
+    // A row that re-renders asks again; that must not read or queue twice.
+    for (const item of rows) useInboxStore.getState().ensureMeta(item);
+    for (const item of rows) useInboxStore.getState().ensureMeta(item);
+    await vi.runAllTimersAsync();
+    unsubscribe();
+    expect(read).toHaveLength(40);
+    expect(new Set(read).size).toBe(40);
+    expect(Object.keys(useInboxStore.getState().meta)).toHaveLength(40);
+    expect(metaUpdates).toBe(1);
+    // Known now: asking again costs nothing.
+    for (const item of rows) useInboxStore.getState().ensureMeta(item);
+    await vi.runAllTimersAsync();
+    expect(read).toHaveLength(40);
+  });
+
+  it("I-H3: a capture rewritten in place gets its header read again", async () => {
+    const read = vi.fn(() => ({ title: "Old", excerpt: "", minutes: 1, site: "s", sourceUrl: null }));
+    setMockInvokeHandler("inbox_card_meta", read);
+    await useInboxStore.getState().load();
+    const path = `${INBOX}/Riksbanken.html`;
+    useInboxStore.getState().ensureMeta(useInboxStore.getState().items[0]);
+    await vi.runAllTimersAsync();
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockReturnValue({ title: "New", excerpt: "", minutes: 1, site: "s", sourceUrl: null });
+    listing = [entry("Riksbanken.html", 1_756_900_001), ...listing.slice(1)];
+    await useInboxStore.getState().load();
+    useInboxStore.getState().ensureMeta(useInboxStore.getState().items[0]);
+    await vi.runAllTimersAsync();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(useInboxStore.getState().meta[path]?.title).toBe("New");
+  });
+
+  it("I-H3: a filter matches titles, so setting one asks for every header — once", async () => {
+    listing = captures(350);
+    const read = vi.fn(() => ({ title: "T", excerpt: "", minutes: 1, site: "s", sourceUrl: null }));
+    setMockInvokeHandler("inbox_card_meta", read);
+    await useInboxStore.getState().load();
+    useInboxStore.getState().setFilter("t");
+    await vi.runAllTimersAsync();
+    expect(read).toHaveBeenCalledTimes(350);
+    useInboxStore.getState().setFilter("ti");
+    useInboxStore.getState().setFilter("");
+    await useInboxStore.getState().load();
+    await vi.runAllTimersAsync();
+    expect(read).toHaveBeenCalledTimes(350);
+  });
+
+  it("I-M1: a reload that changed nothing changes no identity", async () => {
+    listing = captures(350);
+    const sidecar: Record<string, { fraction: number; openedAt: string; updatedAt: string }> = {};
+    for (const e of listing.slice(0, 50)) sidecar[e.name] = { fraction: 0.5, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-02T21:14:07Z" };
+    files[`${INBOX}/.notesage/reading-progress.json`] = JSON.stringify({ version: 2, items: sidecar });
+    await useInboxStore.getState().load();
+    const before = useInboxStore.getState();
+    useInboxStore.getState().select(before.items[3].path);
+    const selection = useInboxStore.getState().selection;
+    // A fresh array of fresh objects from the backend, same content.
+    listing = listing.map((e) => ({ ...e }));
+    await useInboxStore.getState().load();
+    const after = useInboxStore.getState();
+    expect(after.items).toBe(before.items);
+    expect(after.progress).toBe(before.progress);
+    expect(after.selection).toBe(selection);
+  });
+
+  it("I-M1: one changed file and one changed entry replace exactly those two objects", async () => {
+    listing = captures(350);
+    const sidecar: Record<string, { fraction: number; openedAt: string; updatedAt: string }> = {};
+    for (const e of listing.slice(0, 50)) sidecar[e.name] = { fraction: 0.5, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-02T21:14:07Z" };
+    files[`${INBOX}/.notesage/reading-progress.json`] = JSON.stringify({ version: 2, items: sidecar });
+    await useInboxStore.getState().load();
+    const before = useInboxStore.getState();
+    listing = listing.map((e, i) => (i === 7 ? { ...e, modified: (e.modified ?? 0) + 5 } : { ...e }));
+    // The phone read further in one article.
+    sidecar[listing[9].name] = { fraction: 0.9, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-05T08:00:00Z" };
+    files[`${INBOX}/.notesage/reading-progress.json`] = JSON.stringify({ version: 2, items: sidecar });
+    await useInboxStore.getState().load();
+    const after = useInboxStore.getState();
+    expect(after.items.filter((item, i) => item !== before.items[i]).map((i) => i.name)).toEqual([listing[7].name]);
+    const changed = Object.keys(after.progress.items).filter((name) => after.progress.items[name] !== before.progress.items[name]);
+    expect(changed).toEqual([listing[9].name]);
+    expect(after.progress.items[listing[9].name].fraction).toBe(0.9);
+  });
+
+  it("I-M1: the sidecar write after a change leaves every other entry — and the file object — alone", async () => {
+    files[`${INBOX}/.notesage/reading-progress.json`] = JSON.stringify({
+      version: 2,
+      items: { "UBS-AI.pdf": { fraction: 0.3, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-02T21:14:07Z" } },
+    });
+    await useInboxStore.getState().load();
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.5);
+    const before = useInboxStore.getState().progress;
+    let progressUpdates = 0;
+    const unsubscribe = useInboxStore.subscribe((s, p) => {
+      if (s.progress !== p.progress) progressUpdates += 1;
+    });
+    await vi.runAllTimersAsync();
+    unsubscribe();
+    expect(written[`${INBOX}/.notesage/reading-progress.json`]).toBeTruthy();
+    // The read-merge-write found nothing new on disk: nothing is replaced.
+    expect(progressUpdates).toBe(0);
+    expect(useInboxStore.getState().progress).toBe(before);
+  });
+
+  it("I-M3: a batched filing moves every file itself and refreshes the tree ONCE", async () => {
+    await useInboxStore.getState().load();
+    const paths = [`${INBOX}/Riksbanken.html`, `${INBOX}/UBS-AI.pdf`, `${INBOX}/shot.png`];
+    const renames: Array<[string, string]> = [];
+    const marks: string[] = [];
+    setMockInvokeHandler("rename_path", (args) => {
+      const a = args as { oldPath: string; newPath: string };
+      renames.push([a.oldPath, a.newPath]);
+    });
+    setMockInvokeHandler("mark_self_write", (args) => {
+      marks.push((args as { path: string }).path);
+    });
+    const renamePath = vi.fn(async () => true);
+    const refreshFileTree = vi.fn(async () => undefined);
+    const refreshGit = vi.fn();
+    useInboxStore.getState().recordProgress(paths[0], 0.4);
+    const moved = await useInboxStore.getState().fileTo(paths, `${ROOT}/Research`, { renamePath, refreshFileTree, refreshGit });
+    expect(moved).toEqual(paths);
+    // Not through the per-file primitive, which refreshes two trees per call.
+    expect(renamePath).not.toHaveBeenCalled();
+    expect(renames).toEqual(paths.map((p) => [p, `${ROOT}/Research/${p.slice(p.lastIndexOf("/") + 1)}`]));
+    expect(marks.filter((p) => !p.endsWith("reading-progress.json"))).toHaveLength(6);
+    // The project is in the library the Inbox is in: one refresh covers both.
+    expect(refreshFileTree).toHaveBeenCalledTimes(1);
+    expect(refreshFileTree).toHaveBeenCalledWith(`${ROOT}/Research`);
+    expect(refreshGit.mock.calls.map((c) => c[0])).toEqual([`${ROOT}/Research`, INBOX]);
+    expect(useInboxStore.getState().items).toEqual([]);
+    const carried = parseReadingProgress(written[`${ROOT}/Research/.notesage/reading-progress.json`]);
+    expect(carried.items["Riksbanken.html"].fraction).toBe(0.4);
+  });
+
+  it("I-M3: a project outside the library refreshes the Inbox's tree as well — two refreshes, not two per file", async () => {
+    await useInboxStore.getState().load();
+    setMockInvokeHandler("rename_path", () => undefined);
+    const refreshFileTree = vi.fn(async (_targetPath?: string) => undefined);
+    await useInboxStore
+      .getState()
+      .fileTo([`${INBOX}/Riksbanken.html`, `${INBOX}/UBS-AI.pdf`], "/Users/peter/Code/site", { renamePath: vi.fn(async () => true), refreshFileTree });
+    expect(refreshFileTree.mock.calls.map((c) => c[0])).toEqual(["/Users/peter/Code/site", INBOX]);
+  });
+
+  it("I-M3: rows leave the list before the files have moved, and a failed move puts its row back where it was", async () => {
+    await useInboxStore.getState().load();
+    const a = `${INBOX}/Riksbanken.html`, b = `${INBOX}/UBS-AI.pdf`;
+    useInboxStore.getState().setCursor(a);
+    const settle: Array<{ path: string; resolve: () => void; reject: (e: Error) => void }> = [];
+    setMockInvokeHandler("rename_path", (args) => {
+      const path = (args as { oldPath: string }).oldPath;
+      return new Promise<void>((resolve, reject) => settle.push({ path, resolve, reject }));
+    });
+    const filing = useInboxStore.getState().fileTo([a, b], `${ROOT}/Research`, { renamePath: vi.fn(async () => true), refreshFileTree: vi.fn(async () => undefined) });
+    await vi.advanceTimersByTimeAsync(1);
+    // Both renames are in flight, neither has answered — the rows are gone.
+    expect(settle.map((s) => s.path)).toEqual([a, b]);
+    expect(useInboxStore.getState().items.map((i) => i.name)).toEqual(["shot.png"]);
+    expect(useInboxStore.getState().cursor).toBe(`${INBOX}/shot.png`);
+    settle[0].resolve();
+    settle[1].reject(new Error("EACCES"));
+    const moved = await filing;
+    expect(moved).toEqual([a]);
+    expect(useInboxStore.getState().items.map((i) => i.name)).toEqual(["UBS-AI.pdf", "shot.png"]);
+    expect(useInboxStore.getState().progress.items["Riksbanken.html"].deleted).toBe(true);
+    expect(useInboxStore.getState().progress.items["UBS-AI.pdf"]?.deleted).toBeUndefined();
+  });
+
+  it("I-M3: names are deduped against the destination AND against the rest of the batch", async () => {
+    listing = [entry("x.html", 3), entry("x-1.html", 2), entry("y.html", 1)];
+    await useInboxStore.getState().load();
+    const asked: string[] = [];
+    setMockInvokeHandler("path_exists", (args) => {
+      const path = (args as { path: string }).path;
+      asked.push(path);
+      return path === `${ROOT}/Research/x.html`;
+    });
+    const renamePath = vi.fn(async () => true);
+    await useInboxStore.getState().fileTo([`${INBOX}/x.html`, `${INBOX}/x-1.html`, `${INBOX}/y.html`], `${ROOT}/Research`, { renamePath });
+    expect(renamePath.mock.calls).toEqual([
+      [`${INBOX}/x.html`, `${ROOT}/Research/x-1.html`],
+      [`${INBOX}/x-1.html`, `${ROOT}/Research/x-1-1.html`],
+      [`${INBOX}/y.html`, `${ROOT}/Research/y.html`],
+    ]);
+  });
+
+  it("I-M4: trashing a selection is ONE call; what could not be moved stays in the list", async () => {
+    await useInboxStore.getState().load();
+    const paths = useInboxStore.getState().items.map((i) => i.path);
+    const calls: string[][] = [];
+    setMockInvokeHandler("trash_paths", (args) => {
+      calls.push((args as { paths: string[] }).paths);
+      return [paths[1]];
+    });
+    await useInboxStore.getState().trash(paths);
+    expect(calls).toEqual([paths]);
+    expect(useInboxStore.getState().items.map((i) => i.path)).toEqual([paths[1]]);
+    expect(useInboxStore.getState().progress.items["UBS-AI.pdf"]?.deleted).toBeUndefined();
+    expect(useInboxStore.getState().progress.items["shot.png"].deleted).toBe(true);
+  });
+
+  it("I-M4: a trash call that fails outright removes nothing", async () => {
+    await useInboxStore.getState().load();
+    setMockInvokeHandler("trash_paths", () => {
+      throw new Error("Finder is not answering");
+    });
+    await useInboxStore.getState().trash(useInboxStore.getState().items.map((i) => i.path));
+    expect(useInboxStore.getState().items).toHaveLength(3);
   });
 });
 

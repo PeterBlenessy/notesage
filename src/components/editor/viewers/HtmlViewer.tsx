@@ -100,6 +100,21 @@ interface HtmlViewerProps {
   onToggleSourceMode?: () => void;
 }
 
+/** How much of the document is looked at for a doctype. */
+const DOCTYPE_PROBE_CHARS = 256;
+
+/**
+ * True when the document already opens with `<!doctype` (after a BOM and
+ * leading whitespace) — the first check of Rust's `repair_missing_doctype`,
+ * made on the first few characters instead of the whole string. Anything
+ * else (including more leading whitespace than the probe holds) is `false`,
+ * which only means Rust gets asked.
+ */
+function opensWithDoctype(content: string): boolean {
+  const head = content.slice(0, DOCTYPE_PROBE_CHARS).replace(/^﻿+/, "").trimStart();
+  return head.slice(0, 9).toLowerCase() === "<!doctype";
+}
+
 const ZOOM_STEP = 1.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
@@ -226,8 +241,14 @@ export function HtmlViewer({
   // Skipped while the tab is dirty: `content` then carries the user's unsaved
   // edits, and saving to fix fifteen bytes would silently commit those too.
   // The repair is idempotent, so the next clean open gets it.
+  //
+  // Whether there is anything to ask is decided HERE, on the first bytes: a
+  // document that opens with a doctype needs no repair, and asking Rust meant
+  // sending the whole capture — megabytes, with its inlined images — across
+  // IPC on every open to be told so. Rust still decides the repair itself.
   useEffect(() => {
     if (isDirty) return;
+    if (opensWithDoctype(content)) return;
     let cancelled = false;
     void invoke<string | null>("repair_html_doctype", { content })
       .then((repaired) => {

@@ -31,6 +31,35 @@ describe("InboxSection (sidebar row)", () => {
     expect(screen.getByTestId("inbox-unread").textContent).toBe("2");
   });
 
+  it("the badge at launch costs one listing and one sidecar read — no capture is opened for it", async () => {
+    // 350 captures, 100 of them opened on the phone. The count used to be
+    // followed by a whole-file read of every capture for its header.
+    const names = Array.from({ length: 350 }, (_, i) => `Article ${i}.html`);
+    const calls: Record<string, number> = { list_files_shallow: 0, read_file: 0, inbox_card_meta: 0, article_lead_image: 0 };
+    setMockInvokeHandler("list_files_shallow", () => {
+      calls.list_files_shallow += 1;
+      return names.map((name) => ({ name, path: `${INBOX}/${name}`, is_directory: false, hidden: false, modified: 1 }));
+    });
+    setMockInvokeHandler("read_file", () => {
+      calls.read_file += 1;
+      const items: Record<string, unknown> = {};
+      for (const name of names.slice(0, 100)) items[name] = { fraction: 0.3, openedAt: "2026-09-02T21:14:07Z", updatedAt: "2026-09-02T21:14:07Z" };
+      return JSON.stringify({ version: 2, items });
+    });
+    setMockInvokeHandler("inbox_card_meta", () => {
+      calls.inbox_card_meta += 1;
+      return null;
+    });
+    setMockInvokeHandler("article_lead_image", () => {
+      calls.article_lead_image += 1;
+      throw new Error("not asked for");
+    });
+    renderWithProviders(<InboxSection />);
+    await waitFor(() => expect(screen.getByTestId("inbox-unread").textContent).toBe("250"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toEqual({ list_files_shallow: 1, read_file: 1, inbox_card_meta: 0, article_lead_image: 0 });
+  });
+
   it("opens the Inbox mode on click and on Enter", async () => {
     renderWithProviders(<InboxSection />);
     const row = await screen.findByTestId("inbox-row");

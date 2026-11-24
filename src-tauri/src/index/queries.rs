@@ -430,7 +430,10 @@ pub fn query_content(
     let mut stmt = conn
         .prepare(
             "SELECT f.path, f.name, f.title,
-                    snippet(files_fts, 1, '<b>', '</b>', '...', 20) as snip,
+                    -- files_fts is contentless, so snippet() has no text to
+                    -- quote and yields NULL; without the COALESCE every hit
+                    -- failed to decode and the whole query returned an error.
+                    COALESCE(snippet(files_fts, 1, '<b>', '</b>', '...', 20), '') as snip,
                     rank
              FROM files_fts
              JOIN files f ON files_fts.rowid = f.id

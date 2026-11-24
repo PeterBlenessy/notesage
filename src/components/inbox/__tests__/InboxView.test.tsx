@@ -50,7 +50,7 @@ describe("InboxView", () => {
     setMockInvokeHandler("create_directory", () => undefined);
     setMockInvokeHandler("mark_self_write", () => undefined);
     setMockInvokeHandler("path_exists", () => false);
-    setMockInvokeHandler("trash_path", () => undefined);
+    setMockInvokeHandler("trash_paths", () => []);
   });
 
   it("renders the title with counts, date groups, and article rows with their header", async () => {

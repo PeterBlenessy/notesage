@@ -31,6 +31,97 @@ export interface RecentProject {
 
 const MAX_RECENT_PROJECTS = 5;
 
+/** Everything a row renders from, except `children` (compared by the walk). */
+function sameEntryFields(a: FileEntry, b: FileEntry): boolean {
+  return (
+    a.path === b.path &&
+    a.name === b.name &&
+    a.is_directory === b.is_directory &&
+    a.hidden === b.hidden &&
+    a.modified === b.modified &&
+    a.child_count === b.child_count &&
+    a.unreadable === b.unreadable &&
+    a.truncated === b.truncated
+  );
+}
+
+/**
+ * Structural sharing for a fresh listing: returns `next` with every unchanged
+ * subtree replaced by the object already in the store, and `prev` itself when
+ * nothing changed at all.
+ *
+ * A tree refresh relists a whole root, so `next` is all-new objects even when
+ * one file was added. Handing those to the store gave every memoised sidebar
+ * row a new `entry` prop and every `projects` subscriber a new array, for a
+ * change that touched one folder. After this, only the entries on the path to
+ * a real change get a new identity.
+ *
+ * One pass over `next`: entries are matched by position first (a listing is
+ * ordered, so that almost always hits) and by path through a per-level map
+ * only where the positions disagree.
+ */
+export function shareFileTree(prev: FileEntry[], next: FileEntry[]): FileEntry[];
+export function shareFileTree(
+  prev: FileEntry[] | null | undefined,
+  next: FileEntry[] | null | undefined,
+): FileEntry[] | null | undefined;
+export function shareFileTree(
+  prev: FileEntry[] | null | undefined,
+  next: FileEntry[] | null | undefined,
+): FileEntry[] | null | undefined {
+  if (!prev || !next || prev === next) return next;
+  let byPath: Map<string, FileEntry> | null = null;
+  let unchanged = prev.length === next.length;
+  const out: FileEntry[] = new Array(next.length);
+  for (let i = 0; i < next.length; i++) {
+    const fresh = next[i];
+    let old: FileEntry | undefined = prev[i];
+    if (!old || old.path !== fresh.path) {
+      if (!byPath) {
+        byPath = new Map();
+        for (const entry of prev) byPath.set(entry.path, entry);
+      }
+      old = byPath.get(fresh.path);
+    }
+    let shared = fresh;
+    if (old) {
+      const children = shareFileTree(old.children, fresh.children);
+      const sameChildren =
+        children === old.children || (old.children == null && fresh.children == null);
+      if (sameChildren && sameEntryFields(old, fresh)) {
+        shared = old;
+      } else if (children !== fresh.children) {
+        // The entry itself changed, but what is below it may not have.
+        shared = { ...fresh, children: children ?? undefined };
+      }
+    }
+    out[i] = shared;
+    if (shared !== prev[i]) unchanged = false;
+  }
+  return unchanged ? prev : out;
+}
+
+/**
+ * Put a fresh listing into the root at `path`, sharing structure with the
+ * tree already there. Returns `roots` itself when the listing changed nothing,
+ * so the caller can skip the store update altogether.
+ */
+function withSharedTree<T extends { path: string; fileTree: FileEntry[] }>(
+  roots: T[],
+  path: string,
+  tree: FileEntry[],
+): T[] {
+  let changed = false;
+  const next = roots.map((root) => {
+    if (root.path !== path) return root;
+    const fileTree = shareFileTree(root.fileTree, tree);
+    if (fileTree === root.fileTree) return root;
+    changed = true;
+    return { ...root, fileTree };
+  });
+  return changed ? next : roots;
+}
+
 interface WorkspaceStore {
   // Explorer section (multiple folders)
   explorerFolders: ExplorerFolder[];
@@ -185,11 +276,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
       updateExplorerTree: (path, tree) => {
         const canonical = canonicalizeMacPath(path);
-        set((state) => ({
-          explorerFolders: state.explorerFolders.map((f) =>
-            f.path === canonical ? { ...f, fileTree: tree } : f
-          ),
-        }));
+        const current = get().explorerFolders;
+        const explorerFolders = withSharedTree(current, canonical, tree);
+        // An identical listing is not a change: no new array, no notification.
+        if (explorerFolders !== current) set({ explorerFolders });
       },
 
       findOwningExplorerFolder: (filePath) => {
@@ -273,15 +363,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       },
 
       updateProjectTree: (path, tree) => {
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.path === path ? { ...p, fileTree: tree } : p
-          ),
-        }));
+        const current = get().projects;
+        const projects = withSharedTree(current, path, tree);
+        // An identical listing is not a change: no new array, no notification.
+        // Everything keyed on `projects` (and every memoised row keyed on an
+        // entry) would otherwise re-run for a refresh that found nothing new.
+        if (projects !== current) set({ projects });
       },
 
       setNotesTree: (tree) => {
-        set({ notesTree: tree });
+        const current = get().notesTree;
+        const notesTree = shareFileTree(current, tree);
+        if (notesTree !== current) set({ notesTree });
       },
 
       pinFile: (path) => {

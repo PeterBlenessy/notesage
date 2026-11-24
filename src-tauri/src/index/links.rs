@@ -217,6 +217,21 @@ pub fn replace_source(
         return Ok(());
     }
 
+    // One atomic unit (and one commit) per source, instead of a dozen
+    // autocommitted statements; nests inside a pass transaction.
+    super::db::with_savepoint(conn, || {
+        replace_source_rows(conn, source_path, doc_type, title, description, edges)
+    })
+}
+
+fn replace_source_rows(
+    conn: &Connection,
+    source_path: &str,
+    doc_type: Option<&str>,
+    title: Option<&str>,
+    description: Option<&str>,
+    edges: &[LinkEdge],
+) -> Result<(), String> {
     remove_source(conn, source_path)?;
 
     let source_file_id = upsert_file_meta(conn, source_path, doc_type, title, description)?;
@@ -256,6 +271,26 @@ pub fn replace_source(
     .map_err(|e| format!("Failed to resolve pending edges: {}", e))?;
 
     Ok(())
+}
+
+/// Paths under `dir` that have a `link_files` row, i.e. whose links have been
+/// indexed. A reindex pass uses it to find documents that are unchanged in the
+/// content index but missing from the graph (a deleted or reset `links.db`),
+/// so only those are read again.
+pub fn indexed_paths_under(
+    conn: &Connection,
+    dir: &str,
+) -> Result<std::collections::HashSet<String>, String> {
+    let prefix = format!("{}/", dir.trim_end_matches('/'));
+    // '0' is the character after '/', so [prefix, upper) is every path below dir.
+    let upper = format!("{}0", dir.trim_end_matches('/'));
+    let mut stmt = conn
+        .prepare("SELECT path FROM link_files WHERE path >= ?1 AND path < ?2")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![prefix, upper], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
 /// Reconcile the graph after a file delete: drop the deleted source's own

@@ -3,7 +3,7 @@ import type { DragEvent } from "react";
 import { toast } from "sonner";
 
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { useInboxActions } from "@/components/inbox/useInboxActions";
+import { useInboxFileTo } from "@/components/inbox/useInboxActions";
 import { tauriApi } from "@/lib/tauri";
 import { droppedMovablePaths, hasFileDrag, hasFolderDrag, hasInboxDrag } from "./file-drag";
 
@@ -36,7 +36,7 @@ export function useMoveIntoFolder(): (
   opts?: { fromInbox?: boolean },
 ) => Promise<void> {
   const { renamePath } = useFileOperations();
-  const { fileTo } = useInboxActions();
+  const fileTo = useInboxFileTo();
   return useCallback(
     async (paths: string[], destFolder: string, opts?: { fromInbox?: boolean }) => {
       // An Inbox drag is not a plain move and must not become one. `fileTo`

@@ -40,7 +40,13 @@ fn is_false(value: &bool) -> bool {
 
 #[tauri::command]
 pub async fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read file {}: {}", path, e))
+    // Off the async runtime: reading an evicted iCloud file blocks until it
+    // has downloaded, and a handful of those at once parked every worker.
+    tokio::task::spawn_blocking(move || {
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read file {}: {}", path, e))
+    })
+    .await
+    .map_err(|e| format!("Read task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -60,11 +66,35 @@ const MAX_DIRECTORY_DEPTH: usize = 50;
 const GIT_ALWAYS_HIDDEN_CHILDREN: &[&str] = &["objects", "pack", "logs"];
 
 #[tauri::command]
-pub async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
-    list_directory_recursive(&path, 0, MAX_DIRECTORY_DEPTH, show_hidden.unwrap_or(false), false).await
+pub async fn list_directory(
+    path: String,
+    show_hidden: Option<bool>,
+    max_depth: Option<usize>,
+) -> Result<Vec<FileEntry>, String> {
+    // `max_depth` lets a caller that only needs the top level (which folders
+    // does the library hold?) ask for exactly that: `0` lists the directory
+    // itself and marks each subfolder `truncated` instead of walking it.
+    let max_depth = max_depth.unwrap_or(MAX_DIRECTORY_DEPTH).min(MAX_DIRECTORY_DEPTH);
+    // A recursive walk of a whole project — off the async runtime.
+    tokio::task::spawn_blocking(move || {
+        list_directory_recursive(&path, 0, max_depth, show_hidden.unwrap_or(false), false)
+    })
+    .await
+    .map_err(|e| format!("Directory listing task failed: {e}"))?
 }
 
-async fn list_directory_recursive(
+/// Whether a directory entry is a directory, following symlinks (a link to a
+/// folder is listed, and descended into, as a folder — as `Path::is_dir`
+/// always did here). The entry's own file type comes with the directory read
+/// on macOS and Linux, so only a symlink (or an unknown type) costs a `stat`.
+fn entry_is_directory(entry: &fs::DirEntry, entry_path: &Path) -> bool {
+    match entry.file_type() {
+        Ok(file_type) if !file_type.is_symlink() => file_type.is_dir(),
+        _ => entry_path.is_dir(),
+    }
+}
+
+fn list_directory_recursive(
     path: &str,
     depth: usize,
     max_depth: usize,
@@ -102,7 +132,7 @@ async fn list_directory_recursive(
             continue;
         }
 
-        let is_directory = entry_path.is_dir();
+        let is_directory = entry_is_directory(&entry, &entry_path);
         let path_str = entry_path.to_string_lossy().to_string();
 
         let child_inside_git = inside_git || (is_hidden && file_name == ".git");
@@ -110,7 +140,7 @@ async fn list_directory_recursive(
         let mut unreadable = false;
         let mut truncated = false;
         let children = if is_directory && depth < max_depth {
-            match Box::pin(list_directory_recursive(&path_str, depth + 1, max_depth, show_hidden, child_inside_git)).await {
+            match list_directory_recursive(&path_str, depth + 1, max_depth, show_hidden, child_inside_git) {
                 Ok(children) => Some(children),
                 Err(e) => {
                     log::warn!(target: "notesage::file", "Unreadable directory {}: {}", path_str, e);
@@ -295,6 +325,130 @@ pub async fn trash_path(path: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| format!("Trash task failed: {e}"))?
+}
+
+/// Which of `paths` did NOT reach the Trash.
+///
+/// `delete_all` is tried first: one hop for the whole batch. It fails as a
+/// whole (it resolves every path before moving any, so one missing file
+/// refuses the lot) and does not say which path was at fault, so on failure
+/// each path is retried alone. A path that is no longer there by then was
+/// moved by the failed batch call, or was never there; either way there is
+/// nothing left for the caller to show, so it does not count as a failure.
+#[cfg(not(target_os = "ios"))]
+fn trash_many(
+    paths: &[String],
+    delete_all: impl Fn(&[String]) -> Result<(), String>,
+    delete_one: impl Fn(&str) -> Result<(), String>,
+    exists: impl Fn(&str) -> bool,
+) -> Vec<String> {
+    if paths.is_empty() || delete_all(paths).is_ok() {
+        return Vec::new();
+    }
+    let mut failed = Vec::new();
+    for path in paths {
+        if !exists(path) {
+            continue;
+        }
+        if let Err(e) = delete_one(path) {
+            log::warn!("Failed to move {path} to the Trash: {e}");
+            failed.push(path.clone());
+        }
+    }
+    failed
+}
+
+/// Move several files or folders to the Trash in ONE call, and answer with
+/// the paths that could not be moved (empty = all of them went).
+///
+/// `trash_path` per file meant one blocking round trip to Finder per file,
+/// awaited in sequence by the Inbox: trashing a selection of forty took forty
+/// of them. Desktop-only, like `trash_path`.
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+pub async fn trash_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let started = std::time::Instant::now();
+        let failed = trash_many(
+            &paths,
+            |all| trash::delete_all(all).map_err(|e| e.to_string()),
+            |one| trash::delete(one).map_err(|e| e.to_string()),
+            |one| Path::new(one).symlink_metadata().is_ok(),
+        );
+        log::info!(
+            "[perf:inbox] trash: paths={} failed={} ms={}",
+            paths.len(),
+            failed.len(),
+            started.elapsed().as_millis()
+        );
+        failed
+    })
+    .await
+    .map_err(|e| format!("Trash task failed: {e}"))
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod trash_many_tests {
+    use super::trash_many;
+    use std::cell::RefCell;
+
+    fn paths(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| (*n).to_string()).collect()
+    }
+
+    #[test]
+    fn a_batch_that_succeeds_is_one_call_and_no_failures() {
+        let batch_calls = RefCell::new(0);
+        let single_calls = RefCell::new(0);
+        let failed = trash_many(
+            &paths(&["/a", "/b", "/c"]),
+            |all| {
+                *batch_calls.borrow_mut() += 1;
+                assert_eq!(all.len(), 3);
+                Ok(())
+            },
+            |_| {
+                *single_calls.borrow_mut() += 1;
+                Ok(())
+            },
+            |_| true,
+        );
+        assert!(failed.is_empty());
+        assert_eq!(*batch_calls.borrow(), 1);
+        assert_eq!(*single_calls.borrow(), 0, "no per-file call when the batch went through");
+    }
+
+    #[test]
+    fn a_failed_batch_is_retried_per_path_and_reports_only_what_stayed() {
+        let tried = RefCell::new(Vec::<String>::new());
+        let failed = trash_many(
+            &paths(&["/gone-already", "/ok", "/locked"]),
+            |_| Err("one of them is missing".to_string()),
+            |one| {
+                tried.borrow_mut().push(one.to_string());
+                if one == "/locked" {
+                    Err("permission denied".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            |one| one != "/gone-already",
+        );
+        assert_eq!(failed, paths(&["/locked"]));
+        // The path that is no longer there is neither retried nor reported.
+        assert_eq!(*tried.borrow(), paths(&["/ok", "/locked"]));
+    }
+
+    #[test]
+    fn nothing_to_trash_calls_nothing() {
+        let failed = trash_many(
+            &[],
+            |_| panic!("no batch call for an empty list"),
+            |_| panic!("no single call for an empty list"),
+            |_| true,
+        );
+        assert!(failed.is_empty());
+    }
 }
 
 #[tauri::command]
@@ -757,7 +911,7 @@ mod tests {
         // root reads through the mode bits; nothing to assert in that case.
         let enforced = fs::read_dir(&locked).is_err();
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None).await;
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None, None).await;
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         let entries = entries.unwrap();
         if !enforced {
@@ -774,6 +928,149 @@ mod tests {
         assert!(!empty_entry.truncated);
     }
 
+    /// The whole listing, serialized, for a tree with every kind of entry the
+    /// walk treats specially: a symlink to a folder (listed and descended into
+    /// as a folder), a symlink to a file, a dangling symlink (a file), and a
+    /// folder that cannot be read. Pins the output shape across the move to a
+    /// blocking task and the switch from `is_dir()` to the entry's file type.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_directory_output_is_unchanged_for_symlinks_and_unreadable_folders() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("a.md"), "a").unwrap();
+        fs::create_dir(root.join("docs")).unwrap();
+        fs::write(root.join("docs/guide.md"), "guide").unwrap();
+        symlink(root.join("docs"), root.join("link-dir")).unwrap();
+        symlink(root.join("a.md"), root.join("link-file")).unwrap();
+        symlink(root.join("missing"), root.join("broken")).unwrap();
+        let locked = root.join("locked");
+        fs::create_dir(&locked).unwrap();
+        fs::write(locked.join("secret.md"), "x").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        // root reads through the mode bits; the expectation follows suit.
+        let enforced = fs::read_dir(&locked).is_err();
+
+        let entries = list_directory(root.to_string_lossy().to_string(), None, None).await;
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        let actual = serde_json::to_value(entries.unwrap()).unwrap();
+
+        let p = |rel: &str| root.join(rel).to_string_lossy().to_string();
+        let file = |name: &str, rel: &str| {
+            serde_json::json!({
+                "name": name, "path": p(rel), "is_directory": false, "children": null, "hidden": false
+            })
+        };
+        let locked_entry = if enforced {
+            serde_json::json!({
+                "name": "locked", "path": p("locked"), "is_directory": true,
+                "children": [], "hidden": false, "unreadable": true
+            })
+        } else {
+            serde_json::json!({
+                "name": "locked", "path": p("locked"), "is_directory": true,
+                "children": [file("secret.md", "locked/secret.md")], "hidden": false
+            })
+        };
+        let expected = serde_json::json!([
+            {
+                "name": "docs", "path": p("docs"), "is_directory": true,
+                "children": [file("guide.md", "docs/guide.md")], "hidden": false
+            },
+            {
+                "name": "link-dir", "path": p("link-dir"), "is_directory": true,
+                "children": [file("guide.md", "link-dir/guide.md")], "hidden": false
+            },
+            locked_entry,
+            file("a.md", "a.md"),
+            file("broken", "broken"),
+            file("link-file", "link-file"),
+        ]);
+        assert_eq!(actual, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn entry_is_directory_follows_symlinks_like_path_is_dir() {
+        use std::os::unix::fs::symlink;
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("file.md"), "a").unwrap();
+        fs::create_dir(root.join("dir")).unwrap();
+        symlink(root.join("dir"), root.join("to-dir")).unwrap();
+        symlink(root.join("file.md"), root.join("to-file")).unwrap();
+        symlink(root.join("nowhere"), root.join("dangling")).unwrap();
+
+        let mut seen = 0;
+        for entry in fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            assert_eq!(entry_is_directory(&entry, &path), path.is_dir(), "{}", path.display());
+            seen += 1;
+        }
+        assert_eq!(seen, 5);
+    }
+
+    /// `read_file` must not block the async worker it was called on. A FIFO
+    /// stands in for an evicted iCloud file: opening it blocks until a writer
+    /// appears. On a single-threaded runtime the writer is only released once
+    /// this task gets to run again — which it cannot while the read is parked
+    /// on the worker itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_file_does_not_block_the_async_worker() {
+        use std::os::unix::ffi::OsStrExt;
+        use std::time::Duration;
+        let tmp = TempDir::new().unwrap();
+        let fifo = tmp.path().join("slow.md");
+        let c_path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let writer_path = fifo.clone();
+        let writer = std::thread::spawn(move || {
+            // Without the fix the signal never comes; write anyway after the
+            // timeout so the test fails instead of hanging.
+            let released = go_rx.recv_timeout(Duration::from_secs(3)).is_ok();
+            fs::write(&writer_path, "arrived").unwrap();
+            released
+        });
+
+        let read = tokio::spawn(read_file(fifo.to_string_lossy().to_string()));
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        let _ = go_tx.send(());
+
+        assert_eq!(read.await.unwrap().unwrap(), "arrived");
+        assert!(writer.join().unwrap(), "the worker was parked inside read_file");
+    }
+
+    #[tokio::test]
+    async fn read_file_keeps_its_error_message() {
+        let err = read_file("/definitely/not/here.md".to_string()).await.unwrap_err();
+        assert!(err.starts_with("Failed to read file /definitely/not/here.md: "), "{err}");
+    }
+
+    #[tokio::test]
+    async fn list_directory_with_depth_zero_lists_the_top_level_without_walking_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("Project/deep/deeper")).unwrap();
+        std::fs::write(tmp.path().join("Project/deep/deeper/a.md"), "x").unwrap();
+        std::fs::write(tmp.path().join("note.md"), "x").unwrap();
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None, Some(0))
+            .await
+            .unwrap();
+
+        let project = entries.iter().find(|e| e.name == "Project").expect("the folder is listed");
+        assert!(project.is_directory);
+        assert!(project.truncated, "a folder that was not walked says so");
+        assert_eq!(project.children.as_ref().map(|c| c.len()), Some(0));
+        assert!(entries.iter().any(|e| e.name == "note.md" && !e.is_directory));
+    }
+
     #[tokio::test]
     async fn list_directory_marks_folders_cut_off_by_the_depth_limit() {
         let tmp = TempDir::new().unwrap();
@@ -781,7 +1078,7 @@ mod tests {
         fs::write(tmp.path().join("a/b/c/deep.md"), "x").unwrap();
 
         let root = tmp.path().to_string_lossy().to_string();
-        let entries = list_directory_recursive(&root, 0, 1, false, false).await.unwrap();
+        let entries = list_directory_recursive(&root, 0, 1, false, false).unwrap();
         let a = entries.iter().find(|e| e.name == "a").unwrap();
         assert!(!a.truncated, "a was listed");
         let b = a.children.as_ref().unwrap().iter().find(|e| e.name == "b").unwrap();
@@ -817,7 +1114,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         create_test_tree(&tmp);
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None).await.unwrap();
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None, None).await.unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
 
         assert!(names.contains(&"readme.md"));
@@ -833,7 +1130,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         create_test_tree(&tmp);
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true), None).await.unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
 
         assert!(names.contains(&"readme.md"));
@@ -848,7 +1145,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         create_test_tree(&tmp);
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true), None).await.unwrap();
         let git_entry = entries.iter().find(|e| e.name == ".git").unwrap();
         let git_children: Vec<&str> = git_entry.children.as_ref().unwrap().iter().map(|e| e.name.as_str()).collect();
 
@@ -865,7 +1162,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         create_test_tree(&tmp);
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true), None).await.unwrap();
 
         for entry in &entries {
             if entry.name.starts_with('.') {
@@ -881,7 +1178,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         create_test_tree(&tmp);
 
-        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true), None).await.unwrap();
 
         // Find the boundary between regular and hidden entries (within each group: dirs then files)
         let dirs: Vec<&FileEntry> = entries.iter().filter(|e| e.is_directory).collect();

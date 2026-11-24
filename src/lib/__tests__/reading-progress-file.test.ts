@@ -8,6 +8,8 @@ import {
   mergeReadingProgress,
   parseReadingProgress,
   pruneReadingProgress,
+  reuseReadingProgress,
+  sameEntry,
   serializeReadingProgress,
   tombstone,
   TOMBSTONE_TTL_MS,
@@ -192,5 +194,57 @@ describe("reading-progress sidecar (Inbox/.notesage/reading-progress.json)", () 
     expect(isUnread({ fraction: 0, openedAt: T(1) })).toBe(false);
     expect(isFinished({ fraction: 0.96, openedAt: null })).toBe(false);
     expect(isFinished({ fraction: 0.97, openedAt: null })).toBe(true);
+  });
+});
+
+// The Inbox list memoises its rows on the entry OBJECT. A merge runs for
+// every name on every listing and every sidecar write, so "nothing changed"
+// has to mean "the same object" or every row re-renders each time.
+describe("reading-progress identity (perf review I-M1)", () => {
+  const read = { fraction: 0.5, openedAt: T(1), updatedAt: T(2), device: "Mac", speech: { paragraph: 3 } };
+
+  it("mergeEntry returns `current` itself when the incoming side adds nothing", () => {
+    expect(mergeEntry(read, { ...read, speech: { paragraph: 3 } })).toBe(read);
+    // An older, shorter read from the other device changes nothing either.
+    expect(mergeEntry(read, { fraction: 0.2, openedAt: T(1), updatedAt: T(1), device: "Mac" })).toBe(read);
+    const stone = tombstone(new Date(T(5)));
+    expect(mergeEntry(stone, read)).toBe(stone);
+  });
+
+  it("mergeEntry still returns a new object when something did change", () => {
+    const merged = mergeEntry(read, { fraction: 0.8, openedAt: T(1), updatedAt: T(3) });
+    expect(merged).not.toBe(read);
+    expect(merged.fraction).toBe(0.8);
+    expect(read.fraction).toBe(0.5); // and never mutates its input
+  });
+
+  it("sameEntry compares every field, the speech position included", () => {
+    expect(sameEntry(read, { ...read, speech: { paragraph: 3 } })).toBe(true);
+    expect(sameEntry(read, { ...read, speech: { paragraph: 4 } })).toBe(false);
+    expect(sameEntry(read, { ...read, device: "iPhone" })).toBe(false);
+    expect(sameEntry(read, { ...read, resetAt: T(4) })).toBe(false);
+    expect(sameEntry(read, undefined)).toBe(false);
+    expect(sameEntry(undefined, undefined)).toBe(true);
+  });
+
+  it("reuseReadingProgress keeps the previous objects for what is equal, and the previous FILE when all of it is", () => {
+    const previous = { version: 2, items: { "a.html": read, "b.html": { fraction: 0, openedAt: null } } };
+    const reparsed = parseReadingProgress(serializeReadingProgress(previous));
+    expect(reparsed.items["a.html"]).not.toBe(read);
+    expect(reuseReadingProgress(previous, reparsed)).toBe(previous);
+
+    const moved = parseReadingProgress(serializeReadingProgress(previous));
+    moved.items["b.html"] = { fraction: 0.4, openedAt: T(6), updatedAt: T(6) };
+    const next = reuseReadingProgress(previous, moved);
+    expect(next).not.toBe(previous);
+    expect(next.items["a.html"]).toBe(read);
+    expect(next.items["b.html"].fraction).toBe(0.4);
+
+    // A name that appeared or went away is a change too.
+    const fewer = { version: 2, items: { "a.html": { ...read } } };
+    const kept = reuseReadingProgress(previous, fewer);
+    expect(kept).not.toBe(previous);
+    expect(Object.keys(kept.items)).toEqual(["a.html"]);
+    expect(kept.items["a.html"]).toBe(read);
   });
 });

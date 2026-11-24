@@ -275,6 +275,12 @@ interface SettingsStore {
   homeDir: string | null; // Resolved once on startup, used by skill pipeline to avoid IPC
   skillsReady: boolean; // Set early — after home dir resolution, before tree validation
   startupReady: boolean;
+  /**
+   * The startup index pass (`index_init` for the global DB and every project)
+   * has settled, successfully or not. Set AFTER `startupReady`: the UI no
+   * longer waits for indexing, so index-backed views re-query on this flag.
+   */
+  indexReady: boolean;
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   /**
@@ -350,6 +356,7 @@ interface SettingsStore {
   setHomeDir: (dir: string) => void;
   setSkillsReady: (ready: boolean) => void;
   setStartupReady: (ready: boolean) => void;
+  setIndexReady: (ready: boolean) => void;
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
   setLibraryRootKind: (kind: LibraryRootKind | null) => void;
@@ -482,6 +489,7 @@ export const useSettingsStore = create<SettingsStore>()(
       homeDir: null,
       skillsReady: false,
       startupReady: false,
+      indexReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
       libraryRootKind: null,
@@ -726,6 +734,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setStartupReady: (ready: boolean) => {
         set({ startupReady: ready });
+      },
+
+      setIndexReady: (ready: boolean) => {
+        set({ indexReady: ready });
       },
 
       setICloudAvailable: (available: boolean) => {
@@ -1256,7 +1268,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       partialize: (state) => {
         // Exclude runtime-only fields and deprecated fields from persistence
-        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, libraryHoldRoots: _lhr, debugLogging: _d, ...persisted } = state;
+        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, indexReady: _ir, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, libraryHoldRoots: _lhr, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
       onRehydrateStorage: () => (state, error) => {

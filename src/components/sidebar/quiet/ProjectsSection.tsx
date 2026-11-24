@@ -870,7 +870,23 @@ const ProjectChildItem = memo(function ProjectChildItem({
     return <FilePreview filePath={entry.path}>{ctx}</FilePreview>;
   }
   return <div>{ctx}</div>;
-});
+}, sameChildItemProps);
+
+/**
+ * A row reads only `project.path` (its id, and where ArrowLeft goes), while
+ * the project OBJECT is replaced whenever any file in the project changes.
+ * Comparing it by identity re-rendered every row of the project for a change
+ * in one folder; `entry` already says whether this row's own subtree changed.
+ */
+function sameChildItemProps(prev: ProjectChildItemProps, next: ProjectChildItemProps): boolean {
+  const keys = Object.keys(next) as Array<keyof ProjectChildItemProps>;
+  if (keys.length !== Object.keys(prev).length) return false;
+  return keys.every((key) =>
+    key === "project"
+      ? prev.project.path === next.project.path
+      : Object.is(prev[key], next[key]),
+  );
+}
 
 function firstChildRowId(
   projectPath: string,

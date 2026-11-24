@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { tauriApi, type IndexedMention } from "@/lib/tauri";
-import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useIndexQueryTrigger } from "@/components/sidebar/quiet/useIndexQueryTrigger";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useRovingTabindex } from "@/components/sidebar/quiet/useRovingTabindex";
@@ -63,11 +63,9 @@ export function MentionsSection({
   cap,
   filter,
 }: MentionsSectionProps = {}) {
-  const projects = useWorkspaceStore((s) => s.projects);
-  const projectPaths = useMemo(
-    () => projects.map((p) => p.path),
-    [projects],
-  );
+  // Which roots to ask about, and when to ask again: see the hook. Not
+  // `projects` itself, which is replaced on every tree change.
+  const { projectPaths, revision } = useIndexQueryTrigger();
   // Read cap from settings. Explicit `cap` prop still wins for tests/edge
   // cases. Falls back to DEFAULT_MENTION_CAP if the setting is missing
   // (shouldn't happen in production — the migration backfills it).
@@ -96,7 +94,8 @@ export function MentionsSection({
   // Fetch mentions from the SQLite document index. An empty filter on the
   // backend returns the full set ordered by file_count descending, which is
   // exactly what we want here — the cap is applied client-side below.
-  // Re-run whenever the project set changes (add/remove project).
+  // Re-run at once when the project set changes (add/remove project), and
+  // once, debounced, after the index content may have changed (`revision`).
   useEffect(() => {
     const reqId = ++reqIdRef.current;
     tauriApi
@@ -113,9 +112,9 @@ export function MentionsSection({
         setMentions([]);
         setLoadError(err instanceof Error ? err.message : String(err));
       });
-    // The stable-array memo (`projectPaths`) keeps this effect honest when
-    // `projects` is re-created but paths are unchanged.
-  }, [projectPaths]);
+    // `projectPaths` keeps its identity while the paths are unchanged, so a
+    // re-created `projects` array alone does not re-run this.
+  }, [projectPaths, revision]);
 
   // Auto-collapse when the filtered list shrinks below the cap — avoids a
   // stale "Show fewer" state after a project is removed, the mention count

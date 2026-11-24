@@ -7,7 +7,15 @@ import {
 } from '@/stores/project-metadata-store';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
-import { buildDocumentIndex, type DocumentIndex } from '@/lib/document-index';
+import {
+  buildDocumentIndex,
+  cancelDocumentIndexJob,
+  enqueueDocumentIndexJob,
+  forgetDocumentIndexMemo,
+  startDocumentIndexQueue,
+  type DocumentIndex,
+} from '@/lib/document-index';
+import { useSettingsStore } from '@/stores/settings-store';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
 
@@ -201,14 +209,23 @@ export function useProjectMetadata() {
       if (!loadedPathsRef.current.has(project.path)) {
         loadedPathsRef.current.add(project.path);
         loadProjectMetadata(project.path, setMetadata);
-        // Build document index in background (non-blocking)
-        buildDocumentIndex(project.path)
-          .then((index) => documentIndexCache.set(project.path, index))
-          .catch((err) => {
-            const projectName = folderNameFromPath(project.path);
+        // Build the document index in the background: queued, and run one
+        // project at a time once startup is over (see the effect below). It
+        // used to start here for every project at once, during startup.
+        const projectPath = project.path;
+        enqueueDocumentIndexJob(projectPath, async () => {
+          const current = useWorkspaceStore.getState().projects.find((p) => p.path === projectPath);
+          if (!current) return; // removed while it waited
+          try {
+            // The tree is already in memory; no second recursive listing.
+            const index = await buildDocumentIndex(projectPath, current.fileTree);
+            documentIndexCache.set(projectPath, index);
+          } catch (err) {
+            const projectName = folderNameFromPath(projectPath);
             console.error(`Failed to build document index for ${projectName}:`, err);
             toast.warning(`Tag index for ${projectName} failed — search may be incomplete`);
-          });
+          }
+        });
       }
     }
 
@@ -217,9 +234,18 @@ export function useProjectMetadata() {
       if (!currentPaths.has(loaded)) {
         loadedPathsRef.current.delete(loaded);
         documentIndexCache.delete(loaded);
+        cancelDocumentIndexJob(loaded);
+        forgetDocumentIndexMemo(loaded);
       }
     }
   }, [projects, setMetadata]);
+
+  // Document-index builds wait for startup to finish: they are background
+  // bookkeeping and must not compete with tree validation for IPC.
+  const startupReady = useSettingsStore((s) => s.startupReady);
+  useEffect(() => {
+    if (startupReady) startDocumentIndexQueue();
+  }, [startupReady]);
 
   // Debounced auto-save for dirty projects
   useEffect(() => {

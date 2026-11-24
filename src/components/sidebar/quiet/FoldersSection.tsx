@@ -891,7 +891,23 @@ const FolderChildItem = memo(function FolderChildItem({
     );
   }
   return childRow;
-});
+}, sameChildItemProps);
+
+/**
+ * A row reads only `folder.path` (where ArrowLeft goes), while the folder
+ * OBJECT is replaced whenever any file beneath it changes. Comparing it by
+ * identity re-rendered every row of the folder for a change in one
+ * subfolder; `entry` already says whether this row's own subtree changed.
+ */
+function sameChildItemProps(prev: FolderChildItemProps, next: FolderChildItemProps): boolean {
+  const keys = Object.keys(next) as Array<keyof FolderChildItemProps>;
+  if (keys.length !== Object.keys(prev).length) return false;
+  return keys.every((key) =>
+    key === "folder"
+      ? prev.folder.path === next.folder.path
+      : Object.is(prev[key], next[key]),
+  );
+}
 
 interface ChildRowProps {
   row: FolderRowDescriptor;
