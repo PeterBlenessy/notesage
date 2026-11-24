@@ -1,5 +1,7 @@
 pub mod db;
 mod file_scanner;
+mod fs_access;
+mod html_text;
 pub mod icloud;
 pub mod links;
 pub mod parser;
@@ -10,22 +12,55 @@ pub mod tasks;
 use queries::*;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
 use file_scanner::{has_dotfolder_component, is_indexable, scan_files};
+use fs_access::{FileAccess, FileStat, RealFs};
 use reindex_queue::ReindexEntry;
 pub use reindex_queue::process_reindex_queue;
 
+/// One content-index database: a connection behind its own lock, shared
+/// between the registry (`global_db` / `project_dbs`) and whoever is using it.
+pub(super) type DbHandle = Arc<Mutex<Connection>>;
+
 /// Managed state for the document index.
+///
+/// # Lock ordering
+///
+/// There are three kinds of lock, and the rule is short: **hold at most one
+/// connection lock at a time, and never take a connection lock while holding
+/// a registry lock.**
+///
+/// 1. *Registry / bookkeeping locks* — `global_db`, `project_dbs`,
+///    `reindex_queue`, `processing`, `reindex_counts`. These are leaves: they
+///    are held only long enough to clone a [`DbHandle`] out, insert or remove
+///    one, or read/update a small value, and nothing else is locked while one
+///    is held. (`link_scope_roots()` takes `project_dbs` this way, so it is
+///    safe to call from anywhere, including while a connection is locked.)
+/// 2. *Content connections* — the `Mutex` inside a [`DbHandle`]. Taken per
+///    unit of work (one file's rows, one query, one commit) and released in
+///    between, so a full reindex pass and queries on the same database
+///    interleave. A pass keeps its transaction open across those releases;
+///    a query that runs in between reads through the same connection and so
+///    sees what the pass has written so far.
+/// 3. *The link-graph connection* — `links_db`, taken per file the same way.
+///
+/// A content connection and `links_db` are never held together: a file's
+/// content rows are written and the connection released before its link rows
+/// are written. File I/O (stat, read, parse) happens with no lock held at all.
+/// The watcher's `self_writes` lock belongs to another module; it is only
+/// ever taken here with nothing else held (`index_toggle_task`).
 pub struct IndexState {
     /// Global index DB connection (~/.notesage/index.db)
-    pub(super) global_db: Mutex<Option<Connection>>,
+    pub(super) global_db: Mutex<Option<DbHandle>>,
     /// Per-project index DB connections (project_path → connection)
-    pub(super) project_dbs: Mutex<HashMap<PathBuf, Connection>>,
+    pub(super) project_dbs: Mutex<HashMap<PathBuf, DbHandle>>,
     /// Standalone link-graph DB connection (~/.notesage/links.db).
     /// Deliberately separate from the content index (ADR 0002/0003) — it holds
     /// the cross-project link graph and must never feed AI context.
@@ -87,43 +122,130 @@ impl IndexState {
     /// Index (or re-index) the link edges for a single file into `links.db`,
     /// scope-gated to projects + `~/Notesage` (ADR 0003). A no-op for
     /// out-of-scope (explorer) paths, non-markdown files, and unreadable files.
-    pub(super) fn index_links_for_file(&self, file_path: &str) {
+    ///
+    /// Takes the content the caller has already read for the content index,
+    /// so the file is not read a second time, and is only called for a file
+    /// whose content changed (or that is missing from the graph). Returns true
+    /// when the graph was written.
+    ///
+    /// SECURITY (ADR 0003): callers that have to read a file only for its
+    /// links check [`Self::is_link_source`] first, so explorer content is
+    /// never loaded for link extraction.
+    ///
+    /// `in_pass` joins the write to the pass transaction on `links.db`
+    /// (opening it if needed) instead of committing per file; the pass commits
+    /// it. Must be called with no connection lock held (see the lock ordering
+    /// on [`IndexState`]).
+    pub(super) fn index_links_with_content(
+        &self,
+        file_path: &str,
+        content: &str,
+        in_pass: bool,
+    ) -> bool {
         // Only markdown documents participate in the link graph.
         if !file_path.ends_with(".md") {
-            return;
+            return false;
         }
         let scope_roots = self.link_scope_roots();
-        // SECURITY (ADR 0003): bail before any read for out-of-scope paths so
-        // explorer content is never even loaded for link extraction.
         if !links::is_path_in_scope(file_path, &scope_roots) {
-            return;
+            return false;
         }
         if self.ensure_links_db().is_err() {
-            return;
+            return false;
         }
 
-        let content = match std::fs::read_to_string(file_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
         let file_name = Path::new(file_path)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let parsed = parser::parse_links(&content, file_path, &file_name);
+        let parsed = parser::parse_links(content, file_path, &file_name);
 
         let guard = self.links_db.lock();
-        if let Some(conn) = guard.as_ref() {
-            let _ = links::replace_source(
-                conn,
-                file_path,
-                &scope_roots,
-                parsed.meta.doc_type.as_deref(),
-                parsed.meta.title.as_deref(),
-                parsed.meta.description.as_deref(),
-                &parsed.edges,
-            );
+        match guard.as_ref() {
+            Some(conn) => {
+                if in_pass {
+                    db::ensure_txn(conn);
+                }
+                links::replace_source(
+                    conn,
+                    file_path,
+                    &scope_roots,
+                    parsed.meta.doc_type.as_deref(),
+                    parsed.meta.title.as_deref(),
+                    parsed.meta.description.as_deref(),
+                    &parsed.edges,
+                )
+                .is_ok()
+            }
+            None => false,
         }
+    }
+
+    /// True when `file_path` participates in the link graph: a markdown
+    /// document inside a project or `~/Notesage` (ADR 0003).
+    fn is_link_source(&self, file_path: &str) -> bool {
+        file_path.ends_with(".md")
+            && links::is_path_in_scope(file_path, &self.link_scope_roots())
+    }
+
+    /// Paths under `dir` already present in the link graph, or `None` when
+    /// the link store is unavailable.
+    fn linked_paths_under(&self, dir: &str) -> Option<HashSet<String>> {
+        let guard = self.links_db.lock();
+        guard
+            .as_ref()
+            .and_then(|conn| links::indexed_paths_under(conn, dir).ok())
+    }
+
+    /// Open the pass transaction on `links.db` unless one is already open.
+    fn begin_links_pass(&self) {
+        if let Some(conn) = self.links_db.lock().as_ref() {
+            db::ensure_txn(conn);
+        }
+    }
+
+    /// Commit the pass transaction on `links.db`, if one is open.
+    fn commit_links(&self) {
+        if let Some(conn) = self.links_db.lock().as_ref() {
+            db::commit_txn(conn);
+        }
+    }
+
+    /// The database a file belongs to: the first registered project whose
+    /// path prefixes it, else the global database. The handle is cloned out
+    /// so no registry lock is held while it is used.
+    pub(super) fn db_for_path(&self, file_path: &str) -> Option<(DbHandle, Option<String>)> {
+        {
+            let projects = self.project_dbs.lock();
+            for (project_path, handle) in projects.iter() {
+                let project_str = project_path.to_string_lossy();
+                // Component-wise, so `/lib/Work-archive/a.md` is not taken for
+                // a file of the project `/lib/Work`.
+                if Path::new(file_path).starts_with(project_path) {
+                    return Some((handle.clone(), Some(project_str.to_string())));
+                }
+            }
+        }
+        // Fall back to global DB
+        self.global_db.lock().as_ref().map(|handle| (handle.clone(), None))
+    }
+
+    /// Handles for the given projects (those that are registered) followed by
+    /// the global database.
+    fn query_handles(&self, project_paths: &[String]) -> Vec<DbHandle> {
+        let mut handles = Vec::new();
+        {
+            let projects = self.project_dbs.lock();
+            for pp in project_paths {
+                if let Some(handle) = projects.get(&PathBuf::from(pp)) {
+                    handles.push(handle.clone());
+                }
+            }
+        }
+        if let Some(handle) = self.global_db.lock().as_ref() {
+            handles.push(handle.clone());
+        }
+        handles
     }
 
     /// Remove a file's link edges + meta from `links.db` (delete reconcile).
@@ -138,7 +260,7 @@ impl IndexState {
     ///
     /// The watcher currently surfaces same-volume renames to the reindex queue
     /// as a Delete(old) + Create(new) pair, which `process_reindex_queue`
-    /// reconciles via `remove_links_for_file` + `index_links_for_file` (incoming
+    /// reconciles via `remove_links_for_file` + `index_links_with_content` (incoming
     /// edges to the old path survive as pending references, ADR 0007). This
     /// atomic-repoint primitive is the alternative the rename-sync path can call
     /// directly when both paths are known, preserving backlink resolution rather
@@ -161,14 +283,24 @@ impl IndexState {
 }
 
 /// Initialize the global index database.
+///
+/// An already-open database is kept: a second connection to the same file
+/// would contend with a pass that is still running on the first (`index_reset`
+/// is what closes a database so it can be reopened).
 fn init_global_db(state: &IndexState) -> Result<(), String> {
+    if state.global_db.lock().is_some() {
+        return Ok(());
+    }
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let db_path = home.join(".notesage").join("index.db");
 
     let conn = db::open_or_create(&db_path)?;
 
     let mut global = state.global_db.lock();
-    *global = Some(conn);
+    if global.is_none() {
+        *global = Some(Arc::new(Mutex::new(conn)));
+    }
+    drop(global);
 
     log::info!(target: "notesage::index", "Global index DB initialized at {}", db_path.display());
     Ok(())
@@ -178,7 +310,11 @@ fn init_global_db(state: &IndexState) -> Result<(), String> {
 /// Stored under ~/.notesage/indexes/<hash>/ to avoid iCloud sync corruption.
 /// Previously stored in <project>/.notesage/index.db which caused corruption
 /// when the project folder was on iCloud Drive (multi-device SQLite writes).
+/// An already-open database is kept, for the same reason as the global one.
 fn init_project_db(state: &IndexState, project_path: &str) -> Result<(), String> {
+    if state.project_dbs.lock().contains_key(Path::new(project_path)) {
+        return Ok(());
+    }
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
     let path_hash = {
@@ -194,8 +330,11 @@ fn init_project_db(state: &IndexState, project_path: &str) -> Result<(), String>
 
     let conn = db::open_or_create(&db_path)?;
 
-    let mut projects = state.project_dbs.lock();
-    projects.insert(PathBuf::from(project_path), conn);
+    state
+        .project_dbs
+        .lock()
+        .entry(PathBuf::from(project_path))
+        .or_insert_with(|| Arc::new(Mutex::new(conn)));
 
     // Migrate: remove old index.db from project's .notesage/ folder (was synced via iCloud)
     let old_db = Path::new(project_path).join(".notesage").join("index.db");
@@ -226,41 +365,121 @@ fn now_ts() -> u64 {
         .as_secs()
 }
 
-/// Determine which DB a file belongs to based on its path.
-pub(super) fn get_db_for_path<'a>(
-    global: &'a Option<Connection>,
-    projects: &'a HashMap<PathBuf, Connection>,
-    file_path: &str,
-) -> Option<(&'a Connection, Option<String>)> {
-    // Check if this file belongs to any project
-    for (project_path, conn) in projects.iter() {
-        let project_str = project_path.to_string_lossy();
-        if file_path.starts_with(project_str.as_ref()) {
-            return Some((conn, Some(project_str.to_string())));
-        }
-    }
-    // Fall back to global DB
-    global.as_ref().map(|conn| (conn, None))
+/// A file's stat is only trusted on its own when the file was indexed at least
+/// this long after its modification time. Inside the window a second write
+/// could land in the same timestamp tick (filesystems with 1s or 2s mtime
+/// granularity) with the same size, so the content is read and hashed instead.
+const RACY_STAT_WINDOW_SECS: i64 = 4;
+
+/// A pass commits after this many changed files, so quitting during a first
+/// build keeps most of the work, without paying for a commit per file.
+const PASS_COMMIT_EVERY: usize = 500;
+
+/// What a reindex did with one file.
+#[derive(Debug)]
+pub(super) enum FileOutcome {
+    /// Not a file the index covers (extension, dotfolder, `.notesage` metadata).
+    Ignored,
+    /// Could not be stat'ed or read.
+    Unreadable,
+    /// The content is not on this machine (an evicted iCloud file). It was not
+    /// read, and whatever the index already holds for it is left in place; it
+    /// is indexed when it becomes local (its flags, mtime or size change, or
+    /// the watcher reports it).
+    Dataless,
+    /// mtime and size match the indexed row: not read.
+    UnchangedStat,
+    /// Read, and the content hash matches the indexed row.
+    UnchangedContent(String),
+    /// Read and (re)indexed. Carries the content so the link graph can be
+    /// updated without reading the file again.
+    Changed(String),
 }
 
-/// Reindex a single file in the given database.
-pub(super) fn reindex_file_in_db(
-    conn: &Connection,
+/// The indexed row's change-detection columns.
+struct IndexedRow {
+    hash: String,
+    mtime: Option<i64>,
+    size: Option<i64>,
+    indexed_at: i64,
+}
+
+/// The stat gate: true when the file can be skipped without reading it.
+///
+/// A file whose mtime AND size both equal the stored values is taken as
+/// unchanged. Anything else falls through to a read and the content hash,
+/// which stays the authority on what changed (so a touched-but-identical file
+/// is read, found equal, and only has its stat refreshed). A row from before
+/// the stat columns existed has NULLs and never matches, so the first launch
+/// after that migration reads everything once (and rewrites it, see
+/// `reindex_file`). A forced full rebuild (parser version bump) clears the
+/// rows, which bypasses the gate entirely.
+///
+/// The one thing the gate cannot see is an edit that keeps both mtime and
+/// size (an editor that restores the old mtime); that is rare, and the next
+/// edit of the file corrects it.
+fn stat_gate_holds(row: &IndexedRow, stat: &FileStat) -> bool {
+    row.mtime == Some(stat.mtime_ns)
+        && row.size == Some(stat.size)
+        && stat.mtime_ns.div_euclid(1_000_000_000) + RACY_STAT_WINDOW_SECS <= row.indexed_at
+}
+
+/// A file's rows, computed from its content before any lock is taken.
+enum Prepared<'a> {
+    Markdown(Box<parser::ParsedFile>),
+    /// Non-markdown text: indexed for full-text search only.
+    Text { body: Cow<'a, str> },
+}
+
+fn prepare_file<'a>(file_path: &str, file_name: &str, content: &'a str) -> Prepared<'a> {
+    if file_path.ends_with(".md") {
+        // Full AST parsing for markdown files
+        let is_in_research_dir = file_path.contains("/research/");
+        let parsed = parser::parse_file(content, file_name, is_in_research_dir);
+        log::debug!(target: "notesage::index",
+            "Parsed {}: {} tags, {} mentions, {} headings, {} tasks",
+            file_path, parsed.tags.len(), parsed.mentions.len(),
+            parsed.headings.len(), parsed.tasks.len()
+        );
+        Prepared::Markdown(Box::new(parsed))
+    } else if html_text::is_html_path(file_path) {
+        // A saved page is searchable by what a reader sees, not by its markup,
+        // inline CSS/JS or base64 images.
+        Prepared::Text {
+            body: Cow::Owned(html_text::visible_text(content, html_text::MAX_HTML_TEXT_CHARS)),
+        }
+    } else {
+        Prepared::Text { body: Cow::Borrowed(content) }
+    }
+}
+
+/// Reindex a single file into the given database.
+///
+/// The connection is locked only around the row lookup and the row write;
+/// stat, read, hashing and parsing run with no lock held, so queries on the
+/// same database are not held up by file I/O.
+///
+/// `in_pass` joins the write to the pass transaction (opening it if needed)
+/// instead of committing per file; the pass commits it.
+pub(super) fn reindex_file(
+    db: &Mutex<Connection>,
+    fs: &dyn FileAccess,
     file_path: &str,
     project_path: Option<&str>,
-) -> Result<bool, String> {
+    in_pass: bool,
+) -> Result<FileOutcome, String> {
     let path = Path::new(file_path);
 
     // Skip transient temp files (e.g., .tmp from atomic writes)
     if let Some(ext) = path.extension() {
         if ext == "tmp" {
-            return Ok(false);
+            return Ok(FileOutcome::Ignored);
         }
     }
 
     // Skip non-indexable files (binary, non-text extensions)
     if !is_indexable(file_path) {
-        return Ok(false);
+        return Ok(FileOutcome::Ignored);
     }
 
     // Skip files inside any dotfolder (e.g. .git/, .ssh/, .config/).
@@ -268,229 +487,379 @@ pub(super) fn reindex_file_in_db(
     // gap for the watcher-triggered single-file path that bypasses scan_files.
     // .notesage is excluded from this check so .notesage/research/ files remain indexable.
     if has_dotfolder_component(file_path) {
-        return Ok(false);
+        return Ok(FileOutcome::Ignored);
     }
 
     // Skip .notesage metadata files (state/, index.db, etc.) — only research/ is indexable
     // scan_files() already filters this for bulk indexing, but watcher-triggered single-file
     // indexing bypasses scan_files and lands here directly.
     if file_path.contains("/.notesage/") && !file_path.contains("/.notesage/research/") {
-        return Ok(false);
+        return Ok(FileOutcome::Ignored);
+    }
+
+    let stat = match fs.stat(path) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(target: "notesage::index", "Cannot read {}: {}", file_path, e);
+            return Ok(FileOutcome::Unreadable);
+        }
+    };
+
+    // An evicted iCloud file: reading it would download it. Leave it, and
+    // whatever is indexed for it, alone.
+    if stat.dataless {
+        log::debug!(target: "notesage::index", "Skipping {} (not downloaded)", file_path);
+        return Ok(FileOutcome::Dataless);
+    }
+
+    let existing: Option<IndexedRow> = db
+        .lock()
+        .query_row(
+            "SELECT content_hash, mtime, size, indexed_at FROM files WHERE path = ?1",
+            [file_path],
+            |row| {
+                Ok(IndexedRow {
+                    hash: row.get(0)?,
+                    mtime: row.get(1)?,
+                    size: row.get(2)?,
+                    indexed_at: row.get(3)?,
+                })
+            },
+        )
+        .ok();
+
+    if existing.as_ref().is_some_and(|row| stat_gate_holds(row, &stat)) {
+        return Ok(FileOutcome::UnchangedStat);
     }
 
     // Read file content
-    let content = match std::fs::read_to_string(path) {
+    let content = match fs.read(path) {
         Ok(c) => c,
         Err(e) => {
             log::warn!(target: "notesage::index", "Cannot read {}: {}", file_path, e);
-            return Ok(false);
+            return Ok(FileOutcome::Unreadable);
         }
     };
 
     let hash = content_hash(&content);
 
-    // Check if file already indexed with same hash
-    let existing_hash: Option<String> = conn
-        .query_row(
-            "SELECT content_hash FROM files WHERE path = ?1",
-            [file_path],
-            |row| row.get(0),
-        )
-        .ok();
-
-    if existing_hash.as_deref() == Some(hash.as_str()) {
+    // Same content as indexed: only remember the new stat, so the next pass
+    // can skip the read. A row without a stat predates schema v2, whose
+    // migration dropped the full-text table, so that row is rewritten in full
+    // even though its hash matches.
+    if existing
+        .as_ref()
+        .is_some_and(|row| row.hash == hash && row.mtime.is_some())
+    {
         log::debug!(target: "notesage::index", "Skipping {} (hash unchanged)", file_path);
-        return Ok(false); // No change
+        let conn = db.lock();
+        if in_pass {
+            db::ensure_txn(&conn);
+        }
+        let _ = conn.execute(
+            "UPDATE files SET mtime = ?1, size = ?2, indexed_at = ?3 WHERE path = ?4",
+            rusqlite::params![stat.mtime_ns, stat.size, now_ts() as i64, file_path],
+        );
+        return Ok(FileOutcome::UnchangedContent(content));
     }
 
     log::debug!(target: "notesage::index", "Indexing {} (hash {} → {})",
         file_path,
-        existing_hash.as_deref().unwrap_or("new"),
+        existing.as_ref().map(|row| row.hash.as_str()).unwrap_or("new"),
         &hash[..8]
     );
 
-    // Remove old data for this file and re-index inside a savepoint.
-    // If any step fails, the savepoint rolls back so the stale hash doesn't
-    // prevent future re-indexing of tags/mentions.
-    conn.execute_batch("SAVEPOINT index_file").map_err(|e| format!("Savepoint: {}", e))?;
-    let result = index_file_inner(conn, file_path, project_path, &content, &hash);
-    if let Err(ref e) = result {
-        log::warn!(target: "notesage::index", "Index failed for {}: {}", file_path, e);
-        let _ = conn.execute_batch("ROLLBACK TO SAVEPOINT index_file");
-    } else {
-        let _ = conn.execute_batch("RELEASE SAVEPOINT index_file");
+    let result = {
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let prepared = prepare_file(file_path, &file_name, &content);
+
+        // Remove old data for this file and re-index inside a savepoint.
+        // If any step fails, the savepoint rolls back so the stale hash doesn't
+        // prevent future re-indexing of tags/mentions.
+        let conn = db.lock();
+        if in_pass {
+            db::ensure_txn(&conn);
+        }
+        db::with_savepoint(&conn, || {
+            write_file_rows(&conn, file_path, &file_name, project_path, &hash, &stat, &prepared)
+        })
+    };
+    match result {
+        Ok(()) => Ok(FileOutcome::Changed(content)),
+        Err(e) => {
+            log::warn!(target: "notesage::index", "Index failed for {}: {}", file_path, e);
+            Err(e)
+        }
     }
-    return result;
 }
 
-fn index_file_inner(
+fn write_file_rows(
     conn: &rusqlite::Connection,
     file_path: &str,
+    file_name: &str,
     project_path: Option<&str>,
-    content: &str,
     hash: &str,
-) -> Result<bool, String> {
-    let path = std::path::Path::new(file_path);
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let is_markdown = file_path.ends_with(".md");
-    let is_in_research_dir = file_path.contains("/research/");
-
+    stat: &FileStat,
+    prepared: &Prepared<'_>,
+) -> Result<(), String> {
     let _ = db::remove_file(conn, file_path);
 
-    if is_markdown {
-        // Full AST parsing for markdown files
-        let parsed = parser::parse_file(&content, &file_name, is_in_research_dir);
-        log::debug!(target: "notesage::index",
-            "Parsed {}: {} tags, {} mentions, {} headings, {} tasks",
-            file_path, parsed.tags.len(), parsed.mentions.len(),
-            parsed.headings.len(), parsed.tasks.len()
-        );
-
-        // Insert file record
-        conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![
-                file_path,
-                file_name,
-                project_path,
-                hash,
-                parsed.title,
-                parsed.has_frontmatter as i32,
-                now_ts() as i64,
-            ],
-        )
-        .map_err(|e| format!("Failed to insert file: {}", e))?;
-
-        let file_id = conn.last_insert_rowid();
-
-        // Insert FTS data
-        conn.execute(
-            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
-            rusqlite::params![file_id, parsed.title.as_deref().unwrap_or(""), parsed.body_text],
-        )
-        .map_err(|e| format!("Failed to insert FTS: {}", e))?;
-
-        // Insert tags
-        for tag in &parsed.tags {
+    match prepared {
+        Prepared::Markdown(parsed) => {
+            // Insert file record
             conn.execute(
-                "INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![file_id, tag.tag, tag.context_before, tag.context_after],
+                "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at, mtime, size)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    file_path,
+                    file_name,
+                    project_path,
+                    hash,
+                    parsed.title,
+                    parsed.has_frontmatter as i32,
+                    now_ts() as i64,
+                    stat.mtime_ns,
+                    stat.size,
+                ],
             )
-            .map_err(|e| format!("Failed to insert tag: {}", e))?;
-        }
+            .map_err(|e| format!("Failed to insert file: {}", e))?;
 
-        // Insert mentions
-        for mention in &parsed.mentions {
+            let file_id = conn.last_insert_rowid();
+
+            // Insert FTS data
             conn.execute(
-                "INSERT INTO mentions (file_id, mention, context_before, context_after) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![file_id, mention.mention, mention.context_before, mention.context_after],
+                "INSERT INTO files_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
+                rusqlite::params![file_id, parsed.title.as_deref().unwrap_or(""), parsed.body_text],
             )
-            .map_err(|e| format!("Failed to insert mention: {}", e))?;
-        }
+            .map_err(|e| format!("Failed to insert FTS: {}", e))?;
 
-        // Insert headings
-        for heading in &parsed.headings {
-            conn.execute(
-                "INSERT INTO headings (file_id, level, text, position) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![file_id, heading.level as i32, heading.text, heading.position as i64],
-            )
-            .map_err(|e| format!("Failed to insert heading: {}", e))?;
-        }
-
-        // Insert tasks
-        for task in &parsed.tasks {
-            conn.execute(
-                "INSERT INTO tasks (file_id, text, done, position, context_before, context_after) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![file_id, task.text, task.done as i32, task.position as i64, task.context_before, task.context_after],
-            )
-            .map_err(|e| format!("Failed to insert task: {}", e))?;
-        }
-
-        // Insert research metadata
-        if let Some(ref research) = parsed.research {
-            conn.execute(
-                "INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![file_id, research.source_url, research.date_saved, research.word_count as i64, research.snippet],
-            )
-            .map_err(|e| format!("Failed to insert research: {}", e))?;
-
-            let research_id = conn.last_insert_rowid();
-            for tag in &research.tags {
+            // Insert tags
+            for tag in &parsed.tags {
                 conn.execute(
-                    "INSERT INTO research_tags (research_id, tag) VALUES (?1, ?2)",
-                    rusqlite::params![research_id, tag],
+                    "INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![file_id, tag.tag, tag.context_before, tag.context_after],
                 )
-                .map_err(|e| format!("Failed to insert research tag: {}", e))?;
+                .map_err(|e| format!("Failed to insert tag: {}", e))?;
+            }
+
+            // Insert mentions
+            for mention in &parsed.mentions {
+                conn.execute(
+                    "INSERT INTO mentions (file_id, mention, context_before, context_after) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![file_id, mention.mention, mention.context_before, mention.context_after],
+                )
+                .map_err(|e| format!("Failed to insert mention: {}", e))?;
+            }
+
+            // Insert headings
+            for heading in &parsed.headings {
+                conn.execute(
+                    "INSERT INTO headings (file_id, level, text, position) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![file_id, heading.level as i32, heading.text, heading.position as i64],
+                )
+                .map_err(|e| format!("Failed to insert heading: {}", e))?;
+            }
+
+            // Insert tasks
+            for task in &parsed.tasks {
+                conn.execute(
+                    "INSERT INTO tasks (file_id, text, done, position, context_before, context_after) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![file_id, task.text, task.done as i32, task.position as i64, task.context_before, task.context_after],
+                )
+                .map_err(|e| format!("Failed to insert task: {}", e))?;
+            }
+
+            // Insert research metadata
+            if let Some(ref research) = parsed.research {
+                conn.execute(
+                    "INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![file_id, research.source_url, research.date_saved, research.word_count as i64, research.snippet],
+                )
+                .map_err(|e| format!("Failed to insert research: {}", e))?;
+
+                let research_id = conn.last_insert_rowid();
+                for tag in &research.tags {
+                    conn.execute(
+                        "INSERT INTO research_tags (research_id, tag) VALUES (?1, ?2)",
+                        rusqlite::params![research_id, tag],
+                    )
+                    .map_err(|e| format!("Failed to insert research tag: {}", e))?;
+                }
+            }
+
+            // Insert goal metadata
+            if let Some(ref goal) = parsed.goal {
+                conn.execute(
+                    "INSERT INTO goals (file_id, title, template, total_tasks, completed_tasks) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![file_id, goal.title, goal.template, goal.total_tasks as i64, goal.completed_tasks as i64],
+                )
+                .map_err(|e| format!("Failed to insert goal: {}", e))?;
             }
         }
+        Prepared::Text { body } => {
+            // FTS-only indexing for non-markdown text files
+            let title = Path::new(file_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string());
 
-        // Insert goal metadata
-        if let Some(ref goal) = parsed.goal {
             conn.execute(
-                "INSERT INTO goals (file_id, title, template, total_tasks, completed_tasks) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![file_id, goal.title, goal.template, goal.total_tasks as i64, goal.completed_tasks as i64],
+                "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at, mtime, size)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8)",
+                rusqlite::params![
+                    file_path,
+                    file_name,
+                    project_path,
+                    hash,
+                    title,
+                    now_ts() as i64,
+                    stat.mtime_ns,
+                    stat.size,
+                ],
             )
-            .map_err(|e| format!("Failed to insert goal: {}", e))?;
+            .map_err(|e| format!("Failed to insert file: {}", e))?;
+
+            let file_id = conn.last_insert_rowid();
+
+            conn.execute(
+                "INSERT INTO files_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
+                rusqlite::params![file_id, title.as_deref().unwrap_or(""), body.as_ref()],
+            )
+            .map_err(|e| format!("Failed to insert FTS: {}", e))?;
         }
-    } else {
-        // FTS-only indexing for non-markdown text files
-        let title = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string());
-
-        conn.execute(
-            "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
-            rusqlite::params![
-                file_path,
-                file_name,
-                project_path,
-                hash,
-                title,
-                now_ts() as i64,
-            ],
-        )
-        .map_err(|e| format!("Failed to insert file: {}", e))?;
-
-        let file_id = conn.last_insert_rowid();
-
-        conn.execute(
-            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
-            rusqlite::params![file_id, title.as_deref().unwrap_or(""), content],
-        )
-        .map_err(|e| format!("Failed to insert FTS: {}", e))?;
     }
 
-    Ok(true) // Changed
+    Ok(())
 }
 
-/// Full index rebuild for a directory into a DB.
+/// What one directory pass did. `read` is the number that matters on an
+/// unchanged launch: it should be 0.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PassCounters {
+    /// Indexable files found under the directory.
+    pub scanned: usize,
+    /// Files whose content was read.
+    pub read: usize,
+    /// Files whose index rows were rewritten.
+    pub changed: usize,
+    /// Evicted iCloud files left alone.
+    pub skipped_dataless: usize,
+    /// Files whose link-graph rows were rewritten.
+    pub links_written: usize,
+    /// Index rows removed because the file is gone.
+    pub pruned: usize,
+}
+
+/// The transaction(s) of one directory pass: one on the content database and
+/// one on `links.db`, opened lazily by the first write and committed in
+/// chunks and at the end (also when the pass unwinds).
+///
+/// The link graph is committed FIRST. A content row is what lets the next
+/// launch skip a file, so it must never be durable before the link rows it
+/// vouches for; the other way round only costs a re-read.
+struct PassTxn<'a> {
+    state: &'a IndexState,
+    db: &'a Mutex<Connection>,
+}
+
+impl PassTxn<'_> {
+    fn commit(&self) {
+        self.state.commit_links();
+        db::commit_txn(&self.db.lock());
+    }
+}
+
+impl Drop for PassTxn<'_> {
+    fn drop(&mut self) {
+        self.commit();
+    }
+}
+
+/// True for a markdown document that has no row in the link graph yet.
+fn missing_from_graph(linked: &Option<HashSet<String>>, file_path: &str) -> bool {
+    file_path.ends_with(".md") && linked.as_ref().is_some_and(|known| !known.contains(file_path))
+}
+
+/// Bring a directory's index up to date: content rows and link graph.
+///
+/// Files are statted, and read only when the stat gate does not hold. The
+/// link graph is updated for the files that changed, from the content already
+/// read. The connection locks are taken per file (see the lock ordering on
+/// [`IndexState`]), and writes go into one transaction per pass, committed
+/// every [`PASS_COMMIT_EVERY`] changed files.
 fn reindex_directory(
-    conn: &Connection,
+    state: &IndexState,
+    db: &Mutex<Connection>,
+    fs: &dyn FileAccess,
     dir: &str,
     project_path: Option<&str>,
     app: Option<&AppHandle>,
-) -> Result<IndexStats, String> {
+) -> Result<(IndexStats, PassCounters), String> {
     let start = Instant::now();
     let dir_path = Path::new(dir);
     let mut files = Vec::new();
     scan_files(dir_path, &mut files);
+    let paths: Vec<String> = files
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
 
-    let total = files.len();
-    let mut changed = 0;
+    let total = paths.len();
+    let mut counters = PassCounters {
+        scanned: total,
+        ..PassCounters::default()
+    };
 
-    for (i, file_path) in files.iter().enumerate() {
-        let path_str = file_path.to_string_lossy().to_string();
-        match reindex_file_in_db(conn, &path_str, project_path) {
-            Ok(true) => changed += 1,
-            Ok(false) => {} // No change
+    let _ = state.ensure_links_db();
+    // Documents the graph already knows. An unchanged document that is NOT in
+    // it (links.db deleted or reset on its own) is read once more to restore
+    // its links; with an intact graph this costs one query and no reads.
+    let linked = state.linked_paths_under(dir);
+
+    let txn = PassTxn { state, db };
+    let mut uncommitted = 0;
+
+    for (i, path_str) in paths.iter().enumerate() {
+        match reindex_file(db, fs, path_str, project_path, true) {
+            Ok(FileOutcome::Changed(content)) => {
+                counters.read += 1;
+                counters.changed += 1;
+                uncommitted += 1;
+                if state.index_links_with_content(path_str, &content, true) {
+                    counters.links_written += 1;
+                }
+            }
+            Ok(FileOutcome::UnchangedContent(content)) => {
+                counters.read += 1;
+                if missing_from_graph(&linked, path_str)
+                    && state.index_links_with_content(path_str, &content, true)
+                {
+                    counters.links_written += 1;
+                }
+            }
+            Ok(FileOutcome::UnchangedStat) => {
+                // SECURITY (ADR 0003): the scope check comes before the read.
+                if missing_from_graph(&linked, path_str) && state.is_link_source(path_str) {
+                    if let Ok(content) = fs.read(Path::new(path_str)) {
+                        counters.read += 1;
+                        if state.index_links_with_content(path_str, &content, true) {
+                            counters.links_written += 1;
+                        }
+                    }
+                }
+            }
+            Ok(FileOutcome::Dataless) => counters.skipped_dataless += 1,
+            Ok(FileOutcome::Ignored) | Ok(FileOutcome::Unreadable) => {}
             Err(e) => {
                 log::warn!(target: "notesage::index", "Failed to index {}: {}", path_str, e);
             }
+        }
+
+        if uncommitted >= PASS_COMMIT_EVERY {
+            txn.commit();
+            uncommitted = 0;
         }
 
         // Emit progress for large batches
@@ -504,62 +873,99 @@ fn reindex_directory(
         }
     }
 
-    // Prune files that no longer exist on disk
-    prune_deleted_files(conn)?;
+    // Prune files that no longer exist on disk, and their links with them.
+    let scanned: HashSet<&str> = paths.iter().map(String::as_str).collect();
+    let pruned = prune_deleted_files(db, &scanned)?;
+    counters.pruned = pruned.len();
+    if pruned.iter().any(|path| path.ends_with(".md")) {
+        state.begin_links_pass();
+        for path in pruned.iter().filter(|path| path.ends_with(".md")) {
+            state.remove_links_for_file(path);
+        }
+    }
+
+    txn.commit();
+    drop(txn);
 
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     let project_name = project_path.unwrap_or("global");
-    log::debug!(
+    // Info, so a launch profile can be read from the log file. `read` is the
+    // cost to watch: on a launch where nothing changed it should be 0.
+    log::info!(
         target: "notesage::index",
-        "[perf:index] build: project={} files={} changed={} ms={:.1}",
-        project_name, total, changed, elapsed_ms
+        "[perf:index] build: project={} files={} read={} changed={} skipped_dataless={} links_written={} pruned={} ms={:.1}",
+        project_name,
+        counters.scanned,
+        counters.read,
+        counters.changed,
+        counters.skipped_dataless,
+        counters.links_written,
+        counters.pruned,
+        elapsed_ms
     );
 
     log::info!(
         target: "notesage::index",
         "Indexed {}/{} files ({} changed) in {}",
-        total, total, changed, dir
+        total, total, counters.changed, dir
     );
 
-    queries::query_stats(conn)
+    let stats = queries::query_stats(&db.lock())?;
+    Ok((stats, counters))
 }
 
-/// Bulk-index the link graph for every markdown file under `dir`.
-///
-/// Called after the content reindex (so the content-DB locks are released —
-/// `index_links_for_file` locks `project_dbs` internally). Scope-gated per
-/// file (ADR 0003); explorer paths never reach here because explorer folders
-/// are never passed to `index_init`.
-fn reindex_links_for_directory(state: &IndexState, dir: &str) {
-    let dir_path = Path::new(dir);
-    let mut files = Vec::new();
-    scan_files(dir_path, &mut files);
-    for file_path in &files {
-        let path_str = file_path.to_string_lossy().to_string();
-        if path_str.ends_with(".md") {
-            state.index_links_for_file(&path_str);
-        }
+/// True when the path, or the placeholder older macOS versions leave for an
+/// evicted iCloud file (`.name.icloud` beside it), exists. Uses `stat` only,
+/// so it never downloads anything.
+fn path_is_present(path: &str) -> bool {
+    let path = Path::new(path);
+    if path.exists() {
+        return true;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .join(format!(".{}.icloud", name.to_string_lossy()))
+            .exists(),
+        _ => false,
     }
 }
 
-/// Remove index entries for files that no longer exist on disk.
-fn prune_deleted_files(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files")
-        .map_err(|e| e.to_string())?;
+/// Remove index entries for files that no longer exist on disk, returning
+/// their paths.
+///
+/// A file the scan just listed exists, so only rows the scan did NOT list are
+/// checked on disk (rows for files outside the scanned directory, or in a
+/// directory the scan skips, are kept as long as the file is there). An
+/// evicted iCloud file is listed by the scan and is therefore never pruned.
+fn prune_deleted_files(
+    db: &Mutex<Connection>,
+    scanned: &HashSet<&str>,
+) -> Result<Vec<String>, String> {
+    let unlisted: Vec<String> = {
+        let conn = db.lock();
+        let mut stmt = conn
+            .prepare("SELECT path FROM files")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok())
+            .filter(|path| !scanned.contains(path.as_str()))
+            .collect()
+    };
 
-    let to_delete: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .filter(|(_, path): &(i64, String)| !Path::new(path).exists())
+    // Disk checks with the connection released.
+    let to_delete: Vec<String> = unlisted
+        .into_iter()
+        .filter(|path| !path_is_present(path))
         .collect();
 
-    for (_, path) in &to_delete {
-        let _ = db::remove_file(conn, path);
-    }
-
     if !to_delete.is_empty() {
+        let conn = db.lock();
+        db::ensure_txn(&conn);
+        for path in &to_delete {
+            let _ = db::remove_file(&conn, path);
+        }
         log::info!(
             target: "notesage::index",
             "Pruned {} deleted files from index",
@@ -567,7 +973,7 @@ fn prune_deleted_files(conn: &Connection) -> Result<(), String> {
         );
     }
 
-    Ok(())
+    Ok(to_delete)
 }
 
 // ---- Tauri Commands ----
@@ -629,15 +1035,14 @@ fn index_init_blocking(
             }
         }
 
-        let stats = {
-            let projects = state.project_dbs.lock();
-            match projects.get(&PathBuf::from(pp)) {
-                Some(conn) => reindex_directory(conn, pp, Some(pp), Some(app))?,
-                None => return Err("Failed to get project DB after init".to_string()),
-            }
+        // Clone the handle out: the registry lock is not held during the pass,
+        // and the pass locks the connection per file, so queries interleave.
+        let handle = state.project_dbs.lock().get(&PathBuf::from(pp)).cloned();
+        let stats = match handle {
+            // Content rows and link graph are updated in the same pass.
+            Some(db) => reindex_directory(state, &db, &RealFs, pp, Some(pp), Some(app))?.0,
+            None => return Err("Failed to get project DB after init".to_string()),
         };
-        // Link-graph pass runs after the content-DB lock is released.
-        reindex_links_for_directory(state, pp);
         let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
         Ok(stats)
     } else {
@@ -648,48 +1053,89 @@ fn index_init_blocking(
         let notesage_dir = home.join("Notesage");
         let notesage_str = notesage_dir.to_string_lossy().to_string();
 
-        let stats = {
-            let global = state.global_db.lock();
-            match *global {
-                Some(ref conn) => {
-                    if notesage_dir.is_dir() {
-                        reindex_directory(conn, &notesage_str, None, Some(app))?
-                    } else {
-                        queries::query_stats(conn)?
-                    }
+        let handle = state.global_db.lock().clone();
+        let stats = match handle {
+            Some(db) => {
+                if notesage_dir.is_dir() {
+                    // Content rows and link graph for the ~/Notesage library.
+                    reindex_directory(state, &db, &RealFs, &notesage_str, None, Some(app))?.0
+                } else {
+                    queries::query_stats(&db.lock())?
                 }
-                None => return Err("Failed to get global DB after init".to_string()),
             }
+            None => return Err("Failed to get global DB after init".to_string()),
         };
-        // Link-graph pass for the ~/Notesage library (lock released above).
-        if notesage_dir.is_dir() {
-            reindex_links_for_directory(state, &notesage_str);
-        }
         let _ = app.emit("index-ready", serde_json::json!({ "project_path": serde_json::Value::Null }));
         Ok(stats)
+    }
+}
+
+/// Open the global database and every given project's database WITHOUT
+/// indexing anything.
+///
+/// Startup no longer waits for the index pass, so the file watcher is live
+/// while projects are still being indexed one after another. A watcher event
+/// for a file in a project whose database is not registered yet would fall
+/// back to the global database (`db_for_path`), be indexed there, never be
+/// pruned from it, and be counted twice by every query from then on. The
+/// frontend therefore calls this before it starts the watchers: opening a
+/// database is cheap, and once it is registered events route correctly even
+/// though the project's own pass has not run.
+///
+/// A project whose database cannot be opened is logged and skipped; the
+/// index pass that follows reports and recovers it.
+#[tauri::command]
+pub async fn index_open(app: AppHandle, project_paths: Vec<String>) -> Result<(), String> {
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        open_databases(&state, &project_paths);
+        Ok(())
+    })
+    .await
+}
+
+fn open_databases(state: &IndexState, project_paths: &[String]) {
+    if let Err(e) = init_global_db(state) {
+        log::warn!(target: "notesage::index", "Could not open the global index: {}", e);
+    }
+    for project_path in project_paths {
+        let opened = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            init_project_db(state, project_path)
+        }));
+        match opened {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                log::warn!(target: "notesage::index", "Could not open the index for {}: {}", project_path, e)
+            }
+            Err(_) => {
+                log::warn!(target: "notesage::index", "Opening the index for {} panicked", project_path)
+            }
+        }
     }
 }
 
 /// Force reindex a specific file.
 #[tauri::command]
 pub async fn index_file(app: AppHandle, path: String) -> Result<(), String> {
-    // Off the async workers: this waits on the index locks, which a full
-    // reindex can hold for a long time.
+    // Off the async workers: this does file I/O and waits on a connection.
     run_blocking(move || {
         let state = app.state::<IndexState>();
-        {
-            let global = state.global_db.lock();
-            let projects = state.project_dbs.lock();
-
-            if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
-                reindex_file_in_db(conn, &path, project_path.as_deref())?;
-            }
-        }
-        // Link-graph pass after content-DB locks are released (scope-gated).
-        state.index_links_for_file(&path);
-        Ok(())
+        reindex_one(&state, &RealFs, &path)
     })
     .await
+}
+
+/// Reindex one file into the database it belongs to, then its links if its
+/// content changed (scope-gated; the connection is released first).
+fn reindex_one(state: &IndexState, fs: &dyn FileAccess, path: &str) -> Result<(), String> {
+    if let Some((db, project_path)) = state.db_for_path(path) {
+        if let FileOutcome::Changed(content) =
+            reindex_file(&db, fs, path, project_path.as_deref(), false)?
+        {
+            state.index_links_with_content(path, &content, false);
+        }
+    }
+    Ok(())
 }
 
 /// Delete an index database (and WAL/SHM files) and remove it from state.
@@ -700,10 +1146,14 @@ pub async fn index_reset(
     project_path: Option<String>,
 ) -> Result<(), String> {
     if let Some(ref pp) = project_path {
-        // Remove connection from state (drops the Connection, closing the DB)
-        {
-            let mut projects = state.project_dbs.lock();
-            projects.remove(&PathBuf::from(pp));
+        // Remove the connection from state. It closes when the last handle to
+        // it is dropped; taking its lock once (with the registry lock already
+        // released) waits out a write that is in flight. A pass still running
+        // on the old handle finishes against the unlinked file and its work
+        // is discarded, which is what a reset asks for.
+        let removed = state.project_dbs.lock().remove(&PathBuf::from(pp));
+        if let Some(handle) = removed {
+            drop(handle.lock());
         }
 
         // Delete DB files
@@ -723,10 +1173,10 @@ pub async fn index_reset(
 
         log::info!(target: "notesage::index", "Reset project index for {}", pp);
     } else {
-        // Remove global DB connection
-        {
-            let mut global = state.global_db.lock();
-            *global = None;
+        // Remove global DB connection (see the project branch above)
+        let removed = state.global_db.lock().take();
+        if let Some(handle) = removed {
+            drop(handle.lock());
         }
 
         // Delete DB files
@@ -744,6 +1194,11 @@ pub async fn index_reset(
 }
 
 /// Helper to run a query across multiple DBs and merge results.
+///
+/// Queries the project DBs that match the given paths, then always the global
+/// DB. Each connection is locked for its own query only, so a reindex pass on
+/// the same database delays a query by at most one file's write, and the
+/// query sees what that pass has indexed so far.
 fn with_dbs<T, F>(
     state: &IndexState,
     project_paths: &[String],
@@ -752,258 +1207,280 @@ fn with_dbs<T, F>(
 where
     F: Fn(&Connection) -> Result<Vec<T>, String>,
 {
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
-
     let mut results = Vec::new();
-
-    // Query project DBs that match the given paths
-    for pp in project_paths {
-        if let Some(conn) = projects.get(&PathBuf::from(pp)) {
-            results.extend(query_fn(conn)?);
-        }
+    for handle in state.query_handles(project_paths) {
+        let conn = handle.lock();
+        results.extend(query_fn(&conn)?);
     }
-
-    // Always also query global DB
-    if let Some(ref conn) = *global {
-        results.extend(query_fn(conn)?);
-    }
-
     Ok(results)
 }
 
 /// Query tags across projects.
 #[tauri::command]
 pub async fn index_tags(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     query: Option<String>,
 ) -> Result<Vec<IndexedTag>, String> {
-    let start = Instant::now();
-    let mut all_tags: HashMap<String, usize> = HashMap::new();
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let mut all_tags: HashMap<String, usize> = HashMap::new();
 
-    let tags_per_db = with_dbs(&state, &project_paths, |conn| {
-        queries::query_tags(conn, query.as_deref())
-    })?;
+        let tags_per_db = with_dbs(&state, &project_paths, |conn| {
+            queries::query_tags(conn, query.as_deref())
+        })?;
 
-    // Merge tags across DBs
-    for tag in tags_per_db {
-        *all_tags.entry(tag.tag).or_insert(0) += tag.file_count;
-    }
+        // Merge tags across DBs
+        for tag in tags_per_db {
+            *all_tags.entry(tag.tag).or_insert(0) += tag.file_count;
+        }
 
-    let mut result: Vec<IndexedTag> = all_tags
-        .into_iter()
-        .map(|(tag, file_count)| IndexedTag { tag, file_count })
-        .collect();
-    result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.tag.cmp(&b.tag)));
+        let mut result: Vec<IndexedTag> = all_tags
+            .into_iter()
+            .map(|(tag, file_count)| IndexedTag { tag, file_count })
+            .collect();
+        result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.tag.cmp(&b.tag)));
 
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=tags results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=tags results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
 }
 
 /// Query tag occurrences across projects.
 #[tauri::command]
 pub async fn index_tag_occurrences(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     tag: String,
     project_paths: Vec<String>,
 ) -> Result<Vec<TagOccurrence>, String> {
-    let start = Instant::now();
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_tag_occurrences(conn, &tag)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=tag_occurrences results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_tag_occurrences(conn, &tag)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=tag_occurrences results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Query mentions across projects.
 #[tauri::command]
 pub async fn index_mentions(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     query: Option<String>,
 ) -> Result<Vec<IndexedMention>, String> {
-    let start = Instant::now();
-    let mut all_mentions: HashMap<String, usize> = HashMap::new();
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let mut all_mentions: HashMap<String, usize> = HashMap::new();
 
-    let mentions_per_db = with_dbs(&state, &project_paths, |conn| {
-        queries::query_mentions(conn, query.as_deref())
-    })?;
+        let mentions_per_db = with_dbs(&state, &project_paths, |conn| {
+            queries::query_mentions(conn, query.as_deref())
+        })?;
 
-    for mention in mentions_per_db {
-        *all_mentions.entry(mention.mention).or_insert(0) += mention.file_count;
-    }
+        for mention in mentions_per_db {
+            *all_mentions.entry(mention.mention).or_insert(0) += mention.file_count;
+        }
 
-    let mut result: Vec<IndexedMention> = all_mentions
-        .into_iter()
-        .map(|(mention, file_count)| IndexedMention { mention, file_count })
-        .collect();
-    result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.mention.cmp(&b.mention)));
+        let mut result: Vec<IndexedMention> = all_mentions
+            .into_iter()
+            .map(|(mention, file_count)| IndexedMention { mention, file_count })
+            .collect();
+        result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.mention.cmp(&b.mention)));
 
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=mentions results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=mentions results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
 }
 
 /// Query mention occurrences across projects.
 #[tauri::command]
 pub async fn index_mention_occurrences(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     mention: String,
     project_paths: Vec<String>,
 ) -> Result<Vec<TagOccurrence>, String> {
-    let start = Instant::now();
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_mention_occurrences(conn, &mention)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=mention_occurrences results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_mention_occurrences(conn, &mention)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=mention_occurrences results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Search research files across projects.
 #[tauri::command]
 pub async fn index_search_research(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     query: Option<String>,
     tag: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<ResearchResult>, String> {
-    let start = Instant::now();
-    let lim = limit.unwrap_or(50);
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_research(conn, query.as_deref(), tag.as_deref(), lim)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=search_research results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let lim = limit.unwrap_or(50);
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_research(conn, query.as_deref(), tag.as_deref(), lim)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=search_research results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Query tasks across projects.
 #[tauri::command]
 pub async fn index_tasks(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     done: Option<bool>,
     query: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<IndexedTask>, String> {
-    let start = Instant::now();
-    let lim = limit.unwrap_or(500);
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_tasks(conn, done, query.as_deref(), lim)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=tasks results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let lim = limit.unwrap_or(500);
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_tasks(conn, done, query.as_deref(), lim)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=tasks results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Toggle a task's completion status via context-based matching.
 #[tauri::command]
 pub async fn index_toggle_task(
     app: AppHandle,
-    state: tauri::State<'_, IndexState>,
     path: String,
     context_before: String,
     context_after: String,
     task_text: String,
     done: bool,
 ) -> Result<(), String> {
-    // Read current file content
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    // Off the async workers: file I/O, and a wait on a connection.
+    run_blocking(move || {
+        // Read current file content
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    // Toggle the task
-    let new_content = tasks::toggle_task_in_content(
-        &content,
-        &task_text,
-        &context_before,
-        &context_after,
-        done,
-    )?;
+        // Toggle the task
+        let new_content = tasks::toggle_task_in_content(
+            &content,
+            &task_text,
+            &context_before,
+            &context_after,
+            done,
+        )?;
 
-    // Mark as self-write to suppress watcher
-    if let Some(watcher_state) = app.try_state::<crate::commands::WatcherState>() {
-        let normalized = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
-        watcher_state.self_writes.lock().insert(normalized, Instant::now());
-    }
-
-    // Write file
-    std::fs::write(&path, &new_content)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-
-    // Reindex the file
-    {
-        let global = state.global_db.lock();
-        let projects = state.project_dbs.lock();
-        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
-            reindex_file_in_db(conn, &path, project_path.as_deref())?;
+        // Mark as self-write to suppress watcher
+        if let Some(watcher_state) = app.try_state::<crate::commands::WatcherState>() {
+            let normalized = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
+            watcher_state.self_writes.lock().insert(normalized, Instant::now());
         }
-    }
-    // Refresh the file's link edges (lock released; scope-gated).
-    state.index_links_for_file(&path);
 
-    Ok(())
+        // Write file
+        std::fs::write(&path, &new_content)
+            .map_err(|e| format!("Failed to write file: {}", e))?;
+
+        // Reindex the file, and its link edges if the content changed.
+        let state = app.state::<IndexState>();
+        reindex_one(&state, &RealFs, &path)
+    })
+    .await
 }
 
 /// Query goals across projects.
 #[tauri::command]
 pub async fn index_goals(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
 ) -> Result<Vec<IndexedGoal>, String> {
-    let start = Instant::now();
-    let result = with_dbs(&state, &project_paths, |conn| queries::query_goals(conn))?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=goals results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let result = with_dbs(&state, &project_paths, |conn| queries::query_goals(conn))?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=goals results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Full-text content search across projects.
 #[tauri::command]
 pub async fn index_search_content(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<ContentSearchResult>, String> {
-    let start = Instant::now();
-    let lim = limit.unwrap_or(50);
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_content(conn, &query, lim)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=search_content results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let lim = limit.unwrap_or(50);
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_content(conn, &query, lim)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=search_content results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 /// Filename substring search across projects.
@@ -1014,22 +1491,27 @@ pub async fn index_search_content(
 /// in that case rather than dumping every indexed file.
 #[tauri::command]
 pub async fn index_search_filenames(
-    state: tauri::State<'_, IndexState>,
+    app: AppHandle,
     project_paths: Vec<String>,
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<FilenameSearchResult>, String> {
-    let start = Instant::now();
-    let lim = limit.unwrap_or(50);
-    let result = with_dbs(&state, &project_paths, |conn| {
-        queries::query_filenames(conn, &query, lim)
-    })?;
-    log::debug!(
-        target: "notesage::index",
-        "[perf:index] query: type=search_filenames results={} ms={:.1}",
-        result.len(), start.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(result)
+    // Off the async workers: this waits on a connection a reindex may be using.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        let start = Instant::now();
+        let lim = limit.unwrap_or(50);
+        let result = with_dbs(&state, &project_paths, |conn| {
+            queries::query_filenames(conn, &query, lim)
+        })?;
+        log::debug!(
+            target: "notesage::index",
+            "[perf:index] query: type=search_filenames results={} ms={:.1}",
+            result.len(), start.elapsed().as_secs_f64() * 1000.0
+        );
+        Ok(result)
+    })
+    .await
 }
 
 // ---- Link-graph commands (OKF wiki-navigation, ADR 0002–0007) ----
@@ -1134,59 +1616,665 @@ pub async fn resolve_wikilink(
 mod tests {
     use super::*;
 
-    /// RED test: files inside dotfolders (e.g. .git/) must be skipped by the
+    use super::reindex_queue::process_entries;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// A filesystem that counts reads, can present files as evicted from
+    /// iCloud, and can pause inside a read so a test can look at the index
+    /// while a pass is in the middle of its work.
+    #[derive(Default)]
+    struct TestFs {
+        reads: AtomicUsize,
+        read_paths: Mutex<Vec<String>>,
+        dataless: Mutex<HashSet<PathBuf>>,
+        /// Pause inside the Nth read (1-based); 0 never pauses.
+        pause_on_read: AtomicUsize,
+        paused: AtomicBool,
+        resume: AtomicBool,
+    }
+
+    impl TestFs {
+        fn reads(&self) -> usize {
+            self.reads.load(Ordering::SeqCst)
+        }
+
+        fn take_read_paths(&self) -> Vec<String> {
+            std::mem::take(&mut *self.read_paths.lock())
+        }
+    }
+
+    impl FileAccess for TestFs {
+        fn stat(&self, path: &Path) -> std::io::Result<FileStat> {
+            let evicted = self.dataless.lock().contains(path);
+            fs_access::stat_with(path, |_| evicted)
+        }
+
+        fn read(&self, path: &Path) -> std::io::Result<String> {
+            assert!(
+                !self.dataless.lock().contains(path),
+                "{} is dataless: reading it would download it",
+                path.display()
+            );
+            let nth = self.reads.fetch_add(1, Ordering::SeqCst) + 1;
+            self.read_paths.lock().push(path.to_string_lossy().to_string());
+            if nth == self.pause_on_read.load(Ordering::SeqCst) {
+                self.paused.store(true, Ordering::SeqCst);
+                while !self.resume.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            std::fs::read_to_string(path)
+        }
+    }
+
+    /// Lets a paused read continue even when the test fails first.
+    struct ResumeOnDrop<'a>(&'a TestFs);
+
+    impl Drop for ResumeOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.resume.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// One registered project with its own index database and link store, all
+    /// under a temp directory (nothing touches `~/.notesage`).
+    struct Harness {
+        _tmp: tempfile::TempDir,
+        state: IndexState,
+        db: DbHandle,
+        project: String,
+        fs: TestFs,
+    }
+
+    impl Harness {
+        fn new() -> Self {
+            // A non-dot prefix so the path has no dotfolder component (on
+            // Linux, tempfile::tempdir() creates /tmp/.tmpXXX).
+            let tmp = tempfile::Builder::new()
+                .prefix("notesage_test_")
+                .tempdir()
+                .unwrap();
+            let project_dir = tmp.path().join("project");
+            std::fs::create_dir_all(&project_dir).unwrap();
+            let project = project_dir.to_string_lossy().to_string();
+
+            let db: DbHandle = Arc::new(Mutex::new(
+                db::open_or_create(&tmp.path().join("index.db")).unwrap(),
+            ));
+            let state = IndexState::new();
+            state
+                .project_dbs
+                .lock()
+                .insert(PathBuf::from(&project), db.clone());
+            *state.links_db.lock() =
+                Some(links::open_or_create(&tmp.path().join("links.db")).unwrap());
+
+            Self {
+                _tmp: tmp,
+                state,
+                db,
+                project,
+                fs: TestFs::default(),
+            }
+        }
+
+        fn path(&self, name: &str) -> String {
+            format!("{}/{}", self.project, name)
+        }
+
+        /// Write a file whose mtime is `age_secs` in the past. Files written
+        /// "now" are inside the racy-stat window and are deliberately re-read,
+        /// so tests of the stat gate need files that look settled.
+        fn write_aged(&self, name: &str, content: &str, age_secs: u64) -> String {
+            let path = self.path(name);
+            std::fs::write(&path, content).unwrap();
+            self.set_age(name, age_secs);
+            path
+        }
+
+        fn set_age(&self, name: &str, age_secs: u64) {
+            let file = std::fs::File::options()
+                .write(true)
+                .open(self.path(name))
+                .unwrap();
+            file.set_modified(SystemTime::now() - Duration::from_secs(age_secs))
+                .unwrap();
+        }
+
+        fn pass(&self) -> PassCounters {
+            reindex_directory(
+                &self.state,
+                &self.db,
+                &self.fs,
+                &self.project,
+                Some(&self.project),
+                None,
+            )
+            .unwrap()
+            .1
+        }
+
+        fn count(&self, sql: &str) -> i64 {
+            self.db.lock().query_row(sql, [], |row| row.get(0)).unwrap()
+        }
+
+        /// Paths of the files whose full-text rows match `term`.
+        fn search(&self, term: &str) -> Vec<String> {
+            let conn = self.db.lock();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT f.path FROM files_fts JOIN files f ON files_fts.rowid = f.id
+                     WHERE files_fts MATCH ?1 ORDER BY f.path",
+                )
+                .unwrap();
+            let rows = stmt.query_map([term], |row| row.get::<_, String>(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        }
+
+        fn links_changes(&self) -> u64 {
+            self.state.links_db.lock().as_ref().unwrap().total_changes()
+        }
+
+        fn outlinks(&self, name: &str) -> Vec<String> {
+            let guard = self.state.links_db.lock();
+            links::query_outlinks(guard.as_ref().unwrap(), &self.path(name))
+                .unwrap()
+                .into_iter()
+                .map(|row| row.target_path)
+                .collect()
+        }
+    }
+
+    /// Three linked notes and a text file, all old enough to be "settled".
+    fn seeded() -> Harness {
+        let h = Harness::new();
+        h.write_aged("alpha.md", "# Alpha\n\nSee [beta](beta.md). firstdraft #topic\n", 100);
+        h.write_aged("beta.md", "# Beta\n\nBack to [alpha](alpha.md). betaonly\n", 100);
+        h.write_aged("gamma.md", "# Gamma\n\n- [ ] a task\n", 100);
+        h.write_aged("notes.txt", "plain text file\n", 100);
+        h
+    }
+
+    /// Files inside dotfolders (e.g. .git/) must be skipped by the
     /// watcher-triggered reindex path, just as scan_files skips them during
-    /// bulk indexing. Before the fix, reindex_file_in_db only skips
-    /// .notesage/ non-research files — not arbitrary dotfolders.
+    /// bulk indexing.
     #[test]
-    fn reindex_file_in_db_skips_dotfolder_paths() {
-        // Use a non-dot prefix so the tempdir path itself has no dotfolder
-        // components (on Linux, tempfile::tempdir() creates /tmp/.tmpXXX).
-        let tmp = tempfile::Builder::new()
-            .prefix("notesage_test_")
-            .tempdir()
-            .unwrap();
-        let db_path = tmp.path().join("test.db");
-        let conn = db::open_or_create(&db_path).unwrap();
-        let git_dir = tmp.path().join(".git");
+    fn reindex_file_skips_dotfolder_paths() {
+        let h = Harness::new();
+        let git_dir = Path::new(&h.project).join(".git");
         std::fs::create_dir_all(&git_dir).unwrap();
         let md_file = git_dir.join("notes.md");
         std::fs::write(&md_file, "# Git notes\n#secret-tag @secret-mention").unwrap();
         let path_str = md_file.to_string_lossy().to_string();
-        let result = reindex_file_in_db(&conn, &path_str, None).unwrap();
+        let outcome = reindex_file(&h.db, &h.fs, &path_str, None, false).unwrap();
         assert!(
-            !result,
-            "reindex_file_in_db must return false (skipped) for dotfolder paths"
+            matches!(outcome, FileOutcome::Ignored),
+            "dotfolder paths must be ignored, got {:?}",
+            outcome
         );
-        let file_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
-            .unwrap();
+        assert_eq!(h.fs.reads(), 0, "an ignored file must not be read");
         assert_eq!(
-            file_count, 0,
+            h.count("SELECT COUNT(*) FROM files"),
+            0,
             "Files under dotfolders must not be inserted into the index"
         );
     }
 
-    /// Regression guard: normal paths must still be indexed after the fix.
+    /// Regression guard: normal paths must still be indexed.
     #[test]
-    fn reindex_file_in_db_indexes_normal_paths() {
-        let tmp = tempfile::Builder::new()
-            .prefix("notesage_test_")
-            .tempdir()
+    fn reindex_file_indexes_normal_paths() {
+        let h = Harness::new();
+        let path = h.write_aged("my_note.md", "# My Note\nSome content", 100);
+        let outcome = reindex_file(&h.db, &h.fs, &path, None, false).unwrap();
+        assert!(matches!(outcome, FileOutcome::Changed(_)), "{:?}", outcome);
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 1, "Normal path files must be indexed");
+        assert_eq!(
+            h.count("SELECT COUNT(*) FROM files WHERE mtime IS NOT NULL AND size = 22"),
+            1,
+            "the stat must be stored with the row"
+        );
+        assert!(h.db.lock().is_autocommit(), "a single-file reindex must commit");
+    }
+
+    #[test]
+    fn an_unchanged_pass_reads_no_files() {
+        let h = seeded();
+
+        let first = h.pass();
+        assert_eq!(
+            first,
+            PassCounters {
+                scanned: 4,
+                read: 4,
+                changed: 4,
+                skipped_dataless: 0,
+                links_written: 3,
+                pruned: 0,
+            }
+        );
+        assert_eq!(h.fs.reads(), 4);
+
+        let content_changes = h.db.lock().total_changes();
+        let second = h.pass();
+        assert_eq!(
+            second,
+            PassCounters {
+                scanned: 4,
+                ..PassCounters::default()
+            },
+            "nothing changed, so nothing may be read or written"
+        );
+        assert_eq!(h.fs.reads(), 4, "the second pass must not read any file");
+        assert_eq!(h.db.lock().total_changes(), content_changes);
+        assert!(h.db.lock().is_autocommit(), "the pass must leave no transaction open");
+    }
+
+    #[test]
+    fn a_changed_mtime_rereads_only_that_file() {
+        let h = seeded();
+        h.pass();
+        h.fs.take_read_paths();
+
+        // New content: reindexed.
+        let beta = h.write_aged("beta.md", "# Beta\n\nRewritten paragraph.\n", 50);
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed), (1, 1));
+        assert_eq!(h.fs.take_read_paths(), vec![beta.clone()]);
+        assert_eq!(h.search("rewritten"), vec![beta.clone()]);
+
+        // Touched only (mtime moved, same bytes): read once, the hash says
+        // unchanged, nothing is rewritten, and the new stat is remembered.
+        h.set_age("beta.md", 30);
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed, counters.links_written), (1, 0, 0));
+        assert_eq!(h.fs.take_read_paths(), vec![beta]);
+        let counters = h.pass();
+        assert_eq!(counters.read, 0);
+
+        // Same mtime, different size: read.
+        let gamma = h.path("gamma.md");
+        let mtime = std::fs::metadata(&gamma).unwrap().modified().unwrap();
+        std::fs::write(&gamma, "# Gamma\n\n- [ ] a task\n- [ ] another\n").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&gamma)
+            .unwrap()
+            .set_modified(mtime)
             .unwrap();
-        let db_path = tmp.path().join("test.db");
-        let conn = db::open_or_create(&db_path).unwrap();
-        let notes_dir = tmp.path().join("notes");
-        std::fs::create_dir_all(&notes_dir).unwrap();
-        let md_file = notes_dir.join("my_note.md");
-        std::fs::write(&md_file, "# My Note\nSome content").unwrap();
-        let path_str = md_file.to_string_lossy().to_string();
-        let result = reindex_file_in_db(&conn, &path_str, None).unwrap();
-        assert!(result, "reindex_file_in_db must return true for normal paths");
-        let file_count: i64 = conn
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed), (1, 1));
+        assert_eq!(h.count("SELECT COUNT(*) FROM tasks"), 2);
+    }
+
+    #[test]
+    fn rows_from_before_the_stat_columns_are_rebuilt_once_then_gated() {
+        let h = seeded();
+        h.pass();
+        // What a database looks like right after the v2 migration: rows kept,
+        // no stat, full-text table empty. beta is evicted from iCloud.
+        h.db.lock()
+            .execute_batch("UPDATE files SET mtime = NULL, size = NULL; DELETE FROM files_fts;")
+            .unwrap();
+        let beta = h.path("beta.md");
+        h.fs.dataless.lock().insert(PathBuf::from(&beta));
+
+        // Every local file is read and rewritten (same hash or not), which
+        // restores its full-text row and rebuilds the link graph.
+        let counters = h.pass();
+        assert_eq!(
+            (counters.read, counters.changed, counters.links_written, counters.skipped_dataless),
+            (3, 3, 2, 1)
+        );
+        assert_eq!(h.search("firstdraft"), vec![h.path("alpha.md")]);
+        // The evicted file keeps the rows it had; it was not read.
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 4);
+        assert_eq!(h.count("SELECT COUNT(*) FROM files WHERE mtime IS NULL"), 1);
+
+        assert_eq!(h.pass().read, 0, "the stored stat must gate the next pass");
+
+        // When it is local again it is rebuilt like the others were.
+        h.fs.dataless.lock().clear();
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed), (1, 1));
+        assert_eq!(h.search("betaonly"), vec![beta]);
+        assert_eq!(h.count("SELECT COUNT(*) FROM files_fts"), 4);
+    }
+
+    #[test]
+    fn a_file_modified_moments_before_it_was_indexed_is_not_trusted_by_stat() {
+        // Written "now": a second write in the same timestamp tick with the
+        // same size would be invisible to the stat, so the content is checked.
+        let h = Harness::new();
+        std::fs::write(h.path("fresh.md"), "# Fresh\n").unwrap();
+        assert_eq!(h.pass().changed, 1);
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed), (1, 0));
+
+        let row = IndexedRow {
+            hash: String::new(),
+            mtime: Some(10_000_000_000),
+            size: Some(5),
+            indexed_at: 10 + RACY_STAT_WINDOW_SECS,
+        };
+        let stat = FileStat { mtime_ns: 10_000_000_000, size: 5, dataless: false };
+        assert!(stat_gate_holds(&row, &stat));
+        assert!(!stat_gate_holds(&IndexedRow { indexed_at: 10 + RACY_STAT_WINDOW_SECS - 1, ..row_copy(&row) }, &stat));
+        assert!(!stat_gate_holds(&row, &FileStat { size: 6, ..stat }));
+        assert!(!stat_gate_holds(&row, &FileStat { mtime_ns: 10_000_000_001, ..stat }));
+        assert!(!stat_gate_holds(&IndexedRow { mtime: None, ..row_copy(&row) }, &stat));
+    }
+
+    fn row_copy(row: &IndexedRow) -> IndexedRow {
+        IndexedRow {
+            hash: row.hash.clone(),
+            mtime: row.mtime,
+            size: row.size,
+            indexed_at: row.indexed_at,
+        }
+    }
+
+    #[test]
+    fn a_dataless_file_is_skipped_and_not_pruned() {
+        let h = seeded();
+        h.pass();
+        let beta = h.path("beta.md");
+
+        // beta is evicted (and its stat no longer matches the row), and a
+        // never-indexed evicted file sits beside it. TestFs::read panics if
+        // either is read.
+        h.set_age("beta.md", 40);
+        h.write_aged("evicted.md", "# Evicted\n\nremote words\n", 100);
+        let evicted = h.path("evicted.md");
+        h.fs.dataless.lock().extend([PathBuf::from(&beta), PathBuf::from(&evicted)]);
+        let reads = h.fs.reads();
+
+        let counters = h.pass();
+        assert_eq!(
+            counters,
+            PassCounters {
+                scanned: 5,
+                skipped_dataless: 2,
+                ..PassCounters::default()
+            }
+        );
+        assert_eq!(h.fs.reads(), reads, "a dataless file must not be read");
+        assert_eq!(
+            h.search("betaonly"),
+            vec![beta.clone()],
+            "the evicted file's existing rows must be left alone"
+        );
+        assert_eq!(h.outlinks("beta.md").len(), 1, "and so must its links");
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 4);
+
+        // The watcher path treats it the same way.
+        let outcome = reindex_file(&h.db, &h.fs, &evicted, Some(&h.project), false).unwrap();
+        assert!(matches!(outcome, FileOutcome::Dataless), "{:?}", outcome);
+
+        // Once local again, both are picked up: the new file is indexed, and
+        // beta (stat differs from its row) is read and found unchanged.
+        h.fs.dataless.lock().clear();
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.changed, counters.skipped_dataless), (2, 1, 0));
+        assert_eq!(h.search("remote"), vec![evicted]);
+    }
+
+    #[test]
+    fn repeated_reindex_of_a_changed_file_does_not_grow_or_go_stale() {
+        let h = seeded();
+        h.pass();
+        let alpha = h.path("alpha.md");
+
+        for round in 0..6u64 {
+            h.write_aged(
+                "alpha.md",
+                &format!("# Alpha\n\nrevision{} keepsake\n", round),
+                90 - round,
+            );
+            assert_eq!(h.pass().changed, 1);
+        }
+
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 4);
+        assert_eq!(
+            h.count("SELECT COUNT(*) FROM files_fts"),
+            4,
+            "one full-text row per file, however often a file was reindexed"
+        );
+        assert_eq!(h.search("keepsake"), vec![alpha.clone()]);
+        assert_eq!(h.search("revision5"), vec![alpha]);
+        for stale in ["revision0", "revision4", "firstdraft"] {
+            assert!(
+                h.search(stale).is_empty(),
+                "text of an earlier version must not match: {}",
+                stale
+            );
+        }
+        // The command-level query agrees (and works against the real,
+        // contentless table: a hit has no snippet text, not an error).
+        let content_hits = |term: &str| -> Vec<String> {
+            with_dbs(&h.state, &[h.project.clone()], |conn| {
+                queries::query_content(conn, term, 50)
+            })
+            .unwrap()
+            .into_iter()
+            .map(|hit| hit.path)
+            .collect()
+        };
+        assert!(content_hits("revision0").is_empty());
+        assert_eq!(content_hits("revision5"), vec![h.path("alpha.md")]);
+
+        // A deleted file's text goes too.
+        std::fs::remove_file(h.path("notes.txt")).unwrap();
+        assert_eq!(h.pass().pruned, 1);
+        assert!(h.search("plain").is_empty());
+        assert_eq!(h.count("SELECT COUNT(*) FROM files_fts"), 3);
+    }
+
+    #[test]
+    fn saved_html_is_indexed_by_its_visible_text_only_up_to_the_cap() {
+        let h = Harness::new();
+        let page = h.write_aged(
+            "page.html",
+            "<!DOCTYPE html><html><head><title>Harbour</title>\
+             <style>.lighthouse { color: red }</style>\
+             <script>var secretToken = 'abc';</script></head>\
+             <body><div class=\"wrapperclass\"><p>The ferry leaves at dawn.</p>\
+             <img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ\">\
+             </div></body></html>",
+            100,
+        );
+        // More visible text than the cap allows: the tail is not indexed.
+        let filler = "lorem ".repeat(html_text::MAX_HTML_TEXT_CHARS / 6 + 10);
+        let long = h.write_aged(
+            "long.htm",
+            &format!("<html><body><p>earlymarker {} latemarker</p></body></html>", filler),
+            100,
+        );
+        // Markdown is not run through the HTML stripper.
+        let note = h.write_aged("note.md", "# Note\n\nwrapperclass in prose\n", 100);
+
+        assert_eq!(h.pass().changed, 3);
+
+        assert_eq!(h.search("ferry"), vec![page.clone()]);
+        assert_eq!(h.search("harbour"), vec![page]);
+        for markup in ["secretToken", "lighthouse", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ", "DOCTYPE"] {
+            assert!(h.search(markup).is_empty(), "{} must not be indexed", markup);
+        }
+        assert_eq!(h.search("wrapperclass"), vec![note], "only the prose mention matches");
+        assert_eq!(h.search("earlymarker"), vec![long]);
+        assert!(h.search("latemarker").is_empty(), "text past the cap must not be indexed");
+    }
+
+    #[test]
+    fn the_link_pass_writes_nothing_for_unchanged_files() {
+        let h = seeded();
+        assert_eq!(h.pass().links_written, 3);
+        assert_eq!(h.outlinks("alpha.md"), vec![h.path("beta.md")]);
+        assert_eq!(h.outlinks("beta.md"), vec![h.path("alpha.md")]);
+
+        let before = h.links_changes();
+        let counters = h.pass();
+        assert_eq!(counters.links_written, 0);
+        assert_eq!(h.links_changes(), before, "an unchanged pass must not write to links.db");
+        assert!(
+            h.state.links_db.lock().as_ref().unwrap().is_autocommit(),
+            "the pass must leave no transaction open on links.db"
+        );
+
+        // A changed file's links are rewritten, from the content already read.
+        h.fs.take_read_paths();
+        h.write_aged("alpha.md", "# Alpha\n\nNow see [gamma](gamma.md).\n", 60);
+        let counters = h.pass();
+        assert_eq!((counters.read, counters.links_written), (1, 1));
+        assert_eq!(h.fs.take_read_paths().len(), 1, "the file is read once for both stores");
+        assert_eq!(h.outlinks("alpha.md"), vec![h.path("gamma.md")]);
+        assert_eq!(h.outlinks("beta.md"), vec![h.path("alpha.md")]);
+    }
+
+    #[test]
+    fn a_missing_link_graph_is_rebuilt_and_deleted_files_lose_their_links() {
+        let h = seeded();
+        h.pass();
+
+        // links.db was reset on its own: the content index is intact, so the
+        // stat gate holds for every file, but the graph must come back.
+        links::clear_all(h.state.links_db.lock().as_ref().unwrap()).unwrap();
+        assert!(h.outlinks("alpha.md").is_empty());
+        let counters = h.pass();
+        assert_eq!((counters.changed, counters.links_written, counters.read), (0, 3, 3));
+        assert_eq!(h.outlinks("alpha.md"), vec![h.path("beta.md")]);
+        assert_eq!(h.pass().read, 0, "restored once, not on every pass");
+
+        // A file deleted while the app was closed: its rows and links go.
+        std::fs::remove_file(h.path("alpha.md")).unwrap();
+        let counters = h.pass();
+        assert_eq!(counters.pruned, 1);
+        assert!(h.outlinks("alpha.md").is_empty());
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 3);
+        // beta's edge to the deleted file survives as a pending reference.
+        assert_eq!(h.outlinks("beta.md"), vec![h.path("alpha.md")]);
+    }
+
+    #[test]
+    fn a_query_made_while_a_reindex_is_in_progress_returns() {
+        let h = Harness::new();
+        for i in 0..5 {
+            h.write_aged(&format!("note{}.md", i), &format!("# Note {}\n", i), 100);
+        }
+        // The pass stops inside its third read, with two files indexed.
+        h.fs.pause_on_read.store(3, Ordering::SeqCst);
+
+        let h = &h;
+        std::thread::scope(|scope| {
+            let resume = ResumeOnDrop(&h.fs);
+            let pass = scope.spawn(|| h.pass());
+
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !h.fs.paused.load(Ordering::SeqCst) {
+                assert!(Instant::now() < deadline, "the pass never reached its third read");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            scope.spawn(move || {
+                let found = with_dbs(&h.state, &[h.project.clone()], |conn| {
+                    queries::query_filenames(conn, "note", 50)
+                });
+                let _ = tx.send(found);
+            });
+            let found = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the query waited for the whole reindex pass")
+                .unwrap();
+            assert_eq!(found.len(), 2, "the query sees what the pass has indexed so far");
+            assert!(h.fs.paused.load(Ordering::SeqCst) && !h.fs.resume.load(Ordering::SeqCst));
+
+            // Other lookups used while indexing do not wait either.
+            assert!(h.state.db_for_path(&h.path("note0.md")).is_some());
+            assert_eq!(h.state.health_info().1, 1);
+
+            drop(resume);
+            let counters = pass.join().unwrap();
+            assert_eq!((counters.read, counters.changed), (5, 5));
+        });
+
+        assert_eq!(h.count("SELECT COUNT(*) FROM files"), 5);
+        assert!(h.db.lock().is_autocommit());
+    }
+
+    #[test]
+    fn a_pass_commits_what_it_wrote() {
+        let h = seeded();
+        h.pass();
+        // A second connection only sees committed rows.
+        let other = Connection::open(h._tmp.path().join("index.db")).unwrap();
+        let committed: i64 = other
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(file_count, 1, "Normal path files must be indexed");
+        assert_eq!(committed, 4, "the pass must commit what it wrote");
+    }
+
+    fn entry(path: &str, kind: crate::commands::watcher::FileChangeKind) -> ReindexEntry {
+        ReindexEntry {
+            path: path.to_string(),
+            kind,
+        }
+    }
+
+    #[test]
+    fn the_watcher_queue_reads_only_changed_files_and_keeps_links_in_step() {
+        use crate::commands::watcher::FileChangeKind;
+        let h = seeded();
+        h.pass();
+        let alpha = h.path("alpha.md");
+        let beta = h.path("beta.md");
+        let reads = h.fs.reads();
+        let links_before = h.links_changes();
+
+        // An event for a file that did not change (a metadata-only event that
+        // got through): no read, no link write, still announced.
+        let affected = process_entries(
+            &h.state,
+            &h.fs,
+            vec![entry(&alpha, FileChangeKind::Modify)],
+        );
+        assert_eq!(affected, vec![alpha.clone()]);
+        assert_eq!(h.fs.reads(), reads);
+        assert_eq!(h.links_changes(), links_before);
+
+        // A real change: one read, content and links both updated.
+        h.write_aged("alpha.md", "# Alpha\n\nNow [gamma](gamma.md). queuedword\n", 50);
+        let affected = process_entries(
+            &h.state,
+            &h.fs,
+            vec![entry(&alpha, FileChangeKind::Modify)],
+        );
+        assert_eq!(affected, vec![alpha.clone()]);
+        assert_eq!(h.fs.reads(), reads + 1);
+        assert_eq!(h.search("queuedword"), vec![alpha.clone()]);
+        assert_eq!(h.outlinks("alpha.md"), vec![h.path("gamma.md")]);
+        assert!(h.db.lock().is_autocommit());
+
+        // A delete: rows and links removed.
+        std::fs::remove_file(&beta).unwrap();
+        let affected = process_entries(
+            &h.state,
+            &h.fs,
+            vec![entry(&beta, FileChangeKind::Delete)],
+        );
+        assert_eq!(affected, vec![beta]);
+        assert!(h.search("betaonly").is_empty());
+        assert!(h.outlinks("beta.md").is_empty());
+    }
+
+    #[test]
+    fn opening_a_database_twice_keeps_the_first_connection() {
+        let h = Harness::new();
+        // `init_project_db` must not replace a registered connection: a pass
+        // may be running on it.
+        init_project_db(&h.state, &h.project).unwrap();
+        let registered = h.state.project_dbs.lock().get(Path::new(&h.project)).cloned().unwrap();
+        assert!(Arc::ptr_eq(&registered, &h.db));
     }
 
     #[tokio::test(flavor = "current_thread")]

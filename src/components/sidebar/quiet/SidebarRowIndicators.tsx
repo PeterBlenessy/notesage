@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { GitBranch, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFileTreeItemState } from "@/hooks/useFileTreeItemState";
@@ -48,16 +47,17 @@ export interface SidebarRowIndicatorsProps {
 function resolveRepoRoot(
   path: string,
   kind: "file" | "folder" | "project",
-  projects: Array<{ path: string }>,
+  projects: ReadonlyArray<{ path: string }>,
 ): string | undefined {
   // Projects own themselves as their repo root; files/folders walk up to
   // the nearest ancestor project (longest-prefix wins).
   if (kind === "project") return path;
-  const sorted = [...projects].sort((a, b) => b.path.length - a.path.length);
-  const owning = sorted.find(
-    (p) => path === p.path || path.startsWith(p.path + "/"),
-  );
-  return owning?.path;
+  let owning: string | undefined;
+  for (const p of projects) {
+    if (path !== p.path && !path.startsWith(p.path + "/")) continue;
+    if (owning === undefined || p.path.length > owning.length) owning = p.path;
+  }
+  return owning;
 }
 
 export function SidebarRowIndicators({
@@ -65,11 +65,10 @@ export function SidebarRowIndicators({
   kind,
   className,
 }: SidebarRowIndicatorsProps) {
-  const projects = useWorkspaceStore((s) => s.projects);
-  const repoRoot = useMemo(
-    () => resolveRepoRoot(path, kind, projects),
-    [path, kind, projects],
-  );
+  // Select the answer (a string), not `projects`: the array is replaced on
+  // every tree change, and subscribing to it re-rendered every visible row's
+  // indicators each time although the owning project of a row never changed.
+  const repoRoot = useWorkspaceStore((s) => resolveRepoRoot(path, kind, s.projects));
 
   const { hasExternalChange, gitInfo } = useFileTreeItemState(
     path,

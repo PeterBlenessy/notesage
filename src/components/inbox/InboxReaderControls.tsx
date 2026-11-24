@@ -71,6 +71,14 @@ export function InboxReaderControls({ path }: { path: string }) {
   const { open, fileToLast, togglePin, openOriginal, pinnedFiles } = useInboxActions();
   const [busy, setBusy] = useState(false);
 
+  // The header (it carries "open original") is read for rows on screen; an
+  // item reached with ⌘↓ may never have been one.
+  useEffect(() => {
+    const store = useInboxStore.getState();
+    const item = store.items.find((it) => it.path === path);
+    if (item) store.ensureMeta(item);
+  }, [path]);
+
   // ⌘↑ / ⌘↓ from the global dispatcher.
   useEffect(() => {
     const onStep = (event: Event) => {

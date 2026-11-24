@@ -115,6 +115,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         create_directory: () => null,
         rename_path: () => null,
         delete_path: () => null,
+        trash_paths: () => [],
         copy_directory: () => null,
 
         // System / paths
@@ -181,6 +182,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Document index
         index_init: () => null,
+        index_open: () => null,
         // Legacy mock entries (command names the app does NOT actually invoke).
         // Kept so existing callers don't regress; the real commands below are
         // what TagMode/ReferenceMode/ResearchMode/FileMode call.

@@ -24,7 +24,7 @@ const SKIP_DIRS: &[&str] = &[
 ///
 /// `.notesage` is deliberately excluded from this check so that
 /// `.notesage/research/` files remain indexable (both via `scan_files` and
-/// via the watcher-triggered `reindex_file_in_db` path).
+/// via the watcher-triggered `reindex_file` path).
 pub(crate) fn has_dotfolder_component(path: &str) -> bool {
     Path::new(path).components().any(|c| {
         if let std::path::Component::Normal(name) = c {

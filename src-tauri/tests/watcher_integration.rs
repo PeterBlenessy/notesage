@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use notify::RecursiveMode;
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use tauri_app_lib::watcher::{
-    process_watcher_events, FileChangeKind, ProcessedWatcherEvents, SELF_WRITE_TTL,
+    process_watcher_events, ContentTracker, FileChangeKind, ProcessedWatcherEvents, SELF_WRITE_TTL,
 };
 use tempfile::TempDir;
 
@@ -73,7 +73,7 @@ fn start_watcher(dir: &std::path::Path) -> (WatcherHandle, Arc<Mutex<Vec<Debounc
 fn drain_and_process(buf: &Arc<Mutex<Vec<DebouncedEvent>>>) -> ProcessedWatcherEvents {
     let evts: Vec<DebouncedEvent> = buf.lock().unwrap().drain(..).collect();
     let mut self_writes = HashMap::new();
-    process_watcher_events(evts, &mut self_writes)
+    process_watcher_events(evts, &mut self_writes, &mut ContentTracker::new(), None)
 }
 
 /// Drain the event buffer and run `process_watcher_events` with a caller-
@@ -83,7 +83,7 @@ fn drain_and_process_with(
     self_writes: &mut HashMap<PathBuf, Instant>,
 ) -> ProcessedWatcherEvents {
     let evts: Vec<DebouncedEvent> = buf.lock().unwrap().drain(..).collect();
-    process_watcher_events(evts, self_writes)
+    process_watcher_events(evts, self_writes, &mut ContentTracker::new(), None)
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ fn rename_event_appears_only_in_file_renamed_not_in_batch() {
 
     let evts: Vec<DebouncedEvent> = buf.lock().unwrap().drain(..).collect();
     let mut sw = HashMap::new();
-    let result = process_watcher_events(evts, &mut sw);
+    let result = process_watcher_events(evts, &mut sw, &mut ContentTracker::new(), None);
 
     // The rename must surface as a file-renamed event.
     let renamed = result.rename_events.iter().any(|e| {

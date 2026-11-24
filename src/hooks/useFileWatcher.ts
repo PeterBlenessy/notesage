@@ -13,6 +13,8 @@ import { schedulePendingCommentFile } from "@/lib/pending-comments";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import { deleteCachedViewport } from "@/lib/viewport-cache";
 import { toastExternalReload } from "@/lib/notifications";
+import { getFileType, isBinaryFileType } from "@/lib/file-utils";
+import { isReservedLibraryFolder } from "@/lib/library-reserved-folders";
 import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
@@ -51,6 +53,29 @@ function normalizePath(p: string): string {
 }
 
 /**
+ * Could the editor be holding state for this path? Not for the app's own
+ * bookkeeping (`.notesage/`, `.git/`) and not for files it never loads as
+ * text. A sync burst is mostly such paths (sidecars, images, index files),
+ * and each used to cost a `CustomEvent` and an IndexedDB transaction.
+ */
+function isEditorDocumentPath(path: string): boolean {
+  if (path.includes("/.notesage/") || path.includes("/.git/")) return false;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (name === "" || name === ".DS_Store") return false;
+  return !isBinaryFileType(getFileType(name));
+}
+
+/**
+ * The viewport cache is only ever read for markdown (the instant-preview path
+ * in `useEditorTabSwitch`), and every read is checked against a content
+ * fingerprint, so an entry for anything else is never served.
+ */
+function mayHaveCachedViewport(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return name.includes(".") && getFileType(name) === "markdown";
+}
+
+/**
  * Listens for `file-changed` Tauri events from the filesystem watcher and
  * routes modify events to the right review flow based on
  * `externalChangeDiffReview`:
@@ -70,6 +95,11 @@ function normalizePath(p: string): string {
 export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
   const refreshDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Every directory waiting for the debounced tree refresh. One shared timer
+  // with one remembered directory kept only the LAST event's directory, so a
+  // batch touching three projects refreshed one of them.
+  const pendingRefreshDirs = useRef<Set<string>>(new Set());
+  const pendingFullRefresh = useRef(false);
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mcpRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Per-file debounce for modify events — macOS FSEvents often fires duplicates
@@ -78,32 +108,61 @@ export function useFileWatcher() {
   const icloudDiscoveryDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
+    /** Run the debounced tree refresh for everything collected so far. */
+    function flushTreeRefresh() {
+      const dirs = [...pendingRefreshDirs.current];
+      const full = pendingFullRefresh.current;
+      pendingRefreshDirs.current.clear();
+      pendingFullRefresh.current = false;
+      // `refreshFileTree` maps the directories to the roots that own them and
+      // refreshes each root once; it is single-flight per root, so a refresh
+      // still running from the previous batch is not started a second time.
+      const request = full
+        ? refreshFileTree()
+        : dirs.length === 1
+          ? refreshFileTree(dirs[0])
+          : refreshFileTree(dirs);
+      Promise.resolve(request).catch((error: unknown) => {
+        log.warn('watcher', 'Tree refresh after a file event failed', error);
+      });
+    }
+
+    /** Queue `dir` (or, with no argument, everything) for the debounced refresh. */
+    function scheduleTreeRefresh(dir?: string) {
+      if (dir === undefined || pendingRefreshDirs.current.size >= MAX_DEBOUNCE_ENTRIES) {
+        pendingFullRefresh.current = true;
+      } else {
+        pendingRefreshDirs.current.add(dir);
+      }
+      clearTimeout(refreshDebounce.current);
+      refreshDebounce.current = setTimeout(flushTreeRefresh, 300);
+    }
+
     /** Shared handler for processing a single file-changed event. */
     function handleEvent(path: string, kind: FileChangedPayload["kind"]) {
       // Drop any cached worker-parse for this path — content has diverged.
       // The next click on this file will re-dispatch the worker.
       parsedDocCache.delete(path);
-      // Drop the IDB viewport snapshot — cached HTML would be stale.
-      deleteCachedViewport(path);
+      // Drop the IDB viewport snapshot — cached HTML would be stale. One
+      // IndexedDB transaction per call, so only for paths that can have one.
+      if (mayHaveCachedViewport(path)) deleteCachedViewport(path);
       // Drop the per-file ProseMirror EditorState cache — restoring a stale
       // cached state would surface pre-modification content on the next click.
       // The active-tab case is handled separately by `useFileWatcherIntegration`
       // (which reloads in place); this dispatch covers cached states for files
       // that were evicted from `openDocuments` while their state lingered in
       // the Editor's `cachedEditorStatesRef`.
-      window.dispatchEvent(
-        new CustomEvent('notesage:invalidate-editor-state', { detail: { filePath: path } }),
-      );
+      if (isEditorDocumentPath(path)) {
+        window.dispatchEvent(
+          new CustomEvent('notesage:invalidate-editor-state', { detail: { filePath: path } }),
+        );
+      }
 
       // For create/delete events, debounce file tree refresh.
       // Pass the parent directory so only the affected section is refreshed
       // (not all 10 sections which takes ~2s on iCloud paths).
       if (kind === "create" || kind === "delete") {
-        const parentDir = path.substring(0, path.lastIndexOf("/"));
-        clearTimeout(refreshDebounce.current);
-        refreshDebounce.current = setTimeout(() => {
-          refreshFileTree(parentDir);
-        }, 300);
+        scheduleTreeRefresh(path.substring(0, path.lastIndexOf("/")));
       }
 
       // External delete: prune dangling entries from Recent and Pinned so
@@ -129,7 +188,10 @@ export function useFileWatcher() {
           // Extract the top-level subfolder (potential project root)
           const relative = path.slice(icloudPath.length + 1);
           const topFolder = relative.split("/")[0];
-          if (topFolder) {
+          // The Inbox and Recordings folders are the library's own: each can
+          // hold a `.notesage/` (the Inbox keeps its reading progress there),
+          // which is what makes a folder look like a project below.
+          if (topFolder && !isReservedLibraryFolder(`${icloudPath}/${topFolder}`, icloudPath)) {
             const projectRoot = `${icloudPath}/${topFolder}`;
             const knownPaths = new Set(
               useWorkspaceStore.getState().projects.map((p) => p.path)
@@ -142,8 +204,7 @@ export function useFileWatcher() {
                 log.warn('watcher', 'iCloud discovery debounce map overflow — triggering batch refresh');
                 for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);
                 icloudDiscoveryDebounce.current = {};
-                clearTimeout(refreshDebounce.current);
-                refreshDebounce.current = setTimeout(() => refreshFileTree(), 300);
+                scheduleTreeRefresh();
                 return;
               }
               // Debounce per-project — iCloud syncs files gradually
@@ -184,7 +245,7 @@ export function useFileWatcher() {
       }, 500);
 
       // Detect mcp.json changes → rescan MCP configs
-      if (kind === "create" || kind === "delete" || kind === "modify") {
+      if (path.endsWith("/mcp.json")) {
         getHomeDir().then((home) => {
           const isMcpConfig =
             path.endsWith("/mcp.json") &&
@@ -229,8 +290,7 @@ export function useFileWatcher() {
           log.warn('watcher', 'Debounce map overflow — triggering batch refresh');
           for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
           modifyDebounce.current = {};
-          clearTimeout(refreshDebounce.current);
-          refreshDebounce.current = setTimeout(() => refreshFileTree(), 300);
+          scheduleTreeRefresh();
           return;
         }
         clearTimeout(modifyDebounce.current[normalizedPath]);
@@ -264,6 +324,8 @@ export function useFileWatcher() {
     return () => {
       unlistenBatch.then((fn) => fn());
       clearTimeout(refreshDebounce.current);
+      pendingRefreshDirs.current.clear();
+      pendingFullRefresh.current = false;
       clearTimeout(gitDebounce.current);
       clearTimeout(mcpRescanDebounce.current);
       for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);

@@ -173,10 +173,40 @@ function afterReset(e: ReadingProgressEntry, resetAt: string | undefined): Readi
   return { fraction: 0, openedAt: null, updatedAt: e.updatedAt, device: e.device };
 }
 
+/** Field-wise equality of two entries (the format is flat but for `speech`). */
+export function sameEntry(a: ReadingProgressEntry | undefined, b: ReadingProgressEntry | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.fraction === b.fraction &&
+    a.openedAt === b.openedAt &&
+    a.updatedAt === b.updatedAt &&
+    a.resetAt === b.resetAt &&
+    a.deleted === b.deleted &&
+    a.deletedAt === b.deletedAt &&
+    a.device === b.device &&
+    a.speech?.paragraph === b.speech?.paragraph &&
+    a.speech?.voice === b.speech?.voice
+  );
+}
+
 /**
  * Merge one entry into another under the rules above. Pure.
+ *
+ * When the merge changes nothing, `current` ITSELF is returned (not a copy):
+ * the Inbox list memoises its rows on the entry object, and a merge runs for
+ * every name on every listing and every sidecar write — a fresh object per
+ * name re-rendered every row each time.
  */
 export function mergeEntry(
+  current: ReadingProgressEntry | undefined,
+  incoming: ReadingProgressEntry,
+): ReadingProgressEntry {
+  const merged = mergeEntryFresh(current, incoming);
+  return current && sameEntry(current, merged) ? current : merged;
+}
+
+function mergeEntryFresh(
   current: ReadingProgressEntry | undefined,
   incoming: ReadingProgressEntry,
 ): ReadingProgressEntry {
@@ -226,7 +256,8 @@ export function mergeEntry(
   return merged;
 }
 
-/** Merge a whole file into another, entry by entry. Pure; returns a new file. */
+/** Merge a whole file into another, entry by entry. Pure; returns a new file
+ *  (whose unchanged entries are `current`'s own objects — see `mergeEntry`). */
 export function mergeReadingProgress(
   current: ReadingProgressFile,
   incoming: ReadingProgressFile,
@@ -236,6 +267,32 @@ export function mergeReadingProgress(
     out.items[name] = mergeEntry(out.items[name], entry);
   }
   return out;
+}
+
+/**
+ * `next`, expressed with as many of `previous`'s objects as it can be: an
+ * entry equal to the previous one for that name IS the previous one, and a
+ * file whose every entry is reused (same names, same version) is `previous`
+ * itself. Pure. What a store holding `previous` should keep after computing
+ * `next`, so that a reload or a write that changed nothing changes no
+ * identity and re-renders nothing.
+ */
+export function reuseReadingProgress(previous: ReadingProgressFile, next: ReadingProgressFile): ReadingProgressFile {
+  if (previous === next) return previous;
+  const names = Object.keys(next.items);
+  let changed = previous.version !== next.version || names.length !== Object.keys(previous.items).length;
+  const items: Record<string, ReadingProgressEntry> = {};
+  for (const name of names) {
+    const before = previous.items[name];
+    const after = next.items[name];
+    if (before && sameEntry(before, after)) {
+      items[name] = before;
+    } else {
+      items[name] = after;
+      changed = true;
+    }
+  }
+  return changed ? { version: next.version, items } : previous;
 }
 
 /** A tombstone for `name`, stamped now. */

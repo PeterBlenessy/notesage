@@ -17,7 +17,8 @@ import { resolveSyncedLibraryRoot, type LibraryRootKind } from "@/lib/library-ro
 import { followLibraryMove } from "@/lib/library-follow-apply";
 import { isHeldPath } from "@/lib/library-follow";
 import { classifyMissingMarker, type MarkerAbsence } from "@/lib/library-marker-state";
-import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
+import { scanICloudForProjects, forgetReservedLibraryFolders } from "@/lib/scan-icloud-projects";
+import { resolveNotesRoot } from "@/lib/notes-root";
 import { log, setLogLevel, PERF } from "@/lib/logger";
 import { countFiles } from "@/lib/file-utils";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
@@ -192,8 +193,8 @@ export function useAppLifecycle() {
 
   // --- Reload file trees on startup ---
   // Guard against `React.StrictMode`'s dev-only double-invocation of
-  // empty-deps effects. Without this, `reloadTrees()` (and its per-project
-  // `index init` Promise.all) runs TWICE on every dev cold-start, doubling
+  // empty-deps effects. Without this, `reloadTrees()` (and the background
+  // index pass it starts) runs TWICE on every dev cold-start, doubling
   // the perceived startup time. Production is unaffected — StrictMode
   // double-invoke is dev-only — but the dev cost is real, and the
   // workload here is genuinely once-per-process (DB init, tree validation,
@@ -295,6 +296,29 @@ interface SyncedLibrary {
   markerUncertain: Exclude<MarkerAbsence, "absent"> | null;
   /** Roots under which an unreadable project is kept rather than removed. */
   holdRoots: string[];
+}
+
+/**
+ * Does a folder hold anything a person would see (`.DS_Store` and other
+ * hidden entries aside)?
+ *
+ * Asked of the old `iCloud Drive/Notesage` root at every launch, and it used
+ * to cost a recursive listing of that whole library just to test for
+ * non-emptiness. A top-level file settles it with one shallow call. Only when
+ * there is none does this fall back to the recursive listing:
+ * `list_files_shallow` returns FILES only, so a root holding nothing but
+ * project folders looks empty to it, and reading that as "empty" would switch
+ * a Mac with a real library over to a near-empty container.
+ */
+async function hasVisibleContent(dir: string): Promise<boolean> {
+  try {
+    const files = await tauriApi.listFilesShallow(dir);
+    if (files.some((e) => e.name !== ".DS_Store")) return true;
+  } catch {
+    // Expected: the shallow listing is an optimisation; the recursive one decides.
+  }
+  const entries = await tauriApi.listDirectory(dir, undefined, 0);
+  return entries.some((e) => e.name !== ".DS_Store");
 }
 
 /**
@@ -414,13 +438,13 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
         // safe one: reading a slow or transiently-empty listing as "empty"
         // would switch a Mac with a real CloudDocs library over to a
         // near-empty container for the session.
-        const entries = await withTimeout(
-          tauriApi.listDirectory(cloudDocsRoot),
+        const hasContent = await withTimeout(
+          hasVisibleContent(cloudDocsRoot),
           stepTimeoutMs,
           "listDirectory(cloudDocs)",
         );
-        if (!entries) throw new Error("timed out");
-        cloudDocsHasContent = entries.some((e) => e.name !== ".DS_Store");
+        if (hasContent === undefined) throw new Error("timed out");
+        cloudDocsHasContent = hasContent;
       } catch {
         cloudDocsHasContent = true;
       }
@@ -454,12 +478,91 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
 
 /**
  * Full startup tree reload — loads explorer folders, projects, iCloud,
- * Quick Notes, SQLite index, and re-opens persisted tabs.
+ * Quick Notes, and re-opens persisted tabs. The SQLite index pass is started
+ * here but not awaited (see `runStartupIndexPass`).
  */
 // Exported for direct testing of the iCloud detection branch (the
 // regression-lock test for the stale-snapshot bug fixed in this file).
 // Production callers go through `useAppLifecycle()`.
 export async function reloadTrees() {
+  const progress: StartupProgress = { indexPassStarted: false };
+  try {
+    await reloadTreesBody(progress);
+  } finally {
+    if (!progress.indexPassStarted) {
+      // Startup failed before the index pass could begin. Nothing else will
+      // announce it, and views waiting on the index must not wait for ever.
+      log.warn("startup", "Startup ended before the index pass began; releasing index-backed views");
+      announceIndexReady();
+    }
+  }
+}
+
+interface StartupProgress {
+  /** Set once `runStartupIndexPass` is kicked off; it announces index-ready itself. */
+  indexPassStarted: boolean;
+}
+
+/** Window event fired once per launch when the startup index pass has settled. */
+export const INDEX_READY_EVENT = "notesage:index-ready";
+
+/**
+ * Publish "the startup index pass has settled" — as `settings.indexReady` for
+ * anything that subscribes to the store, and as a window event for anything
+ * that does not.
+ */
+function announceIndexReady(): void {
+  useSettingsStore.getState().setIndexReady(true);
+  window.dispatchEvent(new CustomEvent(INDEX_READY_EVENT));
+}
+
+/**
+ * Initialize the SQLite document index: the global DB first, then every
+ * project. If an init fails (corrupted DB), `initIndexWithRecovery`
+ * auto-recovers by deleting the DB and retrying.
+ *
+ * Runs in the BACKGROUND: startup used to await this before `startupReady`,
+ * so on a large library the watchers, the action scan, MCP discovery and the
+ * first skills pass all sat behind a full reindex. Index queries made in the
+ * meantime answer from whatever is indexed so far; `indexReady` (and
+ * `INDEX_READY_EVENT`) says when to ask again. Never rejects.
+ */
+async function runStartupIndexPass(t0: number): Promise<void> {
+  const tIndex0 = performance.now();
+  let ok = true;
+  try {
+    await initIndexWithRecovery();
+    const projectsForIndex = useWorkspaceStore.getState().projects;
+    await Promise.all(projectsForIndex.map(async (project) => {
+      const tProjectIndex0 = performance.now();
+      await initIndexWithRecovery(project.path);
+      const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
+      const fileCount = countFiles(projectTree?.fileTree);
+      log.perf(PERF.startup, 'index init', {
+        project: project.path,
+        fileCount,
+        ms: Math.round(performance.now() - tProjectIndex0),
+      });
+    }));
+    log.perf(PERF.startup, 'index init total', {
+      ms: Math.round(performance.now() - tIndex0),
+    });
+  } catch (error) {
+    ok = false;
+    log.error("lifecycle", "Failed to initialize index", error);
+  } finally {
+    // `ms` is the index pass alone; `sinceStartMs` is on the same clock as
+    // `ready`'s `totalMs`, so the two lines can be compared directly.
+    log.perf(PERF.startup, 'index ready', {
+      ok,
+      ms: Math.round(performance.now() - tIndex0),
+      sinceStartMs: Math.round(performance.now() - t0),
+    });
+    announceIndexReady();
+  }
+}
+
+async function reloadTreesBody(progress: StartupProgress) {
   const t0 = performance.now();
   log.info("startup", "reloadTrees started");
   const ws = useWorkspaceStore.getState();
@@ -484,7 +587,7 @@ export async function reloadTrees() {
   settings.setSkillsReady(true);
 
   // Kick off tab restoration early — file reads run concurrently with
-  // tree validation, iCloud scanning, and index init below.
+  // tree validation and iCloud scanning below.
   const tTabs0 = performance.now();
   const tabRestorePromise = restorePersistedTabs();
 
@@ -662,6 +765,20 @@ export async function reloadTrees() {
   // Load system fonts for font picker (non-blocking)
   useEditorStylesStore.getState().loadSystemFonts();
 
+  // The Inbox and Recordings folders are native features, not projects. An
+  // earlier version could register the Inbox as one (its `.notesage/` sidecar
+  // folder looked like project metadata); drop that registration, and only
+  // the registration, before the scan below could meet it again.
+  try {
+    const s = useSettingsStore.getState();
+    forgetReservedLibraryFolders([
+      icloudNotesagePath,
+      resolveNotesRoot(s.notesRootPath, s.homeDir),
+    ]);
+  } catch (err) {
+    log.warn("startup", `Reserved library folder cleanup failed: ${err}`);
+  }
+
   // Scan iCloud Notesage for projects that arrived via iCloud sync
   // from other devices. The previous "load sync settings + iterate
   // syncedProjectPaths + addProject" loop is gone — synced projects
@@ -738,32 +855,26 @@ export async function reloadTrees() {
     }
   }
 
-  // Initialize the SQLite document index.
-  // If init fails (corrupted DB), auto-recover by deleting the DB and retrying.
-  log.info("startup", `Notes tree loaded in ${Math.round(performance.now() - t0)}ms, initializing index`);
+  // Start the SQLite document index pass, and do NOT wait for it: the UI is
+  // ready as soon as the trees are. `runStartupIndexPass` reports its own
+  // duration (`index ready`) and announces when index-backed views can
+  // re-query.
+  log.info("startup", `Notes tree loaded in ${Math.round(performance.now() - t0)}ms, initializing index in the background`);
+  // Register every index database BEFORE the watchers can start (they wait
+  // on `startupReady`, set below). Without this, a watcher event for a file
+  // in a project whose database is not open yet is indexed into the global
+  // database instead and counted twice from then on. Opening is cheap; the
+  // indexing itself stays in the background.
   try {
-    const tIndex0 = performance.now();
-    await initIndexWithRecovery();
-    const projectsForIndex = useWorkspaceStore.getState().projects;
-    await Promise.all(projectsForIndex.map(async (project) => {
-      const tProjectIndex0 = performance.now();
-      await initIndexWithRecovery(project.path);
-      const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
-      const fileCount = countFiles(projectTree?.fileTree);
-      log.perf(PERF.startup, 'index init', {
-        project: project.path,
-        fileCount,
-        ms: Math.round(performance.now() - tProjectIndex0),
-      });
-    }));
-    log.perf(PERF.startup, 'index init total', {
-      ms: Math.round(performance.now() - tIndex0),
-    });
+    await tauriApi.indexOpen(useWorkspaceStore.getState().projects.map((p) => p.path));
   } catch (error) {
-    log.error("lifecycle", "Failed to initialize index", error);
+    log.warn("startup", "Could not open the index databases before startup", error);
   }
+  progress.indexPassStarted = true;
+  void runStartupIndexPass(t0);
 
-  // Signal that startup tree validation is complete
+  // Signal that startup tree validation is complete. `ready` is "the UI is
+  // ready"; it no longer includes indexing, which `index ready` reports.
   log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
   log.perf(PERF.startup, 'ready', { totalMs: Math.round(performance.now() - t0) });

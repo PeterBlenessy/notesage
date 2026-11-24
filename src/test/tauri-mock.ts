@@ -145,6 +145,7 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('allow_asset_dir', () => undefined);
   setMockInvokeHandler('mark_self_write', () => undefined);
   setMockInvokeHandler('clear_self_write', () => undefined);
+  setMockInvokeHandler('trash_paths', () => []);
   setMockInvokeHandler('open_folder_dialog', () => null);
   setMockInvokeHandler('get_credential', () => null);
   setMockInvokeHandler('store_credential', () => undefined);

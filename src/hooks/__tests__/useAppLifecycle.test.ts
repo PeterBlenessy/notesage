@@ -29,12 +29,16 @@ const mockSettings: {
   startupReady: boolean;
   setSkillsReady: (v: boolean) => void;
   setStartupReady: (v: boolean) => void;
+  indexReady: boolean;
+  setIndexReady: (v: boolean) => void;
 } = {
   logLevel: 'info',
   skillsReady: true,
   startupReady: true,
   setSkillsReady: vi.fn(),
   setStartupReady: vi.fn(),
+  indexReady: true,
+  setIndexReady: vi.fn(),
 };
 
 vi.mock('@/stores/settings-store', () => ({
@@ -107,7 +111,10 @@ vi.mock('@/lib/file-utils', () => ({ getFileType: vi.fn(() => 'markdown'), isBin
 vi.mock('@/lib/binary-cache', () => ({ setBinaryData: vi.fn() }));
 vi.mock('@/lib/refresh-notes-tree', () => ({ refreshNotesTree: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/ai/migration', () => ({ migrateV1AISettings: vi.fn() }));
-vi.mock('@/lib/scan-icloud-projects', () => ({ scanICloudForProjects: vi.fn().mockResolvedValue(false) }));
+vi.mock('@/lib/scan-icloud-projects', () => ({
+  scanICloudForProjects: vi.fn().mockResolvedValue(false),
+  forgetReservedLibraryFolders: vi.fn(() => []),
+}));
 vi.mock('@/lib/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   setLogLevel: vi.fn(),

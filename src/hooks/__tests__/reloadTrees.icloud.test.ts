@@ -45,6 +45,8 @@ const {
     setNotesRootPath: vi.fn((p: string) => { settingsState.notesRootPath = p; }),
     setSkillsReady: vi.fn((v: boolean) => { settingsState.skillsReady = v; }),
     setStartupReady: vi.fn((v: boolean) => { settingsState.startupReady = v; }),
+    indexReady: false,
+    setIndexReady: vi.fn((v: boolean) => { settingsState.indexReady = v; }),
     setICloudAvailable: vi.fn((v: boolean) => { settingsState.icloudAvailable = v; }),
     setICloudNotesagePath: vi.fn((p: string) => { settingsState.icloudNotesagePath = p; }),
     setLibraryRootKind: vi.fn(),
@@ -112,7 +114,10 @@ vi.mock('@/lib/frontmatter', () => ({ parseFrontmatter: vi.fn(() => ({ frontmatt
 vi.mock('@/lib/file-utils', () => ({ getFileType: vi.fn(() => 'markdown'), isBinaryFileType: vi.fn(() => false) }));
 vi.mock('@/lib/binary-cache', () => ({ setBinaryData: vi.fn() }));
 vi.mock('@/lib/refresh-notes-tree', () => ({ refreshNotesTree: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/lib/scan-icloud-projects', () => ({ scanICloudForProjects: scanICloudForProjectsMock }));
+vi.mock('@/lib/scan-icloud-projects', () => ({
+  scanICloudForProjects: scanICloudForProjectsMock,
+  forgetReservedLibraryFolders: vi.fn(() => []),
+}));
 vi.mock('@/lib/logger', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/logger')>();
   return {

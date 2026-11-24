@@ -828,8 +828,12 @@ export const tauriApi = {
     await invoke("write_file", { path, content });
   },
 
-  async listDirectory(path: string, showHidden?: boolean): Promise<FileEntry[]> {
-    return await invoke<FileEntry[]>("list_directory", { path, showHidden });
+  /**
+   * `maxDepth: 0` lists only the directory itself: subfolders come back
+   * `truncated` with empty `children`, without being walked.
+   */
+  async listDirectory(path: string, showHidden?: boolean, maxDepth?: number): Promise<FileEntry[]> {
+    return await invoke<FileEntry[]>("list_directory", { path, showHidden, maxDepth });
   },
 
   async listFilesShallow(path: string, showHidden?: boolean): Promise<FileEntry[]> {
@@ -885,6 +889,15 @@ export const tauriApi = {
   async trashPath(path: string): Promise<void> {
     assertLibraryUnlocked(path);
     await invoke("trash_path", { path });
+  },
+
+  /**
+   * Move several paths to the Trash in one call. Resolves with the paths
+   * that could NOT be moved (empty when all of them went).
+   */
+  async trashPaths(paths: string[]): Promise<string[]> {
+    for (const path of paths) assertLibraryUnlocked(path);
+    return invoke<string[]>("trash_paths", { paths });
   },
 
   /**
@@ -1410,6 +1423,11 @@ export const tauriApi = {
   // SQLite document index
   async indexInit(projectPath?: string): Promise<IndexStats> {
     return await invoke<IndexStats>("index_init", { projectPath: projectPath ?? null });
+  },
+
+  /** Open the global and the given projects' index databases without indexing. */
+  async indexOpen(projectPaths: string[]): Promise<void> {
+    await invoke("index_open", { projectPaths });
   },
 
   async indexFile(path: string): Promise<void> {

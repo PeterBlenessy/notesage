@@ -7,8 +7,7 @@ import { beginFileDrag, FILE_DRAG_PATHS_MIME } from "@/components/sidebar/quiet/
 import type { InboxCardMeta } from "@/lib/tauri";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { InboxItemMenu } from "./InboxItemMenu";
-import { useInboxThumbnail } from "./InboxRow";
+import { useInboxMeta, useInboxThumbnail } from "./InboxRow";
 
 export interface InboxCardProps {
   item: InboxItem;
@@ -17,12 +16,12 @@ export interface InboxCardProps {
   selected: boolean;
   cursor: boolean;
   size: "small" | "medium" | "large";
-  pinned: boolean;
+  /** 1-based position among the visible items, and their count (the gallery
+   *  is windowed like the list). */
+  posInSet: number;
+  setSize: number;
   onOpen: (item: InboxItem) => void;
   onSelect: (item: InboxItem, modifiers: { shift: boolean; meta: boolean }) => void;
-  onFileToLast: (paths: string[]) => void;
-  onTogglePin: (paths: string[]) => void;
-  onTrash: (paths: string[]) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   registerRef: (path: string, el: HTMLElement | null) => void;
 }
@@ -34,10 +33,11 @@ export interface InboxCardProps {
  * decides the column count.
  */
 function InboxCardImpl({
-  item, meta, entry, selected, cursor, size, pinned,
-  onOpen, onSelect, onFileToLast, onTogglePin, onTrash, onKeyDown, registerRef,
+  item, meta, entry, selected, cursor, size, posInSet, setSize,
+  onOpen, onSelect, onKeyDown, registerRef,
 }: InboxCardProps) {
-  const thumb = useInboxThumbnail(item);
+  const thumb = useInboxThumbnail(item, size);
+  useInboxMeta(item);
   const title = meta?.title ?? item.name.replace(/\.html?$/i, "");
   const unread = isUnread(entry);
   const finished = isFinished(entry);
@@ -62,12 +62,15 @@ function InboxCardImpl({
     event.dataTransfer.setData(FILE_DRAG_PATHS_MIME, JSON.stringify(paths));
   };
 
+  // Triage on a card is the list's one context menu (`InboxItemMenu`),
+  // which finds the card under the pointer by `data-path`.
   return (
-    <InboxItemMenu item={item} pinned={pinned} onFileToLast={onFileToLast} onTogglePin={onTogglePin} onTrash={onTrash}>
       <div
         ref={(el) => registerRef(item.path, el)}
         role="option"
         aria-selected={selected}
+        aria-posinset={posInSet}
+        aria-setsize={setSize}
         aria-current={cursor ? "true" : undefined}
         tabIndex={cursor ? 0 : -1}
         draggable
@@ -98,7 +101,7 @@ function InboxCardImpl({
         )}
         <span className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg bg-muted">
           {thumb?.kind === "picture" ? (
-            <img src={thumb.url} alt="" className="h-full w-full object-cover" draggable={false} />
+            <img src={thumb.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" draggable={false} />
           ) : (
             <FileIcon fileName={item.name} className="h-6 w-6 text-muted-foreground" />
           )}
@@ -123,7 +126,6 @@ function InboxCardImpl({
           </span>
         )}
       </div>
-    </InboxItemMenu>
   );
 }
 

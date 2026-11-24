@@ -119,7 +119,7 @@ single-file payload; `droppedFilePaths` reads either). `ProjectRow` accepts
 the drop and `ProjectsSection` moves the files through `fileTo`. Names are
 deduped like the phone does (`name-1.ext`).
 
-Deleting uses `trash_path` (the `trash` crate — Finder's Trash), never the
+Deleting a selection uses `trash_paths` (one call for all files); a single delete may still use `trash_path`. Both go through the `trash` crate (Finder's Trash), never the
 permanent `delete_path`: throwing away a read-later item must be as safe as
 it is in Mail.
 
@@ -220,4 +220,16 @@ open (no-ops otherwise). See `docs/keyboard-shortcuts.md`.
 | `src/lib/inbox-progress-sync.ts` | The phone's write-through |
 | `src/lib/desktop-thumbnails.ts` | Desktop thumbnail pipeline |
 | `src-tauri/src/commands/preview.rs` | `article_card_meta`, `inbox_card_meta`, `article_lead_image` |
-| `src-tauri/src/commands/file.rs` | `trash_path`; `list_files_shallow` now carries `modified` |
+| `src-tauri/src/commands/file.rs` | `trash_path`, `trash_paths` (batch, used by multi-select delete); `list_files_shallow` now carries `modified` |
+
+## Performance shape (2026-11-24)
+
+Sized for an Inbox of several hundred items:
+
+- The list and the gallery are windowed (`@tanstack/react-virtual`): only the rows on screen are mounted, with one context menu for the whole view. Rows carry `aria-setsize` / `aria-posinset`, so assistive tech still gets the full count.
+- `load()` is three backend calls whatever the size, and reads no capture. Row headers (`inbox_card_meta`) and thumbnails are requested by visible rows only; header results are applied in one store update per frame. Filtering matches file names at once and fills in title, site and excerpt matches as headers arrive.
+- Thumbnails are redrawn in the webview to twice the slot size and only the small image is kept.
+- A reload or a progress write that changes nothing keeps every item and entry object, so no row re-renders.
+- Filing moves all files, then refreshes each affected tree once; rows leave the list at once and a failed move puts its row back.
+- The Inbox and Recordings folders are never treated as projects, by the startup scan or by the watcher.
+- Timing lines go to the log as `perf:inbox` (load, view mount, thumbnails, file, trash). `src/perf/inbox-list.perf.test.tsx` pins the render counts.

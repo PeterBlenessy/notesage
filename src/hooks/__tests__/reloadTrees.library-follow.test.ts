@@ -138,7 +138,7 @@ beforeEach(() => {
       { path: `${OLD}/Recipes`, fileTree: [] },
       { path: `${HOME}/Code/local`, fileTree: [] },
     ],
-    explorerFolders: [{ path: `${OLD}/Inbox`, fileTree: [] }],
+    explorerFolders: [{ path: `${OLD}/Clippings`, fileTree: [] }],
     pinnedFiles: [`${OLD}/Work/plan.md`],
     recentProjects: [],
     dismissedLibraryProjects: [`${OLD}/Archive`],
@@ -158,12 +158,12 @@ describe("startup on a Mac that did not run the library move", () => {
       [`${HOME}/Notesage/.notesage`]: [],
       [`${HOME}/Code/local`]: ["readme.md"],
       [OLD]: [],
-      [NEW]: ["Work", "Recipes", "Inbox", "Home Only", "Archive"],
+      [NEW]: ["Work", "Recipes", "Clippings", "Home Only", "Archive"],
       [`${NEW}/Work`]: ["plan.md", ".notesage"],
       [`${NEW}/Work/.notesage`]: [],
       [`${NEW}/Recipes`]: ["pie.md", ".notesage"],
       [`${NEW}/Recipes/.notesage`]: [],
-      [`${NEW}/Inbox`]: ["clip.md"],
+      [`${NEW}/Clippings`]: ["clip.md"],
       [`${NEW}/Home Only`]: [".notesage"],
       [`${NEW}/Home Only/.notesage`]: [],
       [`${NEW}/Archive`]: [".notesage"],
@@ -181,7 +181,7 @@ describe("startup on a Mac that did not run the library move", () => {
     expect(paths).toContain(`${HOME}/Code/local`);
     expect(paths.some((p) => p.startsWith(`${OLD}/`))).toBe(false);
     expect(ws.projects.find((p) => p.path === `${NEW}/Work`)?.fileTree.length).toBeGreaterThan(0);
-    expect(ws.explorerFolders.map((f) => f.path)).toEqual([`${NEW}/Inbox`]);
+    expect(ws.explorerFolders.map((f) => f.path)).toEqual([`${NEW}/Clippings`]);
     expect(ws.pinnedFiles).toEqual([`${NEW}/Work/plan.md`]);
     expect(toastWarning).not.toHaveBeenCalled();
   });
@@ -247,7 +247,7 @@ describe("startup when macOS will not let Notesage read its iCloud folder", () =
       `${OLD}/Recipes`,
       `${HOME}/Code/local`,
     ]);
-    expect(ws.explorerFolders.map((f) => f.path)).toEqual([`${OLD}/Inbox`]);
+    expect(ws.explorerFolders.map((f) => f.path)).toEqual([`${OLD}/Clippings`]);
     expect(useSettingsStore.getState().icloudNotesagePath).toBe(OLD);
     expect(useSettingsStore.getState().libraryContainerDenied).toBe(true);
     expect(toastWarning).toHaveBeenCalledTimes(1);
@@ -300,10 +300,10 @@ describe("a project that cannot be listed but is still on disk", () => {
       [`${HOME}/Notesage`]: [],
       [`${HOME}/Notesage/.notesage`]: [],
       [`${HOME}/Code/local`]: ["readme.md"],
-      [OLD]: ["Work", "Recipes", "Inbox"],
+      [OLD]: ["Work", "Recipes", "Clippings"],
       [`${OLD}/Work`]: [],
       [`${OLD}/Recipes`]: [],
-      [`${OLD}/Inbox`]: [],
+      [`${OLD}/Clippings`]: [],
     });
     disk.delete(NEW);
     unlistable.add(`${HOME}/Code/local`);

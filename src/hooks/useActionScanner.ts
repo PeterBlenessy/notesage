@@ -4,71 +4,75 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useActionStore } from '@/stores/action-store';
 
 /**
- * Orchestrates action scanning. Triggers fullScan on startup and
- * incremental updates on file change events.
+ * Orchestrates action scanning. Triggers fullScan once the startup index pass
+ * has settled and reports changed files to the store afterwards.
+ *
+ * Gated on `indexReady`, not `startupReady`: tasks and goals are read from the
+ * SQLite index, and the UI no longer waits for that to be built. Until it is,
+ * the Actions view shows the actions persisted from the last session.
  *
  * Must be mounted in App.tsx.
  */
 export function useActionScanner() {
-  const startupReady = useSettingsStore((s) => s.startupReady);
+  const indexReady = useSettingsStore((s) => s.indexReady);
   const hasScanned = useRef(false);
 
-  // Full scan once on startup
+  // Full scan once, when the index can answer in full
   useEffect(() => {
-    if (!startupReady || hasScanned.current) return;
+    if (!indexReady || hasScanned.current) return;
     hasScanned.current = true;
     useActionStore.getState().fullScan();
-  }, [startupReady]);
+  }, [indexReady]);
 
-  // Listen for file-changed events and trigger incremental update (debounced)
+  // Listen for changed files and report them to the store. The store does
+  // the coalescing (one scan per project per debounce window, shared with the
+  // save path) and drops paths that cannot hold actions, so nothing is
+  // debounced or filtered a second time here.
+  //
+  // Two events, because neither covers everything:
+  //  - `file-changed-batch` is every external change, comment sidecars
+  //    included, but leaves out the app's own saves;
+  //  - `links-reindexed` fires once the index has actually taken a change in,
+  //    own saves included. Tasks and goals are read from the index, so this is
+  //    the one that makes the Actions view reflect a save: the scan the save
+  //    itself requests can run before the backend has reindexed the file.
   useEffect(() => {
-    if (!startupReady) return;
+    if (!indexReady) return;
 
     let mounted = true;
-    let unlistenFn: (() => void) | null = null;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const pendingPaths = new Set<string>();
-
-    listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
-      if (!mounted) return;
-
-      const batch = event.payload;
-      if (!batch || batch.length === 0) return;
-
-      for (const { path } of batch) {
-        // Only care about markdown files and comment files
-        if (!path.endsWith('.md') && !path.endsWith('.json')) continue;
-        pendingPaths.add(path);
-      }
-
-      if (pendingPaths.size === 0) return;
-
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const store = useActionStore.getState();
-        // If multiple files changed, just do a full rescan
-        if (pendingPaths.size > 5) {
-          store.fullScan();
-        } else {
-          for (const p of pendingPaths) {
-            store.incrementalUpdate(p);
-          }
-        }
-        pendingPaths.clear();
-      }, 500);
-    }).then((fn) => {
+    const unlistenFns: Array<() => void> = [];
+    const keep = (fn: () => void) => {
       if (mounted) {
-        unlistenFn = fn;
+        unlistenFns.push(fn);
       } else {
         // Already unmounted — clean up immediately
         fn();
       }
-    });
+    };
+    const report = (paths: string[]) => {
+      const store = useActionStore.getState();
+      for (const path of paths) {
+        void store.incrementalUpdate(path);
+      }
+    };
+
+    listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+      if (!mounted) return;
+      const batch = event.payload;
+      if (!batch || batch.length === 0) return;
+      report(batch.map((change) => change.path));
+    }).then(keep);
+
+    listen<string[]>('links-reindexed', (event) => {
+      if (!mounted) return;
+      const paths = event.payload;
+      if (!Array.isArray(paths) || paths.length === 0) return;
+      report(paths);
+    }).then(keep);
 
     return () => {
       mounted = false;
-      unlistenFn?.();
-      if (debounceTimer) clearTimeout(debounceTimer);
+      for (const fn of unlistenFns) fn();
     };
-  }, [startupReady]);
+  }, [indexReady]);
 }

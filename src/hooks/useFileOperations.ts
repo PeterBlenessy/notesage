@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { tauriApi } from "@/lib/tauri";
+import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -99,6 +99,138 @@ function reportTreeReadFailure(path: string, error: unknown): void {
   log.warn("tree", `Could not refresh ${path}, keeping the tree already shown`, error);
   const name = path.split("/").pop() || path;
   toast.warning(t("toast.treeRefreshFailed", { name }), { id: `tree-refresh-failed:${path}` });
+}
+
+/** `path` is `root` or lies beneath it. `/a/Work-archive` is not under `/a/Work`. */
+function isAtOrUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`);
+}
+
+interface TreeFlight {
+  running: Promise<number | null>;
+  /** The one re-run requested while `running` was in flight, shared by everyone who asked. */
+  queued: Promise<number | null> | null;
+  queuedRun: () => Promise<number | null>;
+}
+
+/** Refreshes in flight, by root. */
+const treeFlights = new Map<string, TreeFlight>();
+
+/**
+ * At most one refresh of a root at a time. A request that arrives while one
+ * is running does not start a second listing alongside it: it marks the root
+ * dirty, and ONE re-run starts when the current listing finishes, however
+ * many requests arrived meanwhile. The re-run is not optional: the listing in
+ * flight may have read the directory before the change that prompted the new
+ * request, so its caller gets a listing that began after it asked.
+ *
+ * `supersede` lets the request choose what the re-run does (a full refresh
+ * decides more than a targeted one, see `refreshProjectRoot`).
+ */
+function singleFlight(
+  key: string,
+  run: () => Promise<number | null>,
+  supersede = false,
+): Promise<number | null> {
+  const flight = treeFlights.get(key);
+  if (flight) {
+    if (supersede || !flight.queued) flight.queuedRun = run;
+    if (!flight.queued) {
+      const rerun = () => singleFlight(key, flight.queuedRun);
+      flight.queued = flight.running.then(rerun, rerun);
+    }
+    return flight.queued;
+  }
+  const running = run().finally(() => {
+    treeFlights.delete(key);
+  });
+  treeFlights.set(key, { running, queued: null, queuedRun: run });
+  return running;
+}
+
+/** List one root and log it. Throws when the listing fails. */
+async function listRoot(rootPath: string): Promise<{ tree: FileEntry[]; fileCount: number }> {
+  const t0 = performance.now();
+  const tree = await tauriApi.listDirectory(rootPath, useSettingsStore.getState().showHiddenFiles);
+  const ms = Math.round(performance.now() - t0);
+  const fileCount = countFiles(tree);
+  const path = rootPath.split('/').pop() ?? rootPath;
+  log.perf(PERF.tree, 'list', { path, fileCount, ms });
+  return { tree, fileCount };
+}
+
+/** Relist an explorer folder. Resolves its file count, or null when it could not be read. */
+function refreshExplorerRoot(folderPath: string): Promise<number | null> {
+  return singleFlight(`explorer:${folderPath}`, async () => {
+    try {
+      const { tree, fileCount } = await listRoot(folderPath);
+      useWorkspaceStore.getState().updateExplorerTree(folderPath, tree);
+      return fileCount;
+    } catch (error) {
+      // The tree already in the store stays; say that it is stale.
+      reportTreeReadFailure(folderPath, error);
+      return null;
+    }
+  });
+}
+
+/**
+ * Relist a project. Resolves its file count, or null when it could not be
+ * read. What an unreadable project means depends on who asks: a targeted
+ * refresh keeps the tree and says it is stale; a `full` refresh also works out
+ * whether the project was renamed, is merely unreachable, or is gone.
+ */
+function refreshProjectRoot(projectPath: string, full: boolean): Promise<number | null> {
+  return singleFlight(
+    `project:${projectPath}`,
+    async () => {
+      try {
+        const { tree, fileCount } = await listRoot(projectPath);
+        useWorkspaceStore.getState().updateProjectTree(projectPath, tree);
+        return fileCount;
+      } catch (error) {
+        if (!full) {
+          // The tree already in the store stays; say that it is stale.
+          reportTreeReadFailure(projectPath, error);
+          return null;
+        }
+        // Expected: project path no longer exists — check if it was renamed
+        // by scanning the parent directory for a folder with matching .notesage metadata
+        if (!useSettingsStore.getState().startupReady) {
+          // Startup decides what an unreadable project means — it may have
+          // moved with the library and be about to be followed — so a
+          // refresh that races it (the hidden-files setting loading fires
+          // one) must not prune it first.
+          return null;
+        }
+        const parentDir = projectPath.substring(0, projectPath.lastIndexOf('/'));
+        const renamed = await detectRenamedProject(parentDir);
+        if (renamed) {
+          await migrateProjectPath(projectPath, renamed);
+        } else if (isHeldPath(projectPath, useSettingsStore.getState().libraryHoldRoots ?? [])) {
+          // Unreadable while the library's state is uncertain (iCloud folder
+          // blocked, or its marker not readable yet), not because it is
+          // gone: keep it so it can be followed once that clears.
+        } else if (await tauriApi.pathExists(projectPath).catch(() => true)) {
+          // Still there, just not listable right now (permissions, a volume
+          // that dropped, an iCloud hiccup). One failed read must not drop a
+          // project from the sidebar mid-session.
+          log.warn("tree", `Project unreadable but present, kept: ${projectPath}`);
+        } else {
+          const projectName = projectPath.split('/').pop() || projectPath;
+          useWorkspaceStore.getState().removeProject(projectPath);
+          toast.warning(t("toast.projectRemoved", { project: projectName }));
+        }
+        return null;
+      }
+    },
+    full,
+  );
+}
+
+/** Relist Quick Notes. Null when there is no notes root, or it could not be read. */
+function refreshNotesRoot(): Promise<number | null> {
+  return singleFlight("notes", async () => (await refreshNotesTree()) ?? null);
 }
 
 /**
@@ -215,67 +347,44 @@ export async function closeActiveDocument(): Promise<void> {
 
 export function useFileOperations() {
 
-  const refreshFileTree = useCallback(async (targetPath?: string) => {
+  const refreshFileTree = useCallback(async (target?: string | readonly string[]) => {
     const refreshStart = performance.now();
     const ws = useWorkspaceStore.getState();
     const settings = useSettingsStore.getState();
     let sections = 0;
     let totalFiles = 0;
+    const count = (files: number | null) => {
+      if (files === null) return;
+      totalFiles += files;
+      sections += 1;
+    };
 
-    // If a specific path is given, determine which section to refresh
-    if (targetPath) {
-      // Check explorer folders
+    // One or more paths: refresh every root that owns one of them, each root
+    // once however many of the paths it owns.
+    if (target !== undefined) {
+      const targets = typeof target === "string" ? [target] : target;
+      if (targets.length === 0) return;
+      const owns = (root: string) => targets.some((path) => isAtOrUnder(path, root));
+
       for (const folder of ws.explorerFolders) {
-        if (targetPath.startsWith(folder.path)) {
-          try {
-            const t0 = performance.now();
-            const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
-            const ms = Math.round(performance.now() - t0);
-            const fileCount = countFiles(tree);
-            const path = folder.path.split('/').pop() ?? folder.path;
-            log.perf(PERF.tree, 'list', { path, fileCount, ms });
-            totalFiles += fileCount;
-            sections += 1;
-            ws.updateExplorerTree(folder.path, tree);
-          } catch (error) {
-            // The tree already in the store stays; say that it is stale.
-            reportTreeReadFailure(folder.path, error);
-          }
-        }
+        if (owns(folder.path)) count(await refreshExplorerRoot(folder.path));
       }
 
-      // Check projects
       for (const project of ws.projects) {
-        if (targetPath.startsWith(project.path)) {
-          try {
-            const t0 = performance.now();
-            const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
-            const ms = Math.round(performance.now() - t0);
-            const fileCount = countFiles(tree);
-            const path = project.path.split('/').pop() ?? project.path;
-            log.perf(PERF.tree, 'list', { path, fileCount, ms });
-            totalFiles += fileCount;
-            sections += 1;
-            ws.updateProjectTree(project.path, tree);
-          } catch (error) {
-            // The tree already in the store stays; say that it is stale.
-            reportTreeReadFailure(project.path, error);
-          }
-        }
+        if (owns(project.path)) count(await refreshProjectRoot(project.path, false));
       }
 
       // Check notes root (and iCloud notes path)
       const notesRoot = settings.notesRootPath;
       const icloudPath = settings.icloudNotesagePath;
       if (
-        (notesRoot && targetPath.startsWith(notesRoot)) ||
-        (icloudPath && targetPath.startsWith(icloudPath))
+        targets.some(
+          (path) =>
+            (notesRoot && path.startsWith(notesRoot)) ||
+            (icloudPath && path.startsWith(icloudPath)),
+        )
       ) {
-        const notesCount = await refreshNotesTree();
-        if (notesCount !== null && notesCount !== undefined) {
-          totalFiles += notesCount;
-          sections += 1;
-        }
+        count(await refreshNotesRoot());
       }
 
       const ms = Math.round(performance.now() - refreshStart);
@@ -284,78 +393,38 @@ export function useFileOperations() {
       // `sections: 0`. Five such lines appear on every launch (see the
       // v0.60.2 baseline entry) and there is currently no way to tell which
       // kind they are.
-      log.perf(PERF.tree, 'refresh', { mode: 'targeted', targetPath, sections, totalFiles, ms });
+      log.perf(PERF.tree, 'refresh', {
+        mode: 'targeted',
+        targetPath: targets[0],
+        targets: targets.length,
+        sections,
+        totalFiles,
+        ms,
+      });
       return;
     }
 
-    // No target path: refresh everything that's open
-    for (const folder of ws.explorerFolders) {
-      try {
-        const t0 = performance.now();
-        const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
-        const ms = Math.round(performance.now() - t0);
-        const fileCount = countFiles(tree);
-        const path = folder.path.split('/').pop() ?? folder.path;
-        log.perf(PERF.tree, 'list', { path, fileCount, ms });
-        totalFiles += fileCount;
-        sections += 1;
-        ws.updateExplorerTree(folder.path, tree);
-      } catch (error) {
-        // The tree already in the store stays; say that it is stale.
-        reportTreeReadFailure(folder.path, error);
-      }
-    }
+    // No target path: refresh everything that's open. One full refresh at a
+    // time: a second request while one runs becomes a single re-run after it,
+    // instead of a second pass over every root alongside the first.
+    await singleFlight("full", async () => {
+      const fullStart = performance.now();
+      const now = useWorkspaceStore.getState();
+      let fullSections = 0;
+      let fullFiles = 0;
+      const tally = (files: number | null) => {
+        if (files === null) return;
+        fullFiles += files;
+        fullSections += 1;
+      };
+      for (const folder of now.explorerFolders) tally(await refreshExplorerRoot(folder.path));
+      for (const project of now.projects) tally(await refreshProjectRoot(project.path, true));
+      tally(await refreshNotesRoot());
 
-    for (const project of ws.projects) {
-      try {
-        const t0 = performance.now();
-        const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
-        const ms = Math.round(performance.now() - t0);
-        const fileCount = countFiles(tree);
-        const path = project.path.split('/').pop() ?? project.path;
-        log.perf(PERF.tree, 'list', { path, fileCount, ms });
-        totalFiles += fileCount;
-        sections += 1;
-        ws.updateProjectTree(project.path, tree);
-      } catch {
-        // Expected: project path no longer exists — check if it was renamed
-        // by scanning the parent directory for a folder with matching .notesage metadata
-        if (!useSettingsStore.getState().startupReady) {
-          // Startup decides what an unreadable project means — it may have
-          // moved with the library and be about to be followed — so a
-          // refresh that races it (the hidden-files setting loading fires
-          // one) must not prune it first.
-          continue;
-        }
-        const parentDir = project.path.substring(0, project.path.lastIndexOf('/'));
-        const renamed = await detectRenamedProject(parentDir);
-        if (renamed) {
-          await migrateProjectPath(project.path, renamed);
-        } else if (isHeldPath(project.path, useSettingsStore.getState().libraryHoldRoots ?? [])) {
-          // Unreadable while the library's state is uncertain (iCloud folder
-          // blocked, or its marker not readable yet), not because it is
-          // gone: keep it so it can be followed once that clears.
-        } else if (await tauriApi.pathExists(project.path).catch(() => true)) {
-          // Still there, just not listable right now (permissions, a volume
-          // that dropped, an iCloud hiccup). One failed read must not drop a
-          // project from the sidebar mid-session.
-          log.warn("tree", `Project unreadable but present, kept: ${project.path}`);
-        } else {
-          const projectName = project.path.split('/').pop() || project.path;
-          ws.removeProject(project.path);
-          toast.warning(t("toast.projectRemoved", { project: projectName }));
-        }
-      }
-    }
-
-    const notesCount = await refreshNotesTree();
-    if (notesCount !== null && notesCount !== undefined) {
-      totalFiles += notesCount;
-      sections += 1;
-    }
-
-    const ms = Math.round(performance.now() - refreshStart);
-    log.perf(PERF.tree, 'refresh', { mode: 'full', sections, totalFiles, ms });
+      const ms = Math.round(performance.now() - fullStart);
+      log.perf(PERF.tree, 'refresh', { mode: 'full', sections: fullSections, totalFiles: fullFiles, ms });
+      return fullFiles;
+    });
   }, []);
 
   // The Inbox is a mode of the document column, so showing a document means

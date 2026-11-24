@@ -2,14 +2,13 @@ import { memo, useEffect, useState, type DragEvent, type KeyboardEvent, type Mou
 import { Pin, Trash2 } from "lucide-react";
 import { FileIcon } from "@/components/sidebar/FileIcon";
 import { useInboxStore, type InboxItem } from "@/stores/inbox-store";
-import { getDesktopThumbnail, type DesktopThumbnail } from "@/lib/desktop-thumbnails";
+import { getDesktopThumbnail, type DesktopThumbnail, type ThumbnailSlot } from "@/lib/desktop-thumbnails";
 import { isFinished, isUnread, type ReadingProgressEntry } from "@/lib/reading-progress-file";
 import { readingLine } from "@/components/mobile/reading-progress";
 import { beginFileDrag, FILE_DRAG_PATHS_MIME } from "@/components/sidebar/quiet/file-drag";
 import type { InboxCardMeta } from "@/lib/tauri";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { InboxItemMenu } from "./InboxItemMenu";
 
 export interface InboxRowProps {
   item: InboxItem;
@@ -20,6 +19,10 @@ export interface InboxRowProps {
   condensed: boolean;
   pinned: boolean;
   destinationName: string | null;
+  /** 1-based position among the visible items, and their count. The list
+   *  is windowed, so the DOM alone no longer tells a screen reader either. */
+  posInSet: number;
+  setSize: number;
   onOpen: (item: InboxItem) => void;
   onSelect: (item: InboxItem, modifiers: { shift: boolean; meta: boolean }) => void;
   onFileToLast: (paths: string[]) => void;
@@ -33,21 +36,37 @@ function formatSize(item: InboxItem): string | null {
   return item.kind === "html" || item.kind === "markdown" ? null : item.kind.toUpperCase();
 }
 
-/** The thumbnail slot: 56pt (40pt condensed), picture or type icon. */
-export function useInboxThumbnail(item: InboxItem): DesktopThumbnail | null {
+/**
+ * The thumbnail slot: 56pt (40pt condensed), picture or type icon.
+ *
+ * Runs only for rows that are mounted, and the list mounts only the rows on
+ * screen — so this is also where "thumbnails for visible rows only" is
+ * decided. `slot` says how large the picture is shown; it is cached at
+ * that size.
+ */
+export function useInboxThumbnail(item: InboxItem, slot: ThumbnailSlot = "row"): DesktopThumbnail | null {
   const [thumb, setThumb] = useState<DesktopThumbnail | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void getDesktopThumbnail({ name: item.name, path: item.path, is_directory: false, hidden: false, modified: item.modified }).then(
-      (result) => {
-        if (!cancelled) setThumb(result);
-      },
-    );
+    void getDesktopThumbnail(
+      { name: item.name, path: item.path, is_directory: false, hidden: false, modified: item.modified },
+      slot,
+    ).then((result) => {
+      if (!cancelled) setThumb(result);
+    });
     return () => {
       cancelled = true;
     };
-  }, [item.path, item.name, item.modified]);
+  }, [item.path, item.name, item.modified, slot]);
   return thumb;
+}
+
+/** Ask for the article header of an item that is on screen. `load()` does
+ *  not: a header is a whole-file read of the capture. */
+export function useInboxMeta(item: InboxItem): void {
+  useEffect(() => {
+    useInboxStore.getState().ensureMeta(item);
+  }, [item]);
 }
 
 /**
@@ -58,10 +77,11 @@ export function useInboxThumbnail(item: InboxItem): DesktopThumbnail | null {
  * for filing into a project.
  */
 function InboxRowImpl({
-  item, meta, entry, selected, cursor, condensed, pinned, destinationName,
+  item, meta, entry, selected, cursor, condensed, pinned, destinationName, posInSet, setSize,
   onOpen, onSelect, onFileToLast, onTogglePin, onTrash, onKeyDown, registerRef,
 }: InboxRowProps) {
   const thumb = useInboxThumbnail(item);
+  useInboxMeta(item);
   const title = meta?.title ?? item.name.replace(/\.html?$/i, "");
   const unread = isUnread(entry);
   const finished = isFinished(entry);
@@ -90,18 +110,15 @@ function InboxRowImpl({
     event.dataTransfer.setData(FILE_DRAG_PATHS_MIME, JSON.stringify(paths));
   };
 
+  // The context menu is ONE menu on the list (`InboxItemMenu`), which finds
+  // the row under the pointer by `data-path` — not a menu per row.
   return (
-    <InboxItemMenu
-      item={item}
-      onFileToLast={onFileToLast}
-      onTogglePin={onTogglePin}
-      onTrash={onTrash}
-      pinned={pinned}
-    >
       <div
         ref={(el) => registerRef(item.path, el)}
         role="option"
         aria-selected={selected}
+        aria-posinset={posInSet}
+        aria-setsize={setSize}
         aria-current={cursor ? "true" : undefined}
         tabIndex={cursor ? 0 : -1}
         draggable
@@ -130,7 +147,7 @@ function InboxRowImpl({
           )}
         >
           {thumb?.kind === "picture" ? (
-            <img src={thumb.url} alt="" className="h-full w-full object-cover" draggable={false} />
+            <img src={thumb.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" draggable={false} />
           ) : (
             <FileIcon fileName={item.name} className="h-5 w-5 text-muted-foreground" />
           )}
@@ -207,7 +224,6 @@ function InboxRowImpl({
           </button>
         </span>
       </div>
-    </InboxItemMenu>
   );
 }
 

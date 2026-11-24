@@ -10,6 +10,7 @@ import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { parseFrontmatter } from '@/lib/frontmatter';
 import { log } from '@/lib/logger';
 import { reportRehydrateError } from "@/lib/persist-rehydrate";
+import { whenDocumentIndexIdle } from '@/lib/document-index';
 
 export type { ActionItem, ActionSourceType, ActionStatus } from '@/lib/tauri';
 
@@ -42,7 +43,13 @@ interface ActionStore {
   // Actions
   fullScan(): Promise<void>;
   resetScanCircuitBreaker(): void;
+  /**
+   * Note that `filePath` changed. Coalesced: the owning root is rescanned
+   * once per debounce window however many paths under it are reported.
+   */
   incrementalUpdate(filePath: string): Promise<void>;
+  /** Rescan one root now. Internal: callers go through `incrementalUpdate`. */
+  _scanRoot(scanRoot: string): Promise<void>;
   toggleTaskDone(action: ActionItem): Promise<void>;
   setFilter(filter: Partial<ActionFilter>): void;
   resetFilter(): void;
@@ -157,6 +164,78 @@ function indexedGoalToAction(goal: IndexedGoal): ActionItem {
   };
 }
 
+/**
+ * Can a change to this path change what the Actions view shows? Tasks and
+ * goals come from markdown (through the index), comments from the JSON
+ * sidecars in `.notesage/comments/`. Nothing else can: not the Inbox's saved
+ * pages, not images, not `project.json` or `reading-progress.json`.
+ */
+export function canHoldActions(filePath: string): boolean {
+  if (filePath.endsWith('.md')) return true;
+  return filePath.endsWith('.json') && filePath.includes('/.notesage/comments/');
+}
+
+/** The project, explorer folder or notes root whose scan covers `filePath`. */
+function findScanRoot(filePath: string): string | null {
+  const ws = useWorkspaceStore.getState();
+  const settings = useSettingsStore.getState();
+  for (const p of ws.projects) {
+    if (filePath.startsWith(p.path + '/')) return p.path;
+  }
+  for (const f of ws.explorerFolders) {
+    if (filePath.startsWith(f.path + '/')) return f.path;
+  }
+  if (settings.notesRootPath && filePath.startsWith(settings.notesRootPath)) {
+    return settings.notesRootPath;
+  }
+  return null;
+}
+
+/**
+ * True while the startup index pass is still running. A scan made then would
+ * read project DBs that are not open yet and replace the cached actions with
+ * a partial answer; `useActionScanner` runs the full scan when the pass ends.
+ * Only an explicit `false` counts, so a store without the flag scans as before.
+ */
+function indexStillBuilding(): boolean {
+  return useSettingsStore.getState().indexReady === false;
+}
+
+/**
+ * One scan per root per window: a burst of saves or watcher events for the
+ * same project collapses into a single scan, run at the end of the window
+ * that the first of them opened.
+ *
+ * The length is set by the save path. A save asks for a scan at once, but the
+ * backend only reindexes the file after its own 500 ms watcher debounce, and
+ * announces it with `links-reindexed` (which `useActionScanner` also reports
+ * here). A window that outlasts that lets both requests end in ONE scan that
+ * reads the updated index; a shorter one scans twice, the first time stale.
+ */
+export const ACTION_SCAN_DEBOUNCE_MS = 750;
+/** Past this many dirty roots, one scan of everything is the cheaper answer. */
+const FULL_SCAN_ROOT_THRESHOLD = 3;
+/** How long a scan waits for a document-index build that is under way. */
+const DOC_INDEX_WAIT_MS = 10_000;
+
+let pendingScan: { roots: Set<string>; done: Promise<void> } | null = null;
+/** Serialises flushes, so a slow scan is never overlapped by the next one. */
+let scanChain: Promise<void> = Promise.resolve();
+
+function scheduleRootScan(root: string, run: (roots: string[]) => Promise<void>): Promise<void> {
+  if (!pendingScan) {
+    const roots = new Set<string>();
+    const done = new Promise<void>((resolve) => setTimeout(resolve, ACTION_SCAN_DEBOUNCE_MS)).then(() => {
+      pendingScan = null;
+      scanChain = scanChain.then(() => run([...roots])).catch(() => {});
+      return scanChain;
+    });
+    pendingScan = { roots, done };
+  }
+  pendingScan.roots.add(root);
+  return pendingScan.done;
+}
+
 function rebuildActions(cache: Record<string, { items: ActionItem[] }>): ActionItem[] {
   const seen = new Set<string>();
   const items: ActionItem[] = [];
@@ -195,8 +274,14 @@ export const useActionStore = create<ActionStore>()(
         if (state._scanDisabled) {
           return;
         }
+        // Keep the cached actions until the index can answer in full.
+        if (indexStillBuilding()) {
+          return;
+        }
         set({ isScanning: true });
         try {
+          // `scan_actions` resolves comment sidecars through doc-index.json.
+          await whenDocumentIndexIdle(DOC_INDEX_WAIT_MS);
           const paths = getAllScanPaths();
           if (paths.length === 0) {
             set({ actions: agentTasksToActions(), isScanning: false, lastFullScan: Date.now() });
@@ -257,32 +342,27 @@ export const useActionStore = create<ActionStore>()(
       },
 
       async incrementalUpdate(filePath: string) {
+        // Skipped without IPC: paths that cannot hold actions, paths outside
+        // every scanned root, and anything arriving while the index builds.
+        if (!canHoldActions(filePath)) return;
+        if (indexStillBuilding()) return;
+        const scanRoot = findScanRoot(filePath);
+        if (!scanRoot) return;
+
+        return scheduleRootScan(scanRoot, async (roots) => {
+          if (roots.length > FULL_SCAN_ROOT_THRESHOLD) {
+            await get().fullScan();
+            return;
+          }
+          await whenDocumentIndexIdle(DOC_INDEX_WAIT_MS);
+          for (const root of roots) {
+            await get()._scanRoot(root);
+          }
+        });
+      },
+
+      async _scanRoot(scanRoot: string) {
         try {
-          // Find which project root this file belongs to
-          const ws = useWorkspaceStore.getState();
-          const settings = useSettingsStore.getState();
-          let scanRoot: string | null = null;
-
-          for (const p of ws.projects) {
-            if (filePath.startsWith(p.path + '/')) {
-              scanRoot = p.path;
-              break;
-            }
-          }
-          if (!scanRoot) {
-            for (const f of ws.explorerFolders) {
-              if (filePath.startsWith(f.path + '/')) {
-                scanRoot = f.path;
-                break;
-              }
-            }
-          }
-          if (!scanRoot && settings.notesRootPath && filePath.startsWith(settings.notesRootPath)) {
-            scanRoot = settings.notesRootPath;
-          }
-
-          if (!scanRoot) return;
-
           // Fetch tasks/goals from index, comments from scan_actions
           const [indexedTasks, indexedGoals, scanItems] = await Promise.all([
             tauriApi.indexTasks([scanRoot]),

@@ -65,7 +65,7 @@ Lists all files and folders in a directory, recursively.
 
 ```rust
 #[tauri::command]
-async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String>
+async fn list_directory(path: String, show_hidden: Option<bool>, max_depth: Option<usize>) -> Result<Vec<FileEntry>, String>
 ```
 
 **Parameters:**
@@ -83,6 +83,25 @@ async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<F
 ```typescript
 const entries = await invoke<FileEntry[]>('list_directory', { path: '/path/to/project', showHidden: true });
 ```
+
+`max_depth: 0` lists only the directory itself: each subfolder comes back with `truncated: true` and empty `children`, without being walked. The library's top-level project scan uses this; the default is the full depth-limited walk. Runs on a blocking thread.
+
+### trash_paths
+
+```rust
+async fn trash_paths(paths: Vec<String>) -> Result<Vec<String>, String>
+```
+
+Moves several paths to the system Trash in one call and returns the paths that could not be trashed. The Inbox uses it for multi-select delete instead of one `trash_path` call per file.
+
+### index_open
+
+```rust
+async fn index_open(project_paths: Vec<String>) -> Result<(), String>
+```
+
+Opens the global index database and each given project's database without indexing anything. Startup calls it before the file watchers start, because the index pass itself now runs in the background: a watcher event for a project whose database is not registered yet would otherwise be indexed into the global database and counted twice.
+
 
 ### create_file
 

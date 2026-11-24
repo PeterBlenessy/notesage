@@ -80,12 +80,35 @@ describe("HtmlViewer doctype repair", () => {
   it("does not write a document that needs no repair", async () => {
     // The normal case. Writing here would churn the modification date of every
     // healthy article each time it is opened, and re-sync it through iCloud.
+    // A fragment has no doctype, so Rust is asked — and answers "leave it".
     mockRepair(() => null);
-    const { updateTabContent, saveFileWithContent } = renderViewer({ content: REPAIRED });
+    const { updateTabContent, saveFileWithContent } = renderViewer({ content: "<p>Just a fragment</p>" });
 
     await waitFor(() => expect(repairCalls.length).toBe(1));
     expect(saveFileWithContent).not.toHaveBeenCalled();
     expect(updateTabContent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a plain doctype", REPAIRED],
+    ["an upper-case doctype", `<!DOCTYPE html>\n${DAMAGED}`],
+    ["a BOM and leading whitespace", `﻿  \n<!doctype html>${DAMAGED}`],
+  ])("does not send a document with %s across IPC at all", async (_label, content) => {
+    // A capture is megabytes once its images are inlined; the whole string
+    // used to go to Rust on every open only to be told "nothing to repair".
+    mockRepair(() => REPAIRED);
+    const { updateTabContent, saveFileWithContent } = renderViewer({ content });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(repairCalls).toEqual([]);
+    expect(saveFileWithContent).not.toHaveBeenCalled();
+    expect(updateTabContent).not.toHaveBeenCalled();
+  });
+
+  it("still asks when the doctype is not at the start", async () => {
+    mockRepair(() => null);
+    renderViewer({ content: `<html><body><pre>&lt;!doctype html&gt; <!doctype html></pre></body></html>` });
+    await waitFor(() => expect(repairCalls.length).toBe(1));
   });
 
   it("leaves a dirty tab alone", async () => {

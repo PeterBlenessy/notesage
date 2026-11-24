@@ -277,6 +277,7 @@ pub fn run() {
             reload_automation_schedule,
             delete_path,
             trash_path,
+            trash_paths,
             path_exists,
             file_size,
             allow_asset_dir,
@@ -461,6 +462,7 @@ pub fn run() {
             copilot_lsp_tool_confirmation_response,
             // SQLite document index
             index::index_init,
+            index::index_open,
             index::index_file,
             index::index_reset,
             index::index_tags,
