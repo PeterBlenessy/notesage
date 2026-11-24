@@ -4,7 +4,7 @@
     {
       "id": "filesystem",
       "name": "Filesystem",
-      "description": "Secure file operations with configurable access controls..",
+      "description": "Secure file operations with configurable access controls.",
       "category": "Files",
       "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
       "official": true,
