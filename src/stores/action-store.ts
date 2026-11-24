@@ -9,6 +9,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { parseFrontmatter } from '@/lib/frontmatter';
 import { log } from '@/lib/logger';
+import { reportRehydrateError } from "@/lib/persist-rehydrate";
 
 export type { ActionItem, ActionSourceType, ActionStatus } from '@/lib/tauri';
 
@@ -446,7 +447,8 @@ export const useActionStore = create<ActionStore>()(
         actionCache: state.actionCache,
         filter: state.filter,
       }),
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) reportRehydrateError("notesage-action-store", error);
         if (!state) return;
         // Rebuild actions from persisted cache
         state.actions = rebuildActions(state.actionCache);

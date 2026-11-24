@@ -255,23 +255,23 @@ export function LocalAISettings() {
           <span
             className={`h-2 w-2 rounded-full shrink-0 ${
               serverStatus === 'running'
-                ? 'bg-green-500'
+                ? 'bg-[var(--color-status-ok)]'
                 : serverStatus === 'starting'
-                ? 'bg-amber-500 animate-pulse'
+                ? 'bg-[var(--color-status-warn)] animate-pulse motion-reduce:animate-none'
                 : serverStatus === 'error'
-                ? 'bg-red-500'
+                ? 'bg-destructive'
                 : !hasConnection
                 ? 'bg-muted-foreground/30'
                 : hasDownloadedModels && activeModelId
-                ? 'bg-amber-500'
+                ? 'bg-[var(--color-status-warn)]'
                 : 'bg-muted-foreground/30'
             }`}
           />
-          <span className={`${serverStatus === 'error' ? 'text-red-500' : 'text-muted-foreground'} truncate`}>
+          <span className={`${serverStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'} truncate`}>
             {statusMessage}
           </span>
           {systemMemory && activeModel && serverStatus === 'running' && (
-            <span className="text-muted-foreground/60 shrink-0">
+            <span className="text-muted-foreground shrink-0">
               · {formatBytes(activeModel.size_bytes + (activeModel.mmproj_size_bytes ?? 0))} · ~{formatBytes(activeModel.ram_required_bytes)} RAM
             </span>
           )}
@@ -346,7 +346,7 @@ export function LocalAISettings() {
 
       {/* Binary not found banner */}
       {binaryStatus === 'not_found' && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <p className="text-sm font-medium">{t("localAi.engineNotFound")}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {t("localai.engineMissing")}

@@ -83,7 +83,7 @@ function VerdictLine({
   const blocked = fit != null && !fit.runnable;
   if (!verdict && !caps) {
     return (
-      <div className="text-[10px] tabular-nums text-muted-foreground/50">
+      <div className="text-[10px] tabular-nums text-muted-foreground">
         {t("custom.cantEstimate")}
       </div>
     );
@@ -95,7 +95,7 @@ function VerdictLine({
           {verdict ? (
             <span className="text-[10px] tabular-nums text-muted-foreground">{verdict}</span>
           ) : (
-            <span className="text-[10px] tabular-nums text-muted-foreground/50">
+            <span className="text-[10px] tabular-nums text-muted-foreground">
               {t("custom.cantEstimate")}
             </span>
           )}
@@ -460,6 +460,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 value={query}
                 onChange={(e) => handleQueryChange(e.target.value)}
                 placeholder={t("model.searchPlaceholder")}
+                aria-label={t("model.searchPlaceholder")}
                 className="h-8 text-sm pl-8"
                 autoFocus
               />
@@ -591,6 +592,15 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                         blocked ? 'opacity-60' : ''
                       }`}
                       onClick={() => handleSelectRepo(result)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectRepo(result);
+                        }
+                      }}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-1.5 truncate">
@@ -608,7 +618,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                           {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
                           {result.license && <> &middot; {result.license}</>}
                         </div>
-                        <div className="text-[10px] text-muted-foreground/60 truncate">
+                        <div className="text-[10px] text-muted-foreground truncate">
                           {result.files.length} variant{result.files.length !== 1 ? 's' : ''}
                           {result.downloads > 0 && <> &middot; {Intl.NumberFormat('en', { notation: 'compact' }).format(result.downloads)} downloads</>}
                         </div>
@@ -655,6 +665,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Phi-4 Mini"
+                aria-label={t("model.name")}
                 className="h-8 text-sm"
               />
             </div>
@@ -666,6 +677,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://huggingface.co/.../model.gguf"
+                  aria-label={t("model.ggufUrl")}
                   className="h-8 text-sm pl-8"
                 />
               </div>

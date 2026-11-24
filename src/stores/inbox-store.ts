@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import { toast } from "sonner";
+import { t } from "@/lib/i18n";
+import { log } from "@/lib/logger";
 import { tauriApi, type FileEntry, type InboxCardMeta } from "@/lib/tauri";
 import { classifyFile } from "@/components/mobile/FileRow";
 import { createLimiter } from "@/lib/mobile-thumbnails";
@@ -200,20 +203,44 @@ function writeSidecar(dir: string | null, get: () => InboxStore): Promise<void> 
       await tauriApi.markSelfWrite(path);
       await tauriApi.writeFile(path, serializeReadingProgress(merged));
     } catch (err) {
-      console.warn("[inbox] could not write reading progress:", err);
+      // Includes a sidecar that could not be READ: nothing is written then,
+      // and this device's progress stays in memory for the next attempt.
+      log.warn("inbox", "Reading progress not written", err);
     }
   };
   writeChain = writeChain.then(run, run);
   return writeChain;
 }
 
+/**
+ * Read a reading-progress sidecar. Empty ONLY when the file is confirmed
+ * absent; a read that fails any other way THROWS.
+ *
+ * It used to answer "empty" for every failure, and every caller merges the
+ * answer with its own state and writes the result back — so one failed read
+ * (an iCloud placeholder not downloaded yet, a permission hiccup) replaced
+ * the shared file with this device's view of it, dropping the entries and
+ * tombstones only the other device had.
+ */
 async function readSidecar(metaDir: string): Promise<ReadingProgressFile> {
+  const file = `${metaDir}/${READING_PROGRESS_FILE}`;
+  let text: string;
   try {
-    const text = await tauriApi.readFile(`${metaDir}/${READING_PROGRESS_FILE}`);
-    return parseReadingProgress(text);
-  } catch {
-    return emptyReadingProgress();
+    text = await tauriApi.readFile(file);
+  } catch (err) {
+    // `pathExists` is false for a missing file AND for one iCloud has
+    // evicted to a `.name.icloud` placeholder; only the first is "empty".
+    const exists = await tauriApi.pathExists(file);
+    const evicted = !exists && (await tauriApi.pathExists(`${metaDir}/.${READING_PROGRESS_FILE}.icloud`));
+    if (!exists && !evicted) return emptyReadingProgress();
+    if (evicted) {
+      void tauriApi.icloudEnsureDownloaded(file).catch((downloadError: unknown) => {
+        log.warn("inbox", `Could not request download of ${file}`, downloadError);
+      });
+    }
+    throw new Error(`reading progress unreadable (${evicted ? "not downloaded from iCloud" : String(err)})`);
   }
+  return parseReadingProgress(text);
 }
 
 export const useInboxStore = create<InboxStore>((set, get) => ({
@@ -271,7 +298,16 @@ export const useInboxStore = create<InboxStore>((set, get) => ({
       let entries: FileEntry[] = [];
       try {
         entries = await tauriApi.listFilesShallow(dir, false);
-      } catch {
+      } catch (err) {
+        // A folder that is there but cannot be listed is not "nothing
+        // shared": keep the rows already shown and report it. (An
+        // unanswerable `pathExists` counts as "there".)
+        if (await tauriApi.pathExists(dir).catch(() => true)) {
+          log.warn("inbox", `Could not list ${dir}`, err);
+          toast.error(t("toast.inboxUnreadable", { error: String(err) }), { id: "inbox-unreadable" });
+          if (!stale()) set({ loading: false, error: String(err) });
+          return;
+        }
         // No Inbox yet — nothing has been shared. An empty list, not an error.
         entries = [];
       }
@@ -279,7 +315,12 @@ export const useInboxStore = create<InboxStore>((set, get) => ({
       const items: InboxItem[] = entries
         .filter((e) => !e.is_directory)
         .map((e) => ({ path: e.path, name: e.name, modified: e.modified, kind: classifyFile(e.name) }));
-      const fromDisk = await readSidecar(inboxMetaDir(root));
+      // An unreadable sidecar leaves this device's progress as it is; the
+      // write path refuses to write over a file it could not read.
+      const fromDisk = await readSidecar(inboxMetaDir(root)).catch((err: unknown) => {
+        log.warn("inbox", "Reading progress not loaded", err);
+        return emptyReadingProgress();
+      });
       // A newer load started while this one was reading — startup resolving
       // the iCloud root mid-listing, or a test pointing at another library.
       // Its result would clobber the newer one; drop it.

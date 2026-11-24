@@ -33,6 +33,8 @@ import { useCommentStore, getPartialReply, type Comment, type DelegationActivity
 import { useChatStore } from '@/stores/chat-store';
 import { CommentThread, formatRelativeTime } from '@/components/editor/CommentThread';
 import { DelegationPanel } from '@/components/editor/DelegationPanel';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 interface CommentPopoverProps {
   /** The comment to display (null = create mode) */
@@ -98,6 +100,7 @@ export function CommentPopover({
   activities = [],
   anchorPosition,
 }: CommentPopoverProps) {
+  useLocale();
   const [mode, setMode] = useState<'view' | 'create' | 'edit'>('view');
   const [body, setBody] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -224,6 +227,7 @@ export function CommentPopover({
                 onChange={(e) => setBody(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Write a comment..."
+                aria-label={mode === 'create' ? t('editor.addComment') : t('editor.editComment')}
                 rows={3}
                 className="resize-none min-h-0 text-sm"
               />

@@ -81,7 +81,8 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
       viewer = <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       break;
     case "pptx":
-      viewer = <PptxViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+      // Keyed by file: per-file state (slide index, search, zoom) must not carry over between tabs.
+      viewer = <PptxViewer key={activeTab.filePath} filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       break;
     case "other":
       viewer = (

@@ -100,6 +100,38 @@ describe('ChildRow (dedicated file)', () => {
     expect(onActivate).toHaveBeenCalledTimes(1);
   });
 
+  it('marks a folder the listing could not read, instead of showing it as empty', () => {
+    const unreadable: RowDescriptor = {
+      ...folderRow,
+      entry: { ...folderRow.entry!, unreadable: true },
+    };
+    renderWithProviders(<ChildRow row={unreadable} {...baseProps} />);
+    expect(screen.getByTestId('child-row-listing-warning')).toBeTruthy();
+    expect(screen.getByRole('treeitem').getAttribute('aria-label')).toBe(
+      'Open folder docs. This folder could not be read, so its contents are not shown.',
+    );
+  });
+
+  it('marks a folder cut off by the depth limit with its own wording', () => {
+    const truncated: RowDescriptor = {
+      ...folderRow,
+      entry: { ...folderRow.entry!, truncated: true },
+    };
+    renderWithProviders(<ChildRow row={truncated} {...baseProps} />);
+    expect(screen.getByTestId('child-row-listing-warning')).toBeTruthy();
+    expect(screen.getByRole('treeitem').getAttribute('aria-label')).toContain('nested too deeply');
+  });
+
+  it('shows no listing warning on an ordinary empty folder or on a file', () => {
+    const { unmount } = renderWithProviders(<ChildRow row={folderRow} {...baseProps} />);
+    expect(screen.queryByTestId('child-row-listing-warning')).toBeNull();
+    expect(screen.getByRole('treeitem').getAttribute('aria-label')).toBe('Open folder docs');
+    unmount();
+
+    renderWithProviders(<ChildRow row={fileRow} {...baseProps} />);
+    expect(screen.queryByTestId('child-row-listing-warning')).toBeNull();
+  });
+
   it('has aria-level="2"', () => {
     renderWithProviders(<ChildRow row={fileRow} {...baseProps} />);
     expect(screen.getByRole('treeitem').getAttribute('aria-level')).toBe('2');

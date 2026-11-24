@@ -36,6 +36,80 @@ use crate::commands::shell_path::get_shell_path;
 type AgentConn = ConnectionTo<agent_client_protocol::Agent>;
 
 // ---------------------------------------------------------------------------
+// Time limits for requests the command loop AWAITS.
+//
+// The loop handles one command at a time, so a request the agent never answers
+// used to block every later command for good — `Stop` included. `Prompt` is
+// exempt: it runs in its own task and legitimately lasts as long as the turn.
+// The limits are deliberately far above anything a working agent needs; they
+// exist to turn "hangs forever" into an error, not to police slow agents.
+// ---------------------------------------------------------------------------
+
+/// `initialize`. A binary that does not speak ACP but waits on stdin never
+/// answers it; without a limit here the thread, the child and the per-instance
+/// network proxy stayed alive for the rest of the session.
+pub(super) const INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// `authenticate` — may wait on the user completing a browser flow.
+const AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+/// `session/new`, `load`, `resume`, `fork` — may start MCP servers or replay history.
+const SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// `set_mode`, `set_config_option`, `session/close`, `session/list`.
+const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Await an agent request for at most `limit`, flattening both failure modes
+/// into the message the command's reply carries: `"<what> failed: <error>"`
+/// or `"<what> timed out after <n>s — the agent did not answer"`.
+pub(super) async fn bounded<T, E: std::fmt::Display>(
+    what: &str,
+    limit: std::time::Duration,
+    request: impl std::future::Future<Output = Result<T, E>>,
+) -> Result<T, String> {
+    match tokio::time::timeout(limit, request).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(e)) => Err(format!("{} failed: {}", what, e)),
+        Err(_) => Err(format!(
+            "{} timed out after {}s — the agent did not answer",
+            what,
+            limit.as_secs_f32()
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Permission waiters — the pure half of the permission round-trip, kept free
+// of the connection so the rules that decide whether a tool call is allowed
+// can be unit-tested (`acp/tests.rs`).
+// ---------------------------------------------------------------------------
+
+/// The ACP outcome for a permission request, given what its waiter received.
+///
+/// `None` means the waiter was dropped (cancel, stop) and resolves to
+/// `Cancelled`, as does an explicit reply with no option. Only a reply that
+/// names an option is ever `Selected` — nothing here can turn the absence of
+/// a decision into an approval.
+pub(super) fn permission_outcome(reply: Option<PermissionReply>) -> RequestPermissionOutcome {
+    match reply.and_then(|r| r.option_id) {
+        Some(option_id) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+            PermissionOptionId::new(option_id),
+        )),
+        None => RequestPermissionOutcome::Cancelled,
+    }
+}
+
+/// Drop every pending permission waiter, which resolves each request as
+/// `Cancelled` (the handler's `rx.await` errors). Returns how many there were.
+/// Recovers a poisoned lock: a cancel that silently skipped the clear would
+/// leave the agent waiting on prompts the user can no longer see.
+pub(super) fn cancel_permission_waiters(permission_waiters: &PermissionWaiters) -> usize {
+    let mut waiters = permission_waiters
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let count = waiters.len();
+    waiters.clear();
+    count
+}
+
+// ---------------------------------------------------------------------------
 // Per-command handlers — one per `AgentCmd` kind (except `Stop`, kept inline).
 // Each mirrors the request/response shape of its ACP method and reports back
 // through the command's `reply` oneshot. Errors become `Err(String)` sent to
@@ -86,7 +160,7 @@ async fn handle_authenticate(
         selected_id,
     );
     let auth_req = AuthenticateRequest::new(AuthMethodId::new(selected_id.clone()));
-    match conn.send_request(auth_req).block_task().await {
+    match bounded("Authentication", AUTH_TIMEOUT, conn.send_request(auth_req).block_task()).await {
         Ok(resp) => {
             log::info!(
                 target: "notesage::acp",
@@ -104,7 +178,7 @@ async fn handle_authenticate(
                 "Authentication failed for method={}: {}",
                 selected_id, e,
             );
-            let _ = reply.send(Err(format!("Authentication failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -116,7 +190,7 @@ async fn handle_new_session(
     reply: oneshot::Sender<Result<SessionResult, String>>,
 ) {
     let req = NewSessionRequest::new(PathBuf::from(cwd)).mcp_servers(mcp_servers);
-    match conn.send_request(req).block_task().await {
+    match bounded("new_session", SESSION_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(resp) => {
             let modes = resp.modes.as_ref().and_then(|m| serde_json::to_value(m).ok());
             let _ = reply.send(Ok(build_session_result(
@@ -126,7 +200,7 @@ async fn handle_new_session(
             )));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("new_session failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -140,7 +214,7 @@ async fn handle_load_session(
 ) {
     let mut req = LoadSessionRequest::new(SessionId::new(sid.clone()), PathBuf::from(cwd));
     req.mcp_servers = mcp_servers;
-    match conn.send_request(req).block_task().await {
+    match bounded("load_session", SESSION_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(resp) => {
             let modes = resp.modes.as_ref().and_then(|m| serde_json::to_value(m).ok());
             let _ = reply.send(Ok(build_session_result(
@@ -150,7 +224,7 @@ async fn handle_load_session(
             )));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("load_session failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -309,9 +383,7 @@ fn handle_cancel(
     sid: String,
     reply: oneshot::Sender<Result<(), String>>,
 ) {
-    if let Ok(mut waiters) = permission_waiters.lock() {
-        waiters.clear();
-    }
+    cancel_permission_waiters(permission_waiters);
     let req = CancelNotification::new(SessionId::new(sid));
     match conn.send_notification(req) {
         Ok(_) => {
@@ -324,17 +396,26 @@ fn handle_cancel(
 }
 
 /// Deliver the user's permission decision to the waiting inbound handler task.
+///
+/// Returns whether a waiter with that id existed. An unknown id (already
+/// answered, cancelled, or never issued) is a no-op: it must not resolve some
+/// other request. Recovers a poisoned lock, because skipping the delivery
+/// would leave the agent waiting on a decision the user has already made.
 pub(super) fn handle_permission_respond(
     permission_waiters: &PermissionWaiters,
     request_id: String,
     option_id: Option<String>,
-) {
+) -> bool {
     let tx = permission_waiters
         .lock()
-        .ok()
-        .and_then(|mut w| w.remove(&request_id));
-    if let Some(tx) = tx {
-        let _ = tx.send(PermissionReply { option_id });
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&request_id);
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(PermissionReply { option_id });
+            true
+        }
+        None => false,
     }
 }
 
@@ -345,12 +426,12 @@ async fn handle_set_mode(
     reply: oneshot::Sender<Result<(), String>>,
 ) {
     let req = SetSessionModeRequest::new(SessionId::new(sid), SessionModeId::new(mode_id));
-    match conn.send_request(req).block_task().await {
+    match bounded("set_mode", CONTROL_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(_) => {
             let _ = reply.send(Ok(()));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("set_mode failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -367,12 +448,12 @@ async fn handle_set_config_option(
         SessionConfigId::new(option_id),
         SessionConfigValueId::new(value_id),
     );
-    match conn.send_request(req).block_task().await {
+    match bounded("set_config_option", CONTROL_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(_) => {
             let _ = reply.send(Ok(()));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("set_config_option failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -383,12 +464,12 @@ async fn handle_close_session(
     reply: oneshot::Sender<Result<(), String>>,
 ) {
     let req = CloseSessionRequest::new(SessionId::new(sid));
-    match conn.send_request(req).block_task().await {
+    match bounded("close_session", CONTROL_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(_) => {
             let _ = reply.send(Ok(()));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("close_session failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -406,7 +487,7 @@ async fn handle_list_sessions(
     if let Some(c) = cursor {
         req = req.cursor(Some(c));
     }
-    match conn.send_request(req).block_task().await {
+    match bounded("list_sessions", CONTROL_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(resp) => {
             let sessions: Vec<AcpSessionInfo> = resp
                 .sessions
@@ -422,7 +503,7 @@ async fn handle_list_sessions(
             }));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("list_sessions failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -434,7 +515,7 @@ async fn handle_resume_session(
     reply: oneshot::Sender<Result<SessionResult, String>>,
 ) {
     let req = ResumeSessionRequest::new(SessionId::new(sid.clone()), PathBuf::from(cwd));
-    match conn.send_request(req).block_task().await {
+    match bounded("resume_session", SESSION_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(resp) => {
             let modes = resp.modes.as_ref().and_then(|m| serde_json::to_value(m).ok());
             let _ = reply.send(Ok(build_session_result(
@@ -444,7 +525,7 @@ async fn handle_resume_session(
             )));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("resume_session failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -456,7 +537,7 @@ async fn handle_fork_session(
     reply: oneshot::Sender<Result<SessionResult, String>>,
 ) {
     let req = ForkSessionRequest::new(SessionId::new(sid), PathBuf::from(cwd));
-    match conn.send_request(req).block_task().await {
+    match bounded("fork_session", SESSION_TIMEOUT, conn.send_request(req).block_task()).await {
         Ok(resp) => {
             let modes = resp.modes.as_ref().and_then(|m| serde_json::to_value(m).ok());
             let _ = reply.send(Ok(build_session_result(
@@ -466,7 +547,7 @@ async fn handle_fork_session(
             )));
         }
         Err(e) => {
-            let _ = reply.send(Err(format!("fork_session failed: {}", e)));
+            let _ = reply.send(Err(e));
         }
     }
 }
@@ -764,16 +845,8 @@ pub(crate) fn run_agent_thread(
                     async move {
                         let rx = ctx.begin_permission_request(&request);
                         cx.spawn(async move {
-                            let outcome = match rx.await {
-                                Ok(reply) => match reply.option_id {
-                                    Some(oid) => RequestPermissionOutcome::Selected(
-                                        SelectedPermissionOutcome::new(PermissionOptionId::new(oid)),
-                                    ),
-                                    None => RequestPermissionOutcome::Cancelled,
-                                },
-                                // Waiter dropped (agent stopped / cancelled) — cancel.
-                                Err(_) => RequestPermissionOutcome::Cancelled,
-                            };
+                            // `Err`: waiter dropped (agent stopped / cancelled) — cancel.
+                            let outcome = permission_outcome(rx.await.ok());
                             responder.respond(RequestPermissionResponse::new(outcome))?;
                             Ok(())
                         })?;
@@ -794,7 +867,15 @@ pub(crate) fn run_agent_thread(
                 // round-trip to the agent.
                 let auth_methods_info: Vec<AuthMethodInfo>;
 
-                match conn.send_request(init_req).block_task().await {
+                // Bounded: a binary that never answers must not pin this thread
+                // (and, below it, the child, the proxy and the PID file).
+                let init_result = bounded(
+                    "ACP initialize",
+                    INIT_TIMEOUT,
+                    conn.send_request(init_req).block_task(),
+                )
+                .await;
+                match init_result {
                     Ok(resp) => {
                         log::info!(
                             target: "notesage::acp",
@@ -831,7 +912,7 @@ pub(crate) fn run_agent_thread(
                         // request errors — give the reader task a beat to catch them.
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                         let _ = init_tx.send(Err(format!(
-                            "ACP initialize failed: {}{}",
+                            "{}{}",
                             e,
                             stderr_tail_suffix(&stderr_tail_loop)
                         )));
@@ -865,7 +946,13 @@ pub(crate) fn run_agent_thread(
                             handle_cancel(&conn, &permission_waiters, sid, reply);
                         }
                         AgentCmd::PermissionRespond { request_id, option_id } => {
-                            handle_permission_respond(&permission_waiters, request_id, option_id);
+                            if !handle_permission_respond(&permission_waiters, request_id.clone(), option_id) {
+                                log::debug!(
+                                    target: "notesage::acp",
+                                    "[{}] Permission response for unknown request {} ignored",
+                                    agent_binary, request_id,
+                                );
+                            }
                         }
                         AgentCmd::SetMode { session_id: sid, mode_id, reply } => {
                             handle_set_mode(&conn, sid, mode_id, reply).await;
@@ -888,9 +975,7 @@ pub(crate) fn run_agent_thread(
                         AgentCmd::Stop { reply } => {
                             stopped_intentionally.store(true, std::sync::atomic::Ordering::Relaxed);
                             // Clear any pending permission waiters so they cancel
-                            if let Ok(mut waiters) = permission_waiters.lock() {
-                                waiters.clear();
-                            }
+                            cancel_permission_waiters(&permission_waiters);
                             let _ = child.kill().await;
                             let _ = reply.send(Ok(()));
                             break;

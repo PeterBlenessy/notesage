@@ -27,7 +27,7 @@ export function HelpGroup({ onShortcutsOpen }: { onShortcutsOpen?: () => void })
             >
               <CommandIcon className="h-3 w-3 shrink-0" strokeWidth={1.5} />
               <span className="flex-1 text-left">Keyboard shortcuts</span>
-              <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+              <span className="text-[10px] text-muted-foreground tabular-nums">
                 {"⌘7"}
               </span>
             </button>

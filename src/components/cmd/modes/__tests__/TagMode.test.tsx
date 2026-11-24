@@ -274,4 +274,30 @@ describe('TagMode', () => {
     // Old solid accent fill must be gone
     expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
   });
+  it('shows that the search index is unavailable when the tag query fails, not "No tags match"', async () => {
+    indexTagsMock.mockRejectedValue(new Error('database is locked'));
+
+    renderWithProviders(
+      <TagMode filter="" onPick={() => {}} />,
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(screen.getByText('database is locked')).toBeTruthy();
+    expect(screen.queryByText(/no tags match/i)).toBeNull();
+  });
+
+  it('shows that the search index is unavailable when the occurrences query fails', async () => {
+    indexTagsMock.mockResolvedValue([{ tag: 'work', file_count: 12 }]);
+    indexTagOccurrencesMock.mockRejectedValue(new Error('index is being rebuilt'));
+
+    renderWithProviders(
+      <TagMode filter="" onPick={() => {}} initialDrilldown="work" />,
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(screen.getByText('index is being rebuilt')).toBeTruthy();
+    expect(screen.queryByText(/no occurrences found/i)).toBeNull();
+  });
 });

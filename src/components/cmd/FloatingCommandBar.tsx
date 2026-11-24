@@ -133,7 +133,16 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // Send wiring (#23). Uses `sendChatMessage` from `useAIOperations` so
   // all routing (direct API / ACP / Copilot LSP / local), provider lock
   // checks, segment isolation, and downstream streaming come "for free".
-  const messagesForSend = useChatStore(selectMessages);
+  //
+  // The active thread is READ at send time, never subscribed to: the composer
+  // renders none of it, and a `useChatStore(selectMessages)` subscription
+  // re-rendered the whole bar (and recreated every send handler) on each
+  // streamed chunk just so a handler could pass it along later (audit
+  // 2026-11-22 §3).
+  const getMessagesForSend = useCallback(
+    () => selectMessages(useChatStore.getState()),
+    [],
+  );
   const { sendChatMessage, cancelChat } = useAIOperations();
   // Per-conversation loading: the bar reflects the WATCHED conversation's run
   // state, not the global flag — so switching to an idle chat while another
@@ -261,7 +270,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     setExpanded,
     interactiveConnection,
     sendChatMessage,
-    messagesForSend,
+    getMessagesForSend,
   });
 
   // #126 parity — image attachments. Paste, drag-drop, and the file
@@ -399,6 +408,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // ---------------------------------------------------------------------
 
   const handleSend = useCallback(async () => {
+    // Read before the awaits below, matching the thread the handler used to
+    // close over.
+    const messagesForSend = getMessagesForSend();
     const trimmed = inputValue.trim();
     if (trimmed.length === 0 && chips.length === 0 && pendingAttachments.length === 0) {
       // Empty input AND no chips AND no images → no-op.
@@ -493,7 +505,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     chips,
     pendingAttachments,
     sendChatMessage,
-    messagesForSend,
+    getMessagesForSend,
     editContext,
     interactiveConnection,
     setActivePrefix,
@@ -513,6 +525,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   const handleStreamSend = useCallback(
     async (content: string) => {
+      const messagesForSend = getMessagesForSend();
       const trimmed = content.trim();
       if (trimmed.length === 0) return;
 
@@ -530,7 +543,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         : undefined;
       void sendChatMessage(skillResult.content, messagesForSend, sendOpts);
     },
-    [sendChatMessage, messagesForSend, interactiveConnection],
+    [sendChatMessage, getMessagesForSend, interactiveConnection],
   );
 
   // onPrefill: stream's empty-state onboarding prompts. Drop the content

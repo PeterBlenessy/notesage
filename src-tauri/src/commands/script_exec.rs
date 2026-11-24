@@ -24,36 +24,103 @@ const MAX_SCRIPT_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 /// result) know the output is incomplete.
 const OUTPUT_TRUNCATED_MARKER: &str = "\n[output truncated]";
 
-/// Read a child stream to EOF, keeping at most `cap` bytes. Bytes past the
-/// cap are read and discarded — the child must never block on a full pipe —
-/// and truncation is flagged with the marker.
-async fn read_stream_capped<R: tokio::io::AsyncRead + Unpin>(mut reader: R, cap: usize) -> String {
+/// How long to keep reading a script's output after the script itself has
+/// exited. What it wrote is already in the pipe and drains in milliseconds; a
+/// pipe that is still open after this is being held by a process the script
+/// left behind (`server &`, `nohup`, a daemonising tool), and waiting for EOF
+/// would mean waiting for that process — possibly forever.
+const OUTPUT_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// What has been read from one of a script's streams so far. Shared between
+/// the reader task and the command, so output survives the reader being
+/// stopped before EOF.
+#[derive(Default)]
+struct CapturedStream {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+type SharedCapture = std::sync::Arc<std::sync::Mutex<CapturedStream>>;
+
+/// Read a child stream to EOF into `sink`, keeping at most `cap` bytes. Bytes
+/// past the cap are read and discarded — the child must never block on a full
+/// pipe — and flagged as truncation.
+async fn pump_stream_capped<R: tokio::io::AsyncRead + Unpin>(
+    mut reader: R,
+    cap: usize,
+    sink: SharedCapture,
+) {
     use tokio::io::AsyncReadExt;
-    let mut buf: Vec<u8> = Vec::new();
     let mut scratch = [0u8; 8192];
-    let mut truncated = false;
     loop {
         match reader.read(&mut scratch).await {
             Ok(0) => break,
             Ok(n) => {
-                if buf.len() < cap {
-                    let take = n.min(cap - buf.len());
-                    buf.extend_from_slice(&scratch[..take]);
+                let mut captured = sink.lock().unwrap_or_else(|e| e.into_inner());
+                if captured.bytes.len() < cap {
+                    let take = n.min(cap - captured.bytes.len());
+                    captured.bytes.extend_from_slice(&scratch[..take]);
                     if take < n {
-                        truncated = true;
+                        captured.truncated = true;
                     }
                 } else {
-                    truncated = true;
+                    captured.truncated = true;
                 }
             }
             Err(_) => break,
         }
     }
-    let mut out = String::from_utf8_lossy(&buf).to_string();
-    if truncated {
+}
+
+/// The text captured so far, with the truncation marker if the cap was hit.
+fn render_capture(sink: &SharedCapture) -> String {
+    let captured = sink.lock().unwrap_or_else(|e| e.into_inner());
+    let mut out = String::from_utf8_lossy(&captured.bytes).to_string();
+    if captured.truncated {
         out.push_str(OUTPUT_TRUNCATED_MARKER);
     }
     out
+}
+
+/// Read a child stream to EOF, keeping at most `cap` bytes (see
+/// [`pump_stream_capped`]).
+#[cfg(test)]
+async fn read_stream_capped<R: tokio::io::AsyncRead + Unpin>(reader: R, cap: usize) -> String {
+    let sink = SharedCapture::default();
+    pump_stream_capped(reader, cap, sink.clone()).await;
+    render_capture(&sink)
+}
+
+/// Wait up to `grace` for both reader tasks to reach EOF, then stop whichever
+/// is still running. Returns whether both finished on their own.
+async fn finish_readers(
+    stdout_task: &mut tokio::task::JoinHandle<()>,
+    stderr_task: &mut tokio::task::JoinHandle<()>,
+    grace: std::time::Duration,
+) -> bool {
+    let both = async {
+        let _ = (&mut *stdout_task).await;
+        let _ = (&mut *stderr_task).await;
+    };
+    let finished = tokio::time::timeout(grace, both).await.is_ok();
+    if !finished {
+        stdout_task.abort();
+        stderr_task.abort();
+    }
+    finished
+}
+
+/// SIGKILL every process in the script's process group. The script is spawned
+/// as the leader of its own group, so this reaches what it started as well —
+/// `Child::kill` alone signals only the direct child.
+#[cfg(unix)]
+fn kill_process_group(pgid: u32) {
+    // A group id of 0 or 1 would address our own group / everything.
+    if pgid > 1 {
+        unsafe {
+            libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
+        }
+    }
 }
 
 /// Compute the lowercase hex SHA-256 of a file's bytes.
@@ -175,6 +242,9 @@ pub async fn execute_skill_script(
         .current_dir(&work_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    // Own process group, so a timeout can kill what the script started too.
+    #[cfg(unix)]
+    command.process_group(0);
 
     // Add extra environment variables
     if let Some(extra_env) = env {
@@ -195,37 +265,69 @@ pub async fn execute_skill_script(
     let stdout_handle = child.stdout.take();
     let stderr_handle = child.stderr.take();
 
-    let stdout_task = tokio::spawn(async move {
-        match stdout_handle {
-            Some(out) => read_stream_capped(out, MAX_SCRIPT_OUTPUT_BYTES).await,
-            None => String::new(),
+    let stdout_capture = SharedCapture::default();
+    let stderr_capture = SharedCapture::default();
+
+    let stdout_sink = stdout_capture.clone();
+    let mut stdout_task = tokio::spawn(async move {
+        if let Some(out) = stdout_handle {
+            pump_stream_capped(out, MAX_SCRIPT_OUTPUT_BYTES, stdout_sink).await;
         }
     });
 
-    let stderr_task = tokio::spawn(async move {
-        match stderr_handle {
-            Some(err) => read_stream_capped(err, MAX_SCRIPT_OUTPUT_BYTES).await,
-            None => String::new(),
+    let stderr_sink = stderr_capture.clone();
+    let mut stderr_task = tokio::spawn(async move {
+        if let Some(err) = stderr_handle {
+            pump_stream_capped(err, MAX_SCRIPT_OUTPUT_BYTES, stderr_sink).await;
         }
     });
 
     let result = match tokio::time::timeout(timeout, child.wait()).await {
         Ok(Ok(status)) => {
-            let stdout = stdout_task.await.unwrap_or_default();
-            let stderr = stderr_task.await.unwrap_or_default();
+            // The script is done; its readers get a short grace to reach EOF.
+            // The timeout above covers only `wait()`, so an unbounded await
+            // here hung the command for as long as anything the script left
+            // running kept a pipe open.
+            if !finish_readers(&mut stdout_task, &mut stderr_task, OUTPUT_DRAIN_GRACE).await {
+                log::warn!(
+                    target: "notesage::script_exec",
+                    "Script '{}' exited but a process it started still holds its output open; returning what was captured",
+                    script
+                );
+            }
             Ok(ScriptResult {
-                stdout,
-                stderr,
+                stdout: render_capture(&stdout_capture),
+                stderr: render_capture(&stderr_capture),
                 exit_code: status.code().unwrap_or(-1),
                 timed_out: false,
             })
         }
-        Ok(Err(e)) => Err(format!("Script execution failed: {}", e)),
+        Ok(Err(e)) => {
+            stdout_task.abort();
+            stderr_task.abort();
+            Err(format!("Script execution failed: {}", e))
+        }
         Err(_) => {
-            // Timeout — kill_on_drop will SIGKILL when child is dropped
+            // Timeout. Kill the whole group first (the script's own children
+            // would otherwise survive it), then the child itself, which also
+            // reaps it. The child is not reaped yet, so its PID — and with it
+            // the group id — is still ours.
+            #[cfg(unix)]
+            if let Some(pid) = child.id() {
+                kill_process_group(pid);
+            }
             let _ = child.kill().await;
+            // With the group dead the pipes close at once; anything still
+            // holding them (a process that left the group) is not waited for.
+            finish_readers(
+                &mut stdout_task,
+                &mut stderr_task,
+                std::time::Duration::from_millis(250),
+            )
+            .await;
             Ok(ScriptResult {
-                stdout: String::new(),
+                // Whatever the script printed before it was killed.
+                stdout: render_capture(&stdout_capture),
                 stderr: format!("Script timed out after {}ms", timeout.as_millis()),
                 exit_code: -1,
                 timed_out: true,
@@ -467,6 +569,105 @@ mod tests {
         let res = result.unwrap();
         assert!(res.timed_out);
         assert_eq!(res.exit_code, -1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_script_returns_when_a_background_process_keeps_the_pipes_open() {
+        // The script exits at once but leaves a process holding its stdout and
+        // stderr. The readers used to be awaited with no limit, so the command
+        // returned only when that process did (here: after the full 60s).
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(
+            scripts_dir.join("daemon.sh"),
+            "#!/bin/bash\necho started\nsleep 60 &\n",
+        )
+        .unwrap();
+
+        let started = std::time::Instant::now();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/daemon.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            Some(120_000),
+            None,
+        ));
+        let res = result.unwrap();
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "waited {:?} for a process the script left behind",
+            started.elapsed()
+        );
+        assert_eq!(res.stdout.trim(), "started", "output written before exit is kept");
+        assert_eq!(res.exit_code, 0);
+        assert!(!res.timed_out);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_script_timeout_kills_what_the_script_started() {
+        // The script starts a long-running child and prints its PID. On
+        // timeout only the script itself used to be killed.
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(
+            scripts_dir.join("spawner.sh"),
+            "#!/bin/bash\nsleep 300 &\necho $!\nwait\n",
+        )
+        .unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/spawner.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            Some(3_000),
+            None,
+        ));
+        let res = result.unwrap();
+        assert!(res.timed_out);
+
+        let grandchild: libc::pid_t = res
+            .stdout
+            .trim()
+            .parse()
+            .expect("output printed before the timeout is returned");
+        // SIGKILL is asynchronous, and the orphan has to be reaped by init.
+        let gone = (0..100).any(|_| {
+            let alive = unsafe { libc::kill(grandchild, 0) } == 0;
+            if alive {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            !alive
+        });
+        assert!(gone, "process {grandchild} started by the script survived the timeout");
+    }
+
+    #[tokio::test]
+    async fn output_captured_so_far_survives_a_reader_that_never_reaches_eof() {
+        use tokio::io::AsyncWriteExt;
+        let (mut tx, rx) = tokio::io::duplex(64);
+        let sink = SharedCapture::default();
+        let mut reader = tokio::spawn(pump_stream_capped(rx, 1024, sink.clone()));
+        let mut idle = tokio::spawn(async {});
+        tx.write_all(b"partial").await.unwrap();
+
+        // `tx` stays open: the pipe is "held" and EOF never comes.
+        let finished =
+            finish_readers(&mut reader, &mut idle, std::time::Duration::from_millis(100)).await;
+
+        assert!(!finished);
+        assert_eq!(render_capture(&sink), "partial");
+        drop(tx);
     }
 
     #[test]

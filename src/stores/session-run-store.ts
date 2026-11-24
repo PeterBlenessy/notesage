@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { reportRehydrateError } from "@/lib/persist-rehydrate";
 
 /**
  * Session run-state store (PRD `2026-06-14-command-bar-session-multitasking`,
@@ -145,7 +146,8 @@ export const useSessionRunStore = create<SessionRunStore>()(
         ),
         foregroundConversationId: null,
       }),
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) reportRehydrateError("notesage-session-runs", error);
         if (!state) return;
         state.runs = markInterruptedRuns(state.runs);
         state.foregroundConversationId = null;

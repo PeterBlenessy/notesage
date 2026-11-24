@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const TABLE_GRID_MAX_ROWS = 8;
 const TABLE_GRID_MAX_COLS = 8;
 
 export function TableGridPicker({ editor }: { editor: Editor }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [hoverRows, setHoverRows] = useState(0);
   const [hoverCols, setHoverCols] = useState(0);
@@ -22,6 +25,7 @@ export function TableGridPicker({ editor }: { editor: Editor }) {
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("editor.insertTable")}
               className={cn(
                 "text-muted-foreground",
                 (open || editor.isActive("table")) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
@@ -52,6 +56,7 @@ export function TableGridPicker({ editor }: { editor: Editor }) {
               return (
                 <button
                   key={`${row}-${col}`}
+                  aria-label={`${row + 1} × ${col + 1}`}
                   className={cn(
                     "size-4 rounded-[2px] border transition-colors duration-75",
                     isHighlighted

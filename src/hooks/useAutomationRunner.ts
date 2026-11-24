@@ -180,7 +180,10 @@ export function useAutomationRunner() {
       .getState()
       .getRuns(automation.sourcePath)
       .filter((r) => r.status !== 'skipped' && formatToday(new Date(r.startedAt)) === today).length;
-    if (runsToday >= cap) {
+    // A queued job has no persisted run yet (it is written when it starts), so
+    // count it here or a burst queued behind another automation slips past.
+    const queued = managerRef.current!.queuedCount(automation.sourcePath);
+    if (runsToday + queued >= cap) {
       recordSkipped(automation, trigger, `daily limit reached (${cap}/day)`);
       return;
     }
@@ -199,12 +202,15 @@ export function useAutomationRunner() {
       automation.sourcePath,
       automation.mode ?? 'single',
       async (signal) => {
-        guardrailsRef.current!.record(automation.sourcePath, new Date());
         await executeRun(automation, trigger, signal);
       },
     );
     if (outcome === 'dropped') {
       log.info('automations', `mode=single dropped overlapping fire for ${automation.id}`);
+    } else {
+      // Record at admission, not at execution: while the queue is busy, the
+      // debounce and the fire-rate breaker must already see this run.
+      guardrailsRef.current!.record(automation.sourcePath, new Date());
     }
    } catch (e) {
       log.error('automations', `requestRun failed for ${automation.id}`, e);

@@ -219,6 +219,7 @@ export function FindBar({
             disabled={matchCount === 0}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
             title={t("editor.replace") + " (Enter in replace field)"}
+            aria-label={t("editor.replace")}
           >
             <Replace size={14} strokeWidth={1.5} />
           </button>
@@ -227,6 +228,7 @@ export function FindBar({
             disabled={matchCount === 0}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
             title={t("editor.replaceAll") + " (Cmd+Shift+Enter)"}
+            aria-label={t("editor.replaceAll")}
           >
             <ReplaceAll size={14} strokeWidth={1.5} />
           </button>

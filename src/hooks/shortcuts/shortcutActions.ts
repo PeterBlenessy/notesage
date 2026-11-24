@@ -24,6 +24,8 @@ import { fireZoom } from "@/hooks/useEditorZoom";
 import { isAlphaBuild } from "@/lib/build-channel";
 import { getFocusModeController } from "@/hooks/shortcuts/focus-mode-controller";
 import { tauriApi } from "@/lib/tauri";
+import { closeActiveDocument } from "@/hooks/useFileOperations";
+import { log } from "@/lib/logger";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import {
   COPY_PATH_EVENT,
@@ -125,16 +127,11 @@ export const shortcutActions: Record<string, ShortcutAction> = {
   "find-replace": ({ callbacks }) => callbacks.onFindReplaceOpen(),
 
   // ── Document / workspace ─────────────────────────────────────────────
+  // Saves a dirty document first, then closes it (see `closeActiveDocument`).
   "close-active-document": () => {
-    const { activeTabId, openDocuments, closeTab, setPendingCloseTabId } =
-      useEditorStore.getState();
-    if (!activeTabId) return;
-    const activeTab = openDocuments.find((t) => t.id === activeTabId);
-    if (activeTab?.isDirty) {
-      setPendingCloseTabId(activeTabId);
-      return;
-    }
-    closeTab(activeTabId);
+    void closeActiveDocument().catch((err) => {
+      log.error("shortcuts", "close-active-document failed", err);
+    });
   },
   "export-document": ({ callbacks }) => {
     if (useEditorStore.getState().activeTabId) callbacks.onExportOpen();

@@ -8,7 +8,7 @@ globalThis.ResizeObserver = class {
 } as unknown as typeof ResizeObserver;
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@/test/component-harness";
+import { render, screen, fireEvent, act } from "@/test/component-harness";
 import * as binaryCache from "@/lib/binary-cache";
 
 // Mock the parser module
@@ -251,6 +251,32 @@ describe("PptxViewer", () => {
 
     render(<PptxViewer filePath="/bad.pptx" fileName="bad.pptx" />);
     expect(await screen.findByText("Invalid or corrupted PPTX file")).toBeTruthy();
+  });
+
+  it("ignores a slow parse of the previous file after switching files", async () => {
+    (binaryCache.getBinaryData as ReturnType<typeof vi.fn>).mockReturnValue(new Uint8Array([1]));
+    let resolveA: (p: PptxPresentation) => void = () => {};
+    let resolveB: (p: PptxPresentation) => void = () => {};
+    parsePptxMock
+      .mockImplementationOnce(() => new Promise<PptxPresentation>((r) => { resolveA = r; }))
+      .mockImplementationOnce(() => new Promise<PptxPresentation>((r) => { resolveB = r; }));
+
+    const presA = makeMockPresentation();
+    const presB = makeMockPresentation();
+    const runB = presB.slides[0].elements[0];
+    if (runB.type !== "textbox") throw new Error("fixture changed");
+    runB.paragraphs[0].runs[0].text = "Deck B Title";
+
+    const { rerender } = render(<PptxViewer filePath="/a.pptx" fileName="a.pptx" />);
+    rerender(<PptxViewer filePath="/b.pptx" fileName="b.pptx" />);
+
+    // B answers first, then A's slow parse lands under B's tab.
+    await act(async () => { resolveB(presB); });
+    expect(await screen.findByText("Deck B Title")).toBeTruthy();
+    await act(async () => { resolveA(presA); });
+
+    expect(screen.getByText("Deck B Title")).toBeTruthy();
+    expect(screen.queryByText("Slide One Title")).toBeNull();
   });
 
   it("shows error when no binary data available", async () => {

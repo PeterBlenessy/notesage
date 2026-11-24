@@ -42,7 +42,6 @@ function resetEditorStore() {
     recentFiles: [],
     scrollPositions: {},
     externalChanges: {},
-    pendingCloseTabId: null,
     persistedTabs: [],
     persistedActiveFilePath: null,
   });

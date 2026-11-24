@@ -27,7 +27,7 @@ export const ThinkingSegmentView = memo(function ThinkingSegmentView({
       <button
         type="button"
         onClick={() => setUserExpanded((prev) => (prev !== null ? !prev : !isExpanded))}
-        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-150 cursor-pointer"
+        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
       >
         <ChevronRight
           size={10}
@@ -38,7 +38,7 @@ export const ThinkingSegmentView = memo(function ThinkingSegmentView({
       </button>
       {isExpanded && (
         <div className="border-l border-border pl-2.5 py-0.5 mt-0.5">
-          <div className="text-[11px] text-muted-foreground/70 italic whitespace-pre-wrap font-mono leading-relaxed">
+          <div className="text-[11px] text-muted-foreground italic whitespace-pre-wrap font-mono leading-relaxed">
             {segment.content}
             {isStreaming && (
               <span className="inline-block w-1.5 h-3 bg-muted-foreground/50 animate-pulse ml-0.5" />

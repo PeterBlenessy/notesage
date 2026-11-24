@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -274,6 +275,7 @@ export const useMcpStore = create<McpStore>()(
     }),
     {
       name: 'mcp-store',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("mcp-store", error),
       partialize: (state) => ({
         enabledOverrides: state.enabledOverrides,
       }),

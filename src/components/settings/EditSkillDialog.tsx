@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -27,6 +27,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const fieldId = useId();
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const [allowedTools, setAllowedTools] = useState('');
@@ -105,8 +106,8 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
 
         <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{t("skill.description")}</Label>
-            <Textarea
+            <Label htmlFor={`${fieldId}-1`} className="text-xs text-muted-foreground">{t("skill.description")}</Label>
+            <Textarea id={`${fieldId}-1`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
@@ -116,8 +117,8 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{t("skill.instructions")}</Label>
-            <Textarea
+            <Label htmlFor={`${fieldId}-2`} className="text-xs text-muted-foreground">{t("skill.instructions")}</Label>
+            <Textarea id={`${fieldId}-2`}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               rows={6}
@@ -126,7 +127,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
           </div>
 
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
                 strokeWidth={1.5}
@@ -136,8 +137,8 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t("skill.allowedTools")}</Label>
-                  <Input
+                  <Label htmlFor={`${fieldId}-3`} className="text-xs text-muted-foreground">{t("skill.allowedTools")}</Label>
+                  <Input id={`${fieldId}-3`}
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
                     placeholder="e.g., Read, Edit, Bash (comma-separated)"
@@ -147,18 +148,18 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">User-invocable</Label>
+                    <Label htmlFor={`${fieldId}-4`} className="text-sm">User-invocable</Label>
                     <p className="text-xs text-muted-foreground">{t("skill.showInSlashMenu")}</p>
                   </div>
-                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                  <Switch id={`${fieldId}-4`} checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">{t("skill.disableModelInvocation")}</Label>
+                    <Label htmlFor={`${fieldId}-5`} className="text-sm">{t("skill.disableModelInvocation")}</Label>
                     <p className="text-xs text-muted-foreground">{t("skill.disableModelInvocationDesc")}</p>
                   </div>
-                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                  <Switch id={`${fieldId}-5`} checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>
               </div>
             </CollapsibleContent>

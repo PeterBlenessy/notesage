@@ -41,12 +41,17 @@ function errResult(error: string, stderr?: string): McpValidationResult {
   };
 }
 
-/** Register the read/write commands the save path touches (no config on disk). */
-function registerSaveHandlers(): { saved: Array<Record<string, unknown>> } {
+/**
+ * Register the read/write commands the save path touches. With no argument
+ * there is no config on disk; pass the file's raw content to put one there.
+ */
+function registerSaveHandlers(existingFile?: string): { saved: Array<Record<string, unknown>> } {
   const saved: Array<Record<string, unknown>> = [];
   setMockInvokeHandler('get_home_dir', () => '/home/tester');
+  setMockInvokeHandler('path_exists', () => existingFile !== undefined);
   setMockInvokeHandler('read_file', () => {
-    throw new Error('ENOENT');
+    if (existingFile === undefined) throw new Error('ENOENT');
+    return existingFile;
   });
   setMockInvokeHandler('get_credential', () => null);
   setMockInvokeHandler('store_credential', () => undefined);
@@ -160,6 +165,56 @@ describe('AddEditServerDialog', () => {
     const configs = saved[0].configs as Record<string, Record<string, unknown>>;
     // Auto-derived name from the command, stdio shape (command/args/env).
     expect(configs.fs).toMatchObject({ command: 'npx fs', args: ['/tmp'], env: {} });
+  });
+
+  /** Fill the form for a server named "fs" and press Add. */
+  function addServerNamedFs() {
+    fireEvent.change(
+      screen.getByPlaceholderText('npx -y @modelcontextprotocol/server-filesystem'),
+      { target: { value: 'npx fs' } },
+    );
+    fireEvent.change(screen.getByPlaceholderText('Auto-derived from command'), {
+      target: { value: 'fs' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }));
+  }
+
+  it('keeps the servers already in mcp.json when adding one', async () => {
+    setMockInvokeHandler('mcp_validate_server', () => okResult([]));
+    const { saved } = registerSaveHandlers(
+      JSON.stringify({ mcpServers: { git: { command: 'uvx', args: ['mcp-server-git'], env: {} } } }),
+    );
+    const onOpenChange = vi.fn();
+
+    renderWithProviders(<AddEditServerDialog open onOpenChange={onOpenChange} />);
+    addServerNamedFs();
+
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+    const configs = saved[0].configs as Record<string, Record<string, unknown>>;
+    expect(Object.keys(configs).sort()).toEqual(['fs', 'git']);
+    expect(configs.git).toMatchObject({ command: 'uvx' });
+  });
+
+  it.each([
+    ['invalid JSON', '{ "mcpServers": { "git": { "command": "uvx" }, }'],
+    ['a non-object mcpServers', '{ "mcpServers": ["git"] }'],
+    ['a file that is not an object', '"oops"'],
+  ])('does not overwrite an mcp.json with %s: it toasts and keeps the dialog open', async (_label, raw) => {
+    setMockInvokeHandler('mcp_validate_server', () => okResult([]));
+    const { saved } = registerSaveHandlers(raw);
+    const onOpenChange = vi.fn();
+
+    renderWithProviders(<AddEditServerDialog open onOpenChange={onOpenChange} />);
+    addServerNamedFs();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/mcp\.json could not be read/));
+    });
+    expect(saved).toHaveLength(0);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
   it('blocks the write when validation fails and toasts the error', async () => {

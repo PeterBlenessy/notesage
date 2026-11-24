@@ -41,8 +41,8 @@ use crate::commands::shell_path::get_shell_path;
 use state::McpServerHandle;
 use stderr_drain::{spawn_stderr_drain, StderrTail};
 use transport::{
-    mcp_call_tool_on_server, mcp_initialize, mcp_list_tools_from_server, spawn_mcp_transport,
-    McpConn,
+    mcp_call_tool_on_server, mcp_initialize, mcp_list_tools_from_server,
+    resolve_tool_call_timeout, spawn_mcp_transport, McpConn,
 };
 use validation::{map_spawn_error, read_stderr_tail, validation_error, MCP_VALIDATE_TIMEOUT};
 
@@ -455,6 +455,9 @@ pub async fn mcp_call_tool(
     server_id: String,
     tool_name: String,
     arguments: Value,
+    // Optional per-call limit in milliseconds (`timeoutMs` over IPC). Omitted,
+    // the call gets the default; see `resolve_tool_call_timeout`.
+    timeout_ms: Option<u64>,
 ) -> Result<McpToolResult, String> {
     // Extract transport Arcs under the lock, then release before the network call
     let transport = {
@@ -465,7 +468,13 @@ pub async fn mcp_call_tool(
         handle.conn.clone_handle()
     };
 
-    mcp_call_tool_on_server(&transport, &tool_name, arguments).await
+    mcp_call_tool_on_server(
+        &transport,
+        &tool_name,
+        arguments,
+        resolve_tool_call_timeout(timeout_ms),
+    )
+    .await
 }
 
 #[tauri::command]

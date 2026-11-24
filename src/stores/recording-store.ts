@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 export type RecordingSource = 'microphone' | 'system' | 'both';
 
@@ -258,6 +259,7 @@ export const useRecordingStore = create<RecordingStore>()(
     },
     {
       name: 'notesage-recording',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-recording", error),
       version: 1,
       migrate: (persisted: unknown, version: number) => {
         // Not just `?? {}`: a corrupted blob could deserialize to a

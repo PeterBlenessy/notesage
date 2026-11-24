@@ -99,6 +99,27 @@ impl AcpState {
     }
 }
 
+/// SIGKILL an agent's child process through the shared PID cell the agent
+/// thread fills in after spawning. Returns the PID signalled, or `None` when
+/// the child was never spawned (the cell still holds 0).
+///
+/// This is the way to stop an agent whose thread cannot be reached: the
+/// command loop handles one command at a time, so a `Stop` message queues
+/// behind whatever request the agent is not answering — and before
+/// `initialize` completes there is no loop to read it at all. Killing the
+/// child closes its stdout, which fails the request in flight and lets the
+/// thread run its cleanup (network proxy, PID file, sandbox profile).
+pub(crate) fn sigkill_agent_child(child_pid: &std::sync::atomic::AtomicU32) -> Option<u32> {
+    let pid = child_pid.load(std::sync::atomic::Ordering::Relaxed);
+    if pid == 0 {
+        return None;
+    }
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+    Some(pid)
+}
+
 // ---------------------------------------------------------------------------
 // Orphan PID files (audit batch 3 fix #9)
 //

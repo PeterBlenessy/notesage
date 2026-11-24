@@ -568,3 +568,300 @@ mod resource_link_probe {
         );
     }
 }
+
+// --- Permission waiters (audit 2026-11-22, test coverage) ---
+//
+// These three functions decide whether an agent's tool call goes ahead. They
+// are the pure half of the permission round-trip in `agent_thread.rs`: the
+// inbound handler parks a oneshot in the waiter map, and the command loop
+// resolves it (`PermissionRespond`) or drops it (`Cancel`, `Stop`).
+mod permission_waiters {
+    use super::super::agent_thread::{
+        cancel_permission_waiters, handle_permission_respond, permission_outcome,
+    };
+    use crate::commands::acp_client::{PermissionReply, PermissionWaiters};
+    use agent_client_protocol::schema::RequestPermissionOutcome;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::oneshot;
+
+    fn waiters_with(ids: &[&str]) -> (PermissionWaiters, Vec<oneshot::Receiver<PermissionReply>>) {
+        let waiters: PermissionWaiters = Arc::new(Mutex::new(HashMap::new()));
+        let mut receivers = Vec::new();
+        for id in ids {
+            let (tx, rx) = oneshot::channel();
+            waiters.lock().unwrap().insert(id.to_string(), tx);
+            receivers.push(rx);
+        }
+        (waiters, receivers)
+    }
+
+    /// The option the agent would be told the user picked, if any.
+    fn selected(outcome: &RequestPermissionOutcome) -> Option<String> {
+        match outcome {
+            RequestPermissionOutcome::Selected(s) => Some(s.option_id.to_string()),
+            _ => None,
+        }
+    }
+
+    fn is_cancelled(outcome: &RequestPermissionOutcome) -> bool {
+        matches!(outcome, RequestPermissionOutcome::Cancelled)
+    }
+
+    #[test]
+    fn a_chosen_option_is_the_only_thing_that_becomes_selected() {
+        let chosen = permission_outcome(Some(PermissionReply {
+            option_id: Some("allow-once".to_string()),
+        }));
+        assert_eq!(selected(&chosen).as_deref(), Some("allow-once"));
+
+        // A reply that names no option, and a waiter that was dropped.
+        assert!(is_cancelled(&permission_outcome(Some(PermissionReply { option_id: None }))));
+        assert!(is_cancelled(&permission_outcome(None)));
+    }
+
+    #[test]
+    fn a_response_reaches_the_request_it_names() {
+        let (waiters, mut rxs) = waiters_with(&["perm-0", "perm-1"]);
+
+        assert!(handle_permission_respond(
+            &waiters,
+            "perm-1".to_string(),
+            Some("allow".to_string())
+        ));
+
+        let reply = rxs[1].try_recv().ok().expect("perm-1 is resolved");
+        assert_eq!(reply.option_id.as_deref(), Some("allow"));
+        // The other request is still waiting for its own answer.
+        assert!(matches!(rxs[0].try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+        assert_eq!(waiters.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unknown_request_id_is_a_no_op() {
+        let (waiters, mut rxs) = waiters_with(&["perm-0"]);
+
+        assert!(!handle_permission_respond(
+            &waiters,
+            "perm-999".to_string(),
+            Some("allow".to_string())
+        ));
+
+        // In particular the approval did not land on the request that IS pending.
+        assert!(matches!(rxs[0].try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+        assert_eq!(waiters.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_request_can_only_be_answered_once() {
+        let (waiters, _rxs) = waiters_with(&["perm-0"]);
+        assert!(handle_permission_respond(&waiters, "perm-0".to_string(), None));
+        assert!(!handle_permission_respond(
+            &waiters,
+            "perm-0".to_string(),
+            Some("allow".to_string())
+        ));
+    }
+
+    #[tokio::test]
+    async fn cancel_resolves_every_waiter_as_cancelled_never_as_an_approval() {
+        let (waiters, rxs) = waiters_with(&["perm-0", "perm-1", "perm-2"]);
+
+        assert_eq!(cancel_permission_waiters(&waiters), 3);
+        assert!(waiters.lock().unwrap().is_empty());
+
+        for rx in rxs {
+            // Exactly what the inbound handler does with its receiver.
+            let outcome = permission_outcome(rx.await.ok());
+            assert!(is_cancelled(&outcome));
+            assert_eq!(selected(&outcome), None);
+        }
+        // A decision arriving after the cancel has nothing left to approve.
+        assert!(!handle_permission_respond(
+            &waiters,
+            "perm-1".to_string(),
+            Some("allow".to_string())
+        ));
+    }
+
+    #[test]
+    fn a_poisoned_lock_still_delivers_and_still_cancels() {
+        let (waiters, mut rxs) = waiters_with(&["perm-0", "perm-1"]);
+        let poisoner = Arc::clone(&waiters);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poison the waiter lock");
+        })
+        .join();
+        assert!(waiters.is_poisoned());
+
+        assert!(handle_permission_respond(
+            &waiters,
+            "perm-0".to_string(),
+            Some("allow".to_string())
+        ));
+        let delivered = rxs[0].try_recv().ok().expect("delivered despite the poisoned lock");
+        assert_eq!(delivered.option_id.as_deref(), Some("allow"));
+
+        assert_eq!(cancel_permission_waiters(&waiters), 1);
+        assert!(matches!(rxs[1].try_recv(), Err(oneshot::error::TryRecvError::Closed)));
+    }
+}
+
+// --- Bounded agent requests (audit 2026-11-22: init timeout, stuck command loop) ---
+mod bounded_requests {
+    use super::super::agent_thread::bounded;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn a_request_the_agent_never_answers_becomes_an_error() {
+        // What `initialize` against a binary that does not speak ACP looks like.
+        let never = std::future::pending::<Result<(), String>>();
+        let err = bounded("ACP initialize", Duration::from_millis(50), never)
+            .await
+            .unwrap_err();
+        assert!(err.starts_with("ACP initialize timed out"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn answers_and_errors_pass_through_with_the_usual_wording() {
+        let ok = bounded("new_session", Duration::from_secs(5), async { Ok::<_, String>(7) }).await;
+        assert_eq!(ok, Ok(7));
+
+        let failed = bounded("new_session", Duration::from_secs(5), async {
+            Err::<(), _>("connection closed")
+        })
+        .await;
+        assert_eq!(failed, Err("new_session failed: connection closed".to_string()));
+    }
+}
+
+// --- Stopping an agent whose command loop is stuck (audit 2026-11-22) ---
+mod stop {
+    use super::super::state::{sigkill_agent_child, AgentCmd};
+    use super::super::stop_agent_thread;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::{mpsc, Notify};
+
+    const GRACE: Duration = Duration::from_millis(100);
+
+    #[tokio::test]
+    async fn a_loop_that_answers_is_stopped_without_a_kill() {
+        let (tx, mut rx) = mpsc::channel::<AgentCmd>(32);
+        tokio::spawn(async move {
+            if let Some(AgentCmd::Stop { reply }) = rx.recv().await {
+                let _ = reply.send(Ok(()));
+            }
+        });
+
+        let result = stop_agent_thread(&tx, GRACE, || panic!("no kill for a responsive loop")).await;
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn a_loop_stuck_behind_a_request_is_killed_and_then_answers() {
+        // The loop is "awaiting an agent request" until the child is killed;
+        // only then does it get to the queued Stop.
+        let (tx, mut rx) = mpsc::channel::<AgentCmd>(32);
+        let child_killed = Arc::new(Notify::new());
+        let loop_side = Arc::clone(&child_killed);
+        tokio::spawn(async move {
+            loop_side.notified().await;
+            if let Some(AgentCmd::Stop { reply }) = rx.recv().await {
+                let _ = reply.send(Ok(()));
+            }
+        });
+        let killed = Arc::new(AtomicBool::new(false));
+        let killed_flag = Arc::clone(&killed);
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            stop_agent_thread(&tx, GRACE, move || {
+                killed_flag.store(true, Ordering::SeqCst);
+                child_killed.notify_one();
+            }),
+        )
+        .await
+        .expect("stop must return even though the loop was stuck");
+
+        assert_eq!(result, Ok(()));
+        assert!(killed.load(Ordering::SeqCst), "the child is killed to unblock the loop");
+    }
+
+    #[tokio::test]
+    async fn a_loop_that_never_answers_at_all_does_not_hang_the_stop() {
+        // Nothing ever reads the channel. The old code awaited the reply forever.
+        let (tx, _rx) = mpsc::channel::<AgentCmd>(32);
+        let killed = Arc::new(AtomicBool::new(false));
+        let killed_flag = Arc::clone(&killed);
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            stop_agent_thread(&tx, GRACE, move || killed_flag.store(true, Ordering::SeqCst)),
+        )
+        .await
+        .expect("stop must return");
+
+        assert_eq!(result, Ok(()), "a forced stop is still a stop");
+        assert!(killed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_full_command_queue_does_not_hang_the_stop_either() {
+        let (tx, _rx) = mpsc::channel::<AgentCmd>(1);
+        tx.send(AgentCmd::PermissionRespond {
+            request_id: "perm-0".to_string(),
+            option_id: None,
+        })
+        .await
+        .ok()
+        .expect("the queue has room for one");
+        let killed = Arc::new(AtomicBool::new(false));
+        let killed_flag = Arc::clone(&killed);
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            stop_agent_thread(&tx, GRACE, move || killed_flag.store(true, Ordering::SeqCst)),
+        )
+        .await
+        .expect("stop must return");
+
+        assert_eq!(result, Ok(()));
+        assert!(killed.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_thread_that_is_already_gone_is_reported_not_killed() {
+        let (tx, rx) = mpsc::channel::<AgentCmd>(32);
+        drop(rx);
+
+        let result = stop_agent_thread(&tx, GRACE, || panic!("nothing to kill")).await;
+
+        assert_eq!(result, Err("Agent thread is no longer running".to_string()));
+    }
+
+    #[test]
+    fn sigkill_does_nothing_before_the_child_exists() {
+        // PID 0 would address our own process group.
+        assert_eq!(sigkill_agent_child(&AtomicU32::new(0)), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigkill_kills_the_recorded_child() {
+        use std::os::unix::process::ExitStatusExt;
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("spawn sleep");
+        let cell = AtomicU32::new(child.id());
+
+        assert_eq!(sigkill_agent_child(&cell), Some(child.id()));
+
+        let status = child.wait().expect("the child was killed, so wait returns");
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+    }
+}

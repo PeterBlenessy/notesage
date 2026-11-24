@@ -3,7 +3,9 @@ import "@excalidraw/excalidraw/index.css";
 import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
-import { saveDrawing, saveSvgPreview, loadDrawing, loadLibrary, saveLibrary, importLibraryFile } from "@/lib/drawing-storage";
+import { saveDrawing, saveSvgPreview, loadDrawingStrict, loadLibrary, loadLibraryStrict, saveLibrary, importLibraryFile } from "@/lib/drawing-storage";
+import { t } from "@/lib/i18n";
+import { log } from "@/lib/logger";
 import { exportDrawingToSvg } from "@/lib/excalidraw-export";
 import { tauriApi } from "@/lib/tauri";
 import type { Editor } from "@tiptap/core";
@@ -46,6 +48,12 @@ export function DrawingEditor({
   const [height, setHeight] = useState(initialHeight);
   const [initialData, setInitialData] = useState<unknown>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  // Set when the existing drawing could not be loaded. The canvas is NOT
+  // shown then: an empty one would be saved over the drawing by Done.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // True until the shape library is known to have loaded (or to not exist):
+  // saving the canvas's library before that would overwrite the real one.
+  const libraryWritableRef = useRef(false);
   const [libraryItems, setLibraryItems] = useState<unknown[]>([]);
   const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
   const librarySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,37 +67,71 @@ export function DrawingEditor({
 
   // Load existing scene data on mount
   useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
     if (drawingJson) {
       try {
         setInitialData(JSON.parse(drawingJson));
-      } catch {
-        // invalid JSON — start with empty canvas
+      } catch (err) {
+        // Not an empty canvas: Done would replace the stored JSON with it.
+        log.warn("drawing", "Inline drawing JSON could not be parsed", err);
+        setLoadError(String(err));
       }
       setDataLoaded(true);
       return;
     }
     // Legacy: load from sidecar file
     if (drawingId && projectRoot) {
-      loadDrawing(drawingId, projectRoot).then((data: unknown) => {
-        if (data) setInitialData(data);
-        setDataLoaded(true);
-      });
+      loadDrawingStrict(drawingId, projectRoot)
+        .then((data: unknown) => {
+          if (cancelled) return;
+          if (data) setInitialData(data);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          log.warn("drawing", `Drawing ${drawingId} could not be loaded`, err);
+          setLoadError(String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setDataLoaded(true);
+        });
     } else {
       setDataLoaded(true);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [drawingId, drawingJson, projectRoot]);
 
   // Load global shape library on mount
   useEffect(() => {
-    loadLibrary().then(setLibraryItems);
+    let cancelled = false;
+    loadLibraryStrict()
+      .then((items) => {
+        if (cancelled) return;
+        libraryWritableRef.current = true;
+        setLibraryItems(items);
+      })
+      .catch((err: unknown) => {
+        // The canvas still opens, without the library — and without saving
+        // one over the file that could not be read.
+        log.warn("drawing", "Shape library could not be loaded; it will not be saved in this session", err);
+        toast.warning(t("toast.drawingLibraryUnreadable"), { id: "drawing-library-unreadable" });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Debounced library save on change
   const handleLibraryChange = useCallback((items: LibraryItems) => {
     setLibraryItems([...items]);
     if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    if (!libraryWritableRef.current) return;
     librarySaveTimerRef.current = setTimeout(() => {
-      saveLibrary([...items]);
+      saveLibrary([...items]).catch((err: unknown) => {
+        log.warn("drawing", "Shape library could not be saved", err);
+      });
     }, 500);
   }, []);
 
@@ -112,6 +154,8 @@ export function DrawingEditor({
       const count = await importLibraryFile(filePath);
       if (count > 0) {
         const updated = await loadLibrary();
+        // The import read and rewrote the library, so it is known-good now.
+        libraryWritableRef.current = true;
         setLibraryItems(updated);
         excalidrawRef.current?.updateLibrary({
           libraryItems: updated,
@@ -129,7 +173,9 @@ export function DrawingEditor({
 
   const handleDone = useCallback(async () => {
     const api = excalidrawRef.current;
-    if (!api) {
+    // No canvas, or one that never held the real drawing: close without
+    // writing anything.
+    if (!api || loadError !== null) {
       onDone(null);
       return;
     }
@@ -199,7 +245,7 @@ export function DrawingEditor({
     } catch {
       onDone(null);
     }
-  }, [drawingId, drawingJson, projectRoot, editor, getPos, nodeAttrs, onDone, resolvedTheme]);
+  }, [drawingId, drawingJson, projectRoot, editor, getPos, nodeAttrs, onDone, resolvedTheme, loadError]);
 
   // Handle Escape key
   useEffect(() => {
@@ -264,12 +310,18 @@ export function DrawingEditor({
             <span>Import Library</span>
           </button>
           <button className="drawing-done-button" onClick={handleDone}>
-            Done
+            {loadError !== null ? t("drawing.close") : "Done"}
           </button>
         </div>
       </div>
       <div className="drawing-editor-canvas" style={{ height, width: "100%" }}>
-        {dataLoaded && (
+        {dataLoaded && loadError !== null && (
+          <div className="drawing-loading" role="alert">
+            <p>{t("drawing.loadFailed")}</p>
+            <p className="text-xs text-muted-foreground">{loadError}</p>
+          </div>
+        )}
+        {dataLoaded && loadError === null && (
           <Suspense
             fallback={
               <div className="drawing-loading">Loading editor...</div>

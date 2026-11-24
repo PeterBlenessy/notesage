@@ -2,6 +2,8 @@ import { X } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { closeActiveDocument } from "@/hooks/useFileOperations";
+import { log } from "@/lib/logger";
 import {
   Tooltip,
   TooltipContent,
@@ -34,18 +36,12 @@ export function TitleBar(props: TitleBarProps) {
   const title = activeTab?.fileName ?? "Notesage";
   const isDirty = Boolean(activeTab?.isDirty);
 
-  // ⌘W mirror — closes the active document (or routes through the
-  // setPendingCloseTabId warn flow when the doc is dirty).
+  // ⌘W mirror — closes the active document, saving it first when it is
+  // dirty (the same `closeActiveDocument` ⌘W runs).
   const handleCloseActiveTab = () => {
-    const editorState = useEditorStore.getState();
-    const id = editorState.activeTabId;
-    if (!id) return;
-    const tab = editorState.openDocuments.find((t) => t.id === id);
-    if (tab?.isDirty) {
-      editorState.setPendingCloseTabId(id);
-      return;
-    }
-    editorState.closeTab(id);
+    void closeActiveDocument().catch((err) => {
+      log.error("titlebar", "Closing the active document failed", err);
+    });
   };
 
   const docChrome = activeTab ? (

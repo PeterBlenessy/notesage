@@ -1215,6 +1215,157 @@ describe('Migration v3 → v4', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Oldest persisted shapes: v1 (flat messages) and v2 (conversations without
+// segments). Every later step is exercised from a v3/v4 fixture above; these
+// two were only ever reached by real users' blobs, never by a test.
+// ---------------------------------------------------------------------------
+
+describe('migration from v1 and v2 persisted state', () => {
+  const migrate = (state: unknown, version: number) =>
+    (useChatStore as unknown as { persist: { getOptions: () => { migrate: (s: unknown, v: number) => unknown } } })
+      .persist.getOptions().migrate(state, version);
+
+  interface Migrated {
+    conversations: Conversation[];
+    activeConversationId: string | null;
+    webSearchEnabled: boolean;
+    isLoading: boolean;
+    error: string | null;
+    activeTool: string | null;
+    messages?: unknown;
+    selectedProjectPaths?: unknown;
+  }
+
+  it('v1 → v5: wraps flat messages into one conversation with the full current shape', () => {
+    const v1State = {
+      messages: [
+        { role: 'user', content: 'Hello', timestamp: 100 },
+        { role: 'assistant', content: 'Hi', timestamp: 200 },
+        { role: 'user', content: 'More', timestamp: 300 },
+      ],
+      selectedProjectPaths: ['/projects/alpha', '/projects/beta'],
+      webSearchEnabled: true,
+    };
+
+    const migrated = migrate(v1State, 1) as Migrated;
+
+    // The flat v1 keys are gone; the store-level fields are reset.
+    expect(migrated.messages).toBeUndefined();
+    expect(migrated.selectedProjectPaths).toBeUndefined();
+    expect(migrated.isLoading).toBe(false);
+    expect(migrated.error).toBeNull();
+    expect(migrated.activeTool).toBeNull();
+    expect(migrated.webSearchEnabled).toBe(true);
+
+    expect(migrated.activeConversationId).toBe('migrated-default');
+    expect(migrated.conversations).toHaveLength(1);
+    const conv = migrated.conversations[0];
+    expect(conv.id).toBe('migrated-default');
+    expect(conv.title).toBe('Chat History');
+    expect(conv.createdAt).toBe(100);
+    expect(conv.updatedAt).toBe(300);
+    expect(conv.projectPaths).toEqual(['/projects/alpha', '/projects/beta']);
+    expect(conv.activeSegmentIndex).toBe(0);
+    expect(conv.pendingProjectSwitch).toBeNull();
+
+    // v3 → v4 ran on the wrapped messages: content kept, ids chained.
+    expect(conv.messages.map((m) => m.content)).toEqual(['Hello', 'Hi', 'More']);
+    expect(conv.messages.map((m) => m.timestamp)).toEqual([100, 200, 300]);
+    const ids = conv.messages.map((m) => m.id);
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(typeof id).toBe('string');
+    expect(conv.messages[0].parentId).toBeNull();
+    expect(conv.messages[1].parentId).toBe(ids[0]);
+    expect(conv.messages[2].parentId).toBe(ids[1]);
+    expect(conv.activeLeafId).toBe(ids[2]);
+
+    // v4 → v5 anchored the single segment to the first message's new id.
+    expect(conv.segments).toEqual([
+      {
+        projectPaths: ['/projects/alpha', '/projects/beta'],
+        sessionId: null,
+        startMessageIndex: 0,
+        historyIncluded: false,
+        startMessageId: ids[0],
+      },
+    ]);
+  });
+
+  it('v1 with no messages migrates to an empty conversation list', () => {
+    const migrated = migrate({ messages: [], selectedProjectPaths: ['/p'] }, 1) as Migrated;
+    expect(migrated.conversations).toEqual([]);
+    expect(migrated.activeConversationId).toBeNull();
+    // An absent v1 flag defaults to off.
+    expect(migrated.webSearchEnabled).toBe(false);
+  });
+
+  it('v1 with neither key present does not throw', () => {
+    const migrated = migrate({}, 1) as Migrated;
+    expect(migrated.conversations).toEqual([]);
+    expect(migrated.activeConversationId).toBeNull();
+  });
+
+  it('v2 → v5: backfills segments from projectPaths, then ids and the segment anchor', () => {
+    const v2State = {
+      conversations: [
+        {
+          id: 'conv-a',
+          title: 'Scoped',
+          messages: [
+            { role: 'user', content: 'Q', timestamp: 1 },
+            { role: 'assistant', content: 'A', timestamp: 2 },
+          ],
+          createdAt: 1,
+          updatedAt: 2,
+          projectPaths: ['/projects/alpha'],
+        },
+        {
+          id: 'conv-b',
+          title: 'Empty',
+          messages: [],
+          createdAt: 3,
+          updatedAt: 3,
+          projectPaths: [],
+        },
+      ],
+      activeConversationId: 'conv-a',
+      isLoading: false,
+      error: null,
+      activeTool: null,
+      webSearchEnabled: false,
+    };
+
+    const migrated = migrate(v2State, 2) as Migrated;
+    expect(migrated.activeConversationId).toBe('conv-a');
+    expect(migrated.conversations.map((c) => c.id)).toEqual(['conv-a', 'conv-b']);
+
+    const [a, b] = migrated.conversations;
+    expect(a.title).toBe('Scoped');
+    expect(a.activeSegmentIndex).toBe(0);
+    expect(a.pendingProjectSwitch).toBeNull();
+    expect(a.messages[0].parentId).toBeNull();
+    expect(a.messages[1].parentId).toBe(a.messages[0].id);
+    expect(a.activeLeafId).toBe(a.messages[1].id);
+    expect(a.segments).toEqual([
+      {
+        projectPaths: ['/projects/alpha'],
+        sessionId: null,
+        startMessageIndex: 0,
+        historyIncluded: false,
+        startMessageId: a.messages[0].id,
+      },
+    ]);
+
+    // No message to anchor to: the segment is backfilled but left without a
+    // `startMessageId`, and the leaf is null.
+    expect(b.segments).toEqual([
+      { projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false },
+    ]);
+    expect(b.activeLeafId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // System-status messages (reconnection flow)
 // ---------------------------------------------------------------------------
 

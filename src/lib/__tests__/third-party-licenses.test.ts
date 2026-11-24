@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import data from "@/generated/third-party-licenses.json";
+import { collectNpmPackages } from "../../../scripts/license-npm-closure.mjs";
 
 /**
  * The notice list is an obligation, not a courtesy (#949): most of the
@@ -74,4 +76,104 @@ describe("the licence files the generator reads from", () => {
     expect(existsSync(path), `${rel} is missing`).toBe(true);
     expect(readFileSync(path, "utf8").trim().length).toBeGreaterThan(200);
   });
+});
+
+describe("collectNpmPackages (the generator's walk over `pnpm list --json`)", () => {
+  const leaf = (version: string, path: string) => ({ version, path });
+
+  it("keeps a subtree whose package is first met as a stub without dependencies", () => {
+    // What a pnpm that prints repeated packages as stubs emits: `shared` shows
+    // up under `first` with no children, and only under `second` with them.
+    // Marking it done at the first sighting dropped `deep` and `deeper` — the
+    // ~185 packages missing from the shipped notice (audit 2026-11-22).
+    const roots = [
+      {
+        dependencies: {
+          first: { version: "1.0.0", path: "/nm/first", dependencies: { shared: { version: "2.0.0" } } },
+          second: {
+            version: "1.0.0",
+            path: "/nm/second",
+            dependencies: {
+              shared: {
+                version: "2.0.0",
+                path: "/nm/shared",
+                dependencies: {
+                  deep: { version: "3.0.0", path: "/nm/deep", dependencies: { deeper: leaf("4.0.0", "/nm/deeper") } },
+                },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    const found = collectNpmPackages(roots);
+    expect(found.map((p) => `${p.name}@${p.version}`).sort()).toEqual([
+      "deep@3.0.0",
+      "deeper@4.0.0",
+      "first@1.0.0",
+      "second@1.0.0",
+      "shared@2.0.0",
+    ]);
+    // The stub carried no path; the full occurrence supplies it, or the
+    // package would be filtered out later as "not installed here".
+    expect(found.find((p) => p.name === "shared")?.path).toBe("/nm/shared");
+  });
+
+  it("lists each name@version once, and keeps two versions of one package apart", () => {
+    const roots = [
+      {
+        dependencies: {
+          a: { version: "1.0.0", path: "/nm/a", dependencies: { lib: leaf("1.0.0", "/nm/lib1") } },
+          b: { version: "1.0.0", path: "/nm/b", dependencies: { lib: leaf("2.0.0", "/nm/lib2"), a: leaf("1.0.0", "/nm/a") } },
+        },
+      },
+    ];
+    expect(collectNpmPackages(roots).map((p) => `${p.name}@${p.version}`).sort()).toEqual([
+      "a@1.0.0",
+      "b@1.0.0",
+      "lib@1.0.0",
+      "lib@2.0.0",
+    ]);
+  });
+
+  it("terminates on a dependency cycle", () => {
+    const a: { version: string; path: string; dependencies: Record<string, unknown> } = {
+      version: "1.0.0",
+      path: "/nm/a",
+      dependencies: {},
+    };
+    const b = { version: "1.0.0", path: "/nm/b", dependencies: { a } };
+    a.dependencies.b = b;
+    const found = collectNpmPackages([{ dependencies: { a } }] as Parameters<typeof collectNpmPackages>[0]);
+    expect(found.map((p) => p.name).sort()).toEqual(["a", "b"]);
+  });
+});
+
+/**
+ * The check that would have caught the gap: every production package that is
+ * actually unpacked here must be in the shipped notice.
+ *
+ * Opt-in (`NOTESAGE_CHECK_LICENSE_CLOSURE=1 pnpm vitest run
+ * src/lib/__tests__/third-party-licenses.test.ts`) for two reasons. The notice
+ * is generated on macOS and lists what a macOS install unpacks, so on any
+ * other platform the per-platform native binaries differ by design. And it
+ * shells out to `pnpm list`, which takes seconds. Run it on the release Mac
+ * right after `pnpm licenses:generate`.
+ */
+describe.skipIf(process.env.NOTESAGE_CHECK_LICENSE_CLOSURE !== "1")("the notice covers the installed production closure", () => {
+  it("has a row for every production npm package unpacked on this machine", () => {
+    const raw = execFileSync("pnpm", ["list", "--prod", "--depth", "Infinity", "--json"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+    });
+    const listed = new Set(components.filter((c) => c.kind === "npm").map((c) => `${c.name}@${c.version}`));
+    const missing = collectNpmPackages(JSON.parse(raw))
+      .filter((p) => p.path && existsSync(resolve(p.path, "package.json")))
+      .map((p) => `${p.name}@${p.version}`)
+      .filter((key) => !listed.has(key))
+      .sort();
+    expect(missing).toEqual([]);
+  }, 120_000);
 });

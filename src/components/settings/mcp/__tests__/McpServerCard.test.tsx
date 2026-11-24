@@ -2,8 +2,10 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
-import { clearMockInvokeHandlers } from '@/test/tauri-mock';
+import { renderWithProviders, screen, fireEvent, waitFor } from '@/test/component-harness';
+import { clearMockInvokeHandlers, setMockInvokeHandler } from '@/test/tauri-mock';
+import { toast } from 'sonner';
+import { useMcpStore } from '@/stores/mcp-store';
 import { McpServerCard } from '../McpServerCard';
 import type { McpServerEntry, McpToolInfo } from '@/stores/mcp-store';
 
@@ -97,5 +99,93 @@ describe('McpServerCard', () => {
   it('renders no Tools trigger when the server exposes no tools', () => {
     renderWithProviders(<McpServerCard server={makeServer({ tools: [] })} />);
     expect(screen.queryByText('Tools')).toBeNull();
+  });
+  describe('remove', () => {
+    /** Put `raw` on disk as mcp.json (undefined = no file) and record every save. */
+    function registerConfigFile(raw: string | undefined) {
+      const saved: Array<Record<string, unknown>> = [];
+      setMockInvokeHandler('get_home_dir', () => '/home/tester');
+      setMockInvokeHandler('path_exists', () => raw !== undefined);
+      setMockInvokeHandler('read_file', () => {
+        if (raw === undefined) throw new Error('ENOENT');
+        return raw;
+      });
+      setMockInvokeHandler('mcp_save_config', (args) => {
+        saved.push(args ?? {});
+        return undefined;
+      });
+      return { saved };
+    }
+
+    async function clickRemove() {
+      const trigger = document.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement;
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(await screen.findByText('Remove'));
+    }
+
+    function renderStored(server: McpServerEntry) {
+      useMcpStore.setState({ servers: [server] });
+      renderWithProviders(<McpServerCard server={server} />);
+    }
+
+    it('removes only this server from mcp.json and keeps the others', async () => {
+      const { saved } = registerConfigFile(
+        JSON.stringify({ mcpServers: { filesystem: { command: 'npx' }, git: { command: 'uvx' } } }),
+      );
+      renderStored(makeServer({ status: 'stopped' }));
+
+      await clickRemove();
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Removed/));
+      });
+      expect(saved).toHaveLength(1);
+      expect(saved[0].configs).toEqual({ git: { command: 'uvx' } });
+      expect(useMcpStore.getState().servers).toEqual([]);
+    });
+
+    it.each([
+      ['invalid JSON', '{ "mcpServers": { '],
+      ['a non-object mcpServers', '{ "mcpServers": 3 }'],
+    ])('refuses when mcp.json holds %s: nothing is written or removed, and no success toast', async (_label, raw) => {
+      const { saved } = registerConfigFile(raw);
+      renderStored(makeServer({ status: 'stopped' }));
+
+      await clickRemove();
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/mcp\.json could not be read/));
+      });
+      expect(saved).toHaveLength(0);
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(useMcpStore.getState().servers).toHaveLength(1);
+    });
+
+    it('does not report success when the config write fails', async () => {
+      registerConfigFile(JSON.stringify({ mcpServers: { filesystem: { command: 'npx' } } }));
+      setMockInvokeHandler('mcp_save_config', () => {
+        throw new Error('disk full');
+      });
+      renderStored(makeServer({ status: 'stopped' }));
+
+      await clickRemove();
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/disk full/));
+      });
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when there is no mcp.json', async () => {
+      const { saved } = registerConfigFile(undefined);
+      renderStored(makeServer({ status: 'stopped' }));
+
+      await clickRemove();
+
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Removed/));
+      });
+      expect(saved).toHaveLength(0);
+    });
   });
 });

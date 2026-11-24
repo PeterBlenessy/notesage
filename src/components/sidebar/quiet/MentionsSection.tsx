@@ -77,6 +77,8 @@ export function MentionsSection({
   const effectiveCap = cap ?? settingCap ?? DEFAULT_MENTION_CAP;
 
   const [mentions, setMentions] = useState<MentionRow[]>([]);
+  // A failed index query is not "nothing here": keep the error and show it.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   // Client-side filter on the cached mention list. Applied BEFORE
@@ -101,13 +103,15 @@ export function MentionsSection({
       .indexMentions(projectPaths, undefined)
       .then((rows: IndexedMention[]) => {
         if (reqId !== reqIdRef.current) return;
+        setLoadError(null);
         setMentions(
           rows.map((r) => ({ name: r.mention, usageCount: r.file_count })),
         );
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (reqId !== reqIdRef.current) return;
         setMentions([]);
+        setLoadError(err instanceof Error ? err.message : String(err));
       });
     // The stable-array memo (`projectPaths`) keeps this effect honest when
     // `projects` is re-created but paths are unchanged.
@@ -185,6 +189,11 @@ export function MentionsSection({
           Mentions
         </h2>
       </header>
+      {loadError ? (
+        <p role="alert" title={loadError} className="px-2 text-xs text-destructive">
+          {t("search.indexUnavailable")}
+        </p>
+      ) : null}
       {visibleMentions.length > 0 ? (
         <ul className="flex flex-col">
           {visibleMentions.map((mention) => (
@@ -227,14 +236,10 @@ export function MentionsSection({
         </ul>
       ) : null}
       {hasOverflow ? (
-        // `tabIndex={-1}` per the audit 2026-04-27 finding #11 follow-up
-        // — keeps the temporary "Show more" affordance out of the
-        // natural Tab order. Mouse users still see and click it; users
-        // who want a permanent larger view bump the cap in
-        // Settings > Appearance > Sidebar Composition.
+        // In the Tab order on purpose: rows beyond the cap are not rendered,
+        // so this button is the only keyboard route to them (WCAG 2.1.1).
         <button
           type="button"
-          tabIndex={-1}
           onClick={toggleExpanded}
           aria-expanded={expanded}
           className={cn(

@@ -804,3 +804,70 @@ describe('useFileRenameSync — folder rename: closed-tab sidecar reverse-lookup
     expect(deletedPaths).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A sidecar that does not follow its file is reported (audit 2026-11-22 §10)
+// ---------------------------------------------------------------------------
+
+describe('useFileRenameSync — sidecar migration failures are not silent', () => {
+  const NOTES_ROOT = '/Users/testuser/Notesage';
+
+  it('warns when the comments of a renamed file could not be moved', async () => {
+    const OLD_PATH = '/notes/foo.md';
+    const NEW_PATH = '/notes/bar.md';
+    const oldSidecar = sidecarPath(NOTES_ROOT, OLD_PATH);
+
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    setMockInvokeHandler('path_exists', (args) => (args as { path: string }).path === oldSidecar);
+    setMockInvokeHandler('read_file', () => JSON.stringify([{ id: 'c1', body: 'a comment' }]));
+    setMockInvokeHandler('create_directory', () => undefined);
+    setMockInvokeHandler('delete_path', () => undefined);
+    // Every write fails: the staging copy, the manifest, the destination.
+    setMockInvokeHandler('write_file', () => {
+      throw new Error('No space left on device');
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed(OLD_PATH, NEW_PATH); });
+    await vi.runAllTimersAsync();
+
+    expect(mockToastFn.warning).toHaveBeenCalledTimes(1);
+    expect(String(mockToastFn.warning.mock.calls[0][0])).toContain('bar.md');
+  });
+
+  it('warns when the comments directory cannot be listed on a folder rename', async () => {
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    // The directory is there; listing it fails.
+    setMockInvokeHandler('path_exists', (args) =>
+      (args as { path: string }).path === `${NOTES_ROOT}/.notesage/comments`,
+    );
+    setMockInvokeHandler('list_directory', () => {
+      throw new Error('Operation not permitted');
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed('/notes/old-folder', '/notes/new-folder', true); });
+    await vi.runAllTimersAsync();
+
+    expect(mockToastFn.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet when there is simply no comments directory yet', async () => {
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('list_directory', () => {
+      throw new Error('No such file or directory');
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed('/notes/old-folder', '/notes/new-folder', true); });
+    await vi.runAllTimersAsync();
+
+    expect(mockToastFn.warning).not.toHaveBeenCalled();
+  });
+});

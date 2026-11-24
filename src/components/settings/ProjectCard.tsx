@@ -373,6 +373,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   onClick={handleNameSave}
                   disabled={renaming}
                   title={t("project.save")}
+                  aria-label={t("project.save")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-50"
                 >
                   <Check className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -384,6 +385,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   }}
                   onClick={handleNameCancel}
                   title={t("project.cancel")}
+                  aria-label={t("project.cancel")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -402,6 +404,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   type="button"
                   onClick={() => setNameEditing(true)}
                   title={t("project.renameProject")}
+                  aria-label={t("project.renameProject")}
                   className={cn(
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -459,6 +462,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   type="button"
                   onClick={handleDescSave}
                   title="Save (⌘+Enter)"
+                  aria-label="Save (⌘+Enter)"
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
                 >
                   <Check className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -470,6 +474,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   }}
                   onClick={handleDescCancel}
                   title={t("project.cancelEsc")}
+                  aria-label={t("project.cancelEsc")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -482,7 +487,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     'text-[12px] flex-1 cursor-text whitespace-pre-wrap leading-tight',
                     metadata.description
                       ? 'text-muted-foreground'
-                      : 'text-muted-foreground/60 italic',
+                      : 'text-muted-foreground italic',
                   )}
                   onDoubleClick={() => setDescEditing(true)}
                   title={t("project.doubleClickEditDescription")}
@@ -493,6 +498,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   type="button"
                   onClick={() => setDescEditing(true)}
                   title={t("project.editDescription")}
+                  aria-label={t("project.editDescription")}
                   className={cn(
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',

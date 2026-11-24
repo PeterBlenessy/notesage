@@ -94,7 +94,7 @@ export function CompletionsGroup() {
       </Select>
 
       {compatibleConnections.length === 0 && (
-        <p className="text-[10px] text-muted-foreground/60 leading-tight px-2">
+        <p className="text-[10px] text-muted-foreground leading-tight px-2">
           No inline completion provider configured.{" "}
           <button
             type="button"

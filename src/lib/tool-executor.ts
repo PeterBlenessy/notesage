@@ -11,6 +11,7 @@ import type { SkillContent, ScriptResult, ArgMapping, PptxTemplateInfo, WebSearc
 import type { ToolResult } from '@/lib/ai/types';
 import { isToolCallAllowed, isPathAllowed, normalizeAbsolutePath } from '@/lib/ai/path-filter';
 import { hashPath } from '@/lib/comment-storage';
+import { getDocumentId } from '@/lib/frontmatter';
 
 export interface ToolCallScope {
   projectRoots: string[];
@@ -93,12 +94,75 @@ export function mapArgsToStringArray(
   return result;
 }
 
+/** Prefix of the per-script tools generated from a skill's scripts. */
+const SKILL_TOOL_PREFIX = 'skill__';
+
+/**
+ * Whether a tool call runs a skill script — the generic `execute_skill_script`
+ * tool or a generated `skill__{skill}__{script}` tool.
+ *
+ * Callers that gate tool calls on user approval MUST treat these differently
+ * from ordinary tools: an approval for them is pinned to the script's content
+ * hash (`isSkillScriptAllowed`), never to the tool name. A name-only "always"
+ * on `execute_skill_script` would otherwise cover every skill and script,
+ * including ones written to the skills folder later (audit 2026-11-22 §6).
+ */
+export function isSkillScriptTool(name: string): boolean {
+  return name === 'execute_skill_script' || name.startsWith(SKILL_TOOL_PREFIX);
+}
+
+/** The script a skill-script tool call would run. */
+export interface SkillScriptTarget {
+  skillName: string;
+  skillPath: string;
+  script: string;
+}
+
+/**
+ * Resolve which skill script a tool call targets, so the caller can hash it
+ * and check a content-pinned approval before executing. Returns `null` when
+ * the call is not a skill-script tool or names an unknown skill/script (the
+ * execution itself then fails with a descriptive error).
+ */
+export function resolveSkillScriptTarget(
+  name: string,
+  args: Record<string, unknown>,
+): SkillScriptTarget | null {
+  const store = useSkillStore.getState();
+  if (name === 'execute_skill_script') {
+    const skillName = args.skill_name;
+    const script = args.script;
+    if (typeof skillName !== 'string' || !skillName || typeof script !== 'string' || !script) return null;
+    const skill = store.getSkillByName(skillName);
+    return skill ? { skillName: skill.name, skillPath: skill.path, script } : null;
+  }
+  if (name.startsWith(SKILL_TOOL_PREFIX)) {
+    const skillTool = store.getSkillToolByName(name);
+    if (!skillTool) return null;
+    const skill = store.getSkillByName(skillTool.skill_name);
+    return skill ? { skillName: skill.name, skillPath: skill.path, script: skillTool.script_path } : null;
+  }
+  return null;
+}
+
+/** Per-call options for {@link executeToolCall}. */
+export interface ToolCallOptions {
+  /**
+   * SHA-256 of the skill script body the user approved. Forwarded to
+   * `execute_skill_script` as `expectedHash`, so the backend refuses to run a
+   * script whose content changed between the approval check and execution.
+   * Only meaningful for skill-script tools.
+   */
+  expectedSkillScriptHash?: string | null;
+}
+
 /**
  * Execute a skill tool call by routing through execute_skill_script.
  */
 async function executeSkillTool(
   toolName: string,
   args: Record<string, unknown>,
+  expectedHash?: string | null,
 ): Promise<string> {
   const store = useSkillStore.getState();
   const skillTool = store.getSkillToolByName(toolName);
@@ -126,6 +190,7 @@ async function executeSkillTool(
     workingDir: null,
     env: null,
     timeoutMs: null,
+    ...(expectedHash ? { expectedHash } : {}),
   });
 
   let content = result.stdout;
@@ -151,7 +216,7 @@ function getCommentContextForActiveTab(): CommentContext | null {
   const project = projects.find((p) => activeTab.filePath.startsWith(p.path + '/'));
   const isProjectFile = !!project;
 
-  const documentId = (activeTab.frontmatter?.id as string) ?? null;
+  const documentId = getDocumentId(activeTab.frontmatter);
   const commentKey = isProjectFile ? documentId : hashPath(activeTab.filePath);
   if (!commentKey) return null;
 
@@ -222,6 +287,7 @@ export async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
   scope?: ToolCallScope,
+  options?: ToolCallOptions,
 ): Promise<ToolResult> {
   try {
     if (FILESYSTEM_TOOLS.has(name)) {
@@ -330,6 +396,9 @@ export async function executeToolCall(
           workingDir: null,
           env: null,
           timeoutMs: null,
+          ...(options?.expectedSkillScriptHash
+            ? { expectedHash: options.expectedSkillScriptHash }
+            : {}),
         });
         content = result.stdout;
         if (result.stderr) content += `\nSTDERR: ${result.stderr}`;
@@ -578,8 +647,8 @@ export async function executeToolCall(
 
       default: {
         // Skill tool routing: skill__{skill}__{script}
-        if (name.startsWith('skill__')) {
-          content = await executeSkillTool(name, args);
+        if (name.startsWith(SKILL_TOOL_PREFIX)) {
+          content = await executeSkillTool(name, args, options?.expectedSkillScriptHash);
           break;
         }
         throw new Error(`Unknown tool: ${name}`);

@@ -60,8 +60,17 @@ export function ActionItemRow({ action, projectRoot, onClick, onToggle }: Action
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          className="group flex items-start gap-2 px-3 py-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors"
+          className="group flex items-start gap-2 px-3 py-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={handleClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onClick?.(action);
+            }
+          }}
         >
           {/* Checkbox or icon */}
           <div className="mt-0.5 shrink-0" data-action-checkbox>
@@ -81,7 +90,7 @@ export function ActionItemRow({ action, projectRoot, onClick, onToggle }: Action
             <p className={`text-sm break-words ${isDone ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
               {action.text}
             </p>
-            <p className="text-[11px] text-muted-foreground/60 break-words mt-0.5">
+            <p className="text-[11px] text-muted-foreground break-words mt-0.5">
               {displayPath}
               {replyCount ? ` — ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}` : ''}
             </p>

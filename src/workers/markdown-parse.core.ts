@@ -54,6 +54,29 @@ export interface ParsePipelineResult {
 }
 
 /**
+ * Rewrite markdown-it-task-lists' output into the form the TaskList / TaskItem
+ * nodes parse. The plugin emits `ul.contains-task-list > li.task-list-item`
+ * with a leading `<input type="checkbox">`; the nodes match
+ * `data-type="taskList"` / `data-type="taskItem"` and read `data-checked`.
+ * tiptap-markdown does this on the main thread (its `parse.updateDOM` hooks).
+ * Without it a document loaded through the worker holds plain bullets where
+ * the file has checkboxes, and the next save writes them back as bullets.
+ */
+function normalizeTaskLists(body: HTMLElement): void {
+  for (const list of Array.from(body.querySelectorAll(".contains-task-list"))) {
+    list.setAttribute("data-type", "taskList");
+  }
+  for (const item of Array.from(body.querySelectorAll(".task-list-item"))) {
+    const input = item.querySelector("input");
+    item.setAttribute("data-type", "taskItem");
+    if (input) {
+      item.setAttribute("data-checked", input.hasAttribute("checked") ? "true" : "false");
+      input.remove();
+    }
+  }
+}
+
+/**
  * Run the full parse pipeline: markdown → preprocessor chain → markdown-it →
  * linkedom → ProseMirror Node → JSON. Returns the doc JSON plus the
  * side-channel maps (annotations, nodeIds, table metadata) the main thread
@@ -95,6 +118,7 @@ export function parseMarkdownToProseMirrorJson(rawMarkdown: string): ParsePipeli
   const fullHtml = `<!DOCTYPE html><html><body>${html}</body></html>`;
   const { document } = parseHTML(fullHtml);
   const body = document.body as unknown as HTMLElement;
+  normalizeTaskLists(body);
   const node = PMDOMParser.fromSchema(schema).parse(body);
   const parseMs = performance.now() - parseStart;
 

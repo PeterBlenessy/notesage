@@ -11,8 +11,19 @@
  *     `accent-foreground`/`accent`, `primary-foreground`/`primary`,
  *     `foreground`/`muted`).
  *   - 3:1 for UI/non-text pairs (`ring`/`background`,
- *     `border-strong`/`background`, `muted-foreground`/`background`,
+ *     `border-strong`/`background`, `focus-border`/`background`,
  *     `destructive-foreground`/`destructive`).
+ *   - The focused-input border must also be at least as visible as the
+ *     resting one (`focus-border` vs `border-strong`, both against the
+ *     background) — a focus state that lowers contrast is a failure even
+ *     when it clears 3:1.
+ *
+ * `muted-foreground` is audited as BODY text (4.5:1) on both `background`
+ * and `muted`, because that is how components use it. Its Tailwind alpha
+ * variants (`text-muted-foreground/50`…`/80`) are deliberately not audited
+ * as pairs: composited over the background every one of them is below 4.5:1
+ * in light mode (even `/80` is 4.47:1), so there is no passing alpha to lock
+ * in. Informational text uses the solid token.
  *
  * Why `border-strong` and not plain `border`? WCAG 2.1 Success Criterion
  * 1.4.11 ("Non-text Contrast") explicitly carves out "graphical objects that
@@ -74,6 +85,10 @@ const PAIRS: Pair[] = [
   { fgVar: '--color-accent-foreground', bgVar: '--color-accent', kind: 'body', label: 'accent-foreground / accent' },
   { fgVar: '--color-primary-foreground', bgVar: '--color-primary', kind: 'body', label: 'primary-foreground / primary' },
   { fgVar: '--color-destructive-foreground', bgVar: '--color-destructive', kind: 'body', label: 'destructive-foreground / destructive' },
+  // Secondary text. Audited at the body threshold — it carries timestamps,
+  // paths, counts and hints at 10–12px all over the app.
+  { fgVar: '--color-muted-foreground', bgVar: '--color-background', kind: 'body', label: 'muted-foreground / background (text)' },
+  { fgVar: '--color-muted-foreground', bgVar: '--color-muted', kind: 'body', label: 'muted-foreground / muted (text)' },
 
   // UI / non-text (3:1).
   // Note: `--color-border` is intentionally NOT audited — it is the decorative
@@ -82,6 +97,9 @@ const PAIRS: Pair[] = [
   // checkboxes, focus indicators) and MUST clear 3:1 against the background.
   { fgVar: '--color-ring', bgVar: '--color-background', kind: 'ui', label: 'ring / background' },
   { fgVar: '--color-border-strong', bgVar: '--color-background', kind: 'ui', label: 'border-strong / background' },
+  // The border colour of a keyboard-focused input (the global `:focus-visible`
+  // rule in globals.css). It is the only focus indicator on form controls.
+  { fgVar: '--color-focus-border', bgVar: '--color-background', kind: 'ui', label: 'focus-border / background' },
   { fgVar: '--color-muted-foreground', bgVar: '--color-background', kind: 'ui', label: 'muted-foreground / background' },
   // Audit #17 — macOS unfocused-window de-emphasis (Quiet Composer migration).
   // `--color-accent-primary-inactive` is the neutral grey that `--accent` swaps
@@ -95,6 +113,11 @@ const PAIRS: Pair[] = [
     kind: 'ui',
     label: 'accent-primary-inactive / background',
   },
+
+  // Status marks (Local AI server dot, connection dots, "verified" checks).
+  // Non-text indicators: 3:1 against the background in both themes.
+  { fgVar: '--color-status-ok', bgVar: '--color-background', kind: 'ui', label: 'status-ok / background' },
+  { fgVar: '--color-status-warn', bgVar: '--color-background', kind: 'ui', label: 'status-warn / background' },
 
   // Issue #140 — Folder tag color palette (8 colors).
   // Each color is used as a folder icon fill color in the sidebar.
@@ -287,6 +310,24 @@ function auditPalette(
   return results;
 }
 
+/**
+ * A focused input must not be LESS visible than a resting one. Both borders
+ * are measured against the background; the focused ratio is the result and
+ * the resting ratio is its threshold.
+ */
+function auditFocusNotWeaker(palette: Palette, theme: 'light' | 'dark'): PairResult {
+  const focus = palette['--color-focus-border'];
+  const resting = palette['--color-border-strong'];
+  const bg = palette['--color-background'];
+  const label = 'focus-border >= border-strong (contrast)';
+  if (!focus || !resting || !bg) {
+    return { theme, accent: 'default', label: `${label} (missing var)`, ratio: 0, threshold: UI_THRESHOLD, passed: false };
+  }
+  const ratio = oklchContrastRatio(focus, bg);
+  const threshold = oklchContrastRatio(resting, bg);
+  return { theme, accent: 'default', label, ratio, threshold, passed: ratio + 1e-6 >= threshold };
+}
+
 function auditAccentPair(
   palette: Palette,
   variant: AccentVariant,
@@ -365,6 +406,8 @@ function main(): void {
   // palette pairs don't depend on the accent override).
   allResults.push(...auditPalette(palettes.light, 'light', 'default'));
   allResults.push(...auditPalette(palettes.dark, 'dark', 'default'));
+  allResults.push(auditFocusNotWeaker(palettes.light, 'light'));
+  allResults.push(auditFocusNotWeaker(palettes.dark, 'dark'));
 
   // Audit accent-primary / background for every variant in both themes.
   for (const variant of ACCENT_VARIANTS) {

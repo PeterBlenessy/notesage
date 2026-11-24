@@ -31,6 +31,52 @@ export interface UndoRecord {
   destroyed: { root: "old" | "new"; path: string; content: string | null }[];
 }
 
+function isAbsoluteRoot(v: unknown): v is string {
+  return typeof v === "string" && v.startsWith("/") && v.replace(/\/+$/, "").length > 0;
+}
+
+/**
+ * A path the undo may join onto a root: non-empty, relative, and with no
+ * segment that could climb out of (`..`) or collapse onto (`""`, `.`) the
+ * root. `<newRoot>/` + `""` is the library itself, and the undo DELETES the
+ * path of a destroyed entry whose content is null.
+ */
+function isSafeRelativePath(v: unknown): v is string {
+  if (typeof v !== "string" || v.length === 0 || v.startsWith("/")) return false;
+  return v.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+/**
+ * Full shape check for a record read back from disk.
+ *
+ * The record drives `moveEntry`, `writeFile` and `deletePath`, so a record
+ * from another app version, a truncated one or a hand-edited one must be
+ * refused whole — not applied as far as it happens to parse. Missing roots
+ * gave `"undefined/<rel>"` targets; an empty `path` with `content: null`
+ * gave a deletion of the library root.
+ */
+export function isUndoRecord(v: unknown): v is UndoRecord {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  if (typeof r.id !== "string" || r.id.length === 0) return false;
+  if (typeof r.at !== "string") return false;
+  if (!isAbsoluteRoot(r.oldRoot) || !isAbsoluteRoot(r.newRoot)) return false;
+  if (!Array.isArray(r.moves) || !Array.isArray(r.destroyed)) return false;
+  for (const move of r.moves as unknown[]) {
+    if (typeof move !== "object" || move === null) return false;
+    const m = move as Record<string, unknown>;
+    if (!isSafeRelativePath(m.from) || !isSafeRelativePath(m.to)) return false;
+  }
+  for (const item of r.destroyed as unknown[]) {
+    if (typeof item !== "object" || item === null) return false;
+    const d = item as Record<string, unknown>;
+    if (d.root !== "old" && d.root !== "new") return false;
+    if (!isSafeRelativePath(d.path)) return false;
+    if (d.content !== null && typeof d.content !== "string") return false;
+  }
+  return true;
+}
+
 export function undoRecordFor(
   id: string,
   oldRoot: string,
@@ -80,6 +126,11 @@ export async function undoLibraryMigration(
   record: UndoRecord,
   deps: Pick<MigrationDeps, "moveEntry" | "exists" | "writeFile" | "deletePath" | "onStep">,
 ): Promise<UndoReport> {
+  // Checked here as well as on read: this is the function that moves and
+  // deletes, whoever hands it the record.
+  if (!isUndoRecord(record)) {
+    throw new Error("The undo record is incomplete or damaged, so nothing was moved.");
+  }
   const report: UndoReport = { restored: 0, failed: [] };
   const total = record.moves.length + record.destroyed.length;
   let done = 0;
@@ -182,15 +233,13 @@ export async function latestUndoRecord(
   for (const entry of entries) {
     if (entry.is_directory || !entry.name.endsWith(".json")) continue;
     try {
-      const parsed = JSON.parse(await deps.readFile(`${dir}/${entry.name}`)) as UndoRecord;
-      if (parsed && typeof parsed.id === "string" && Array.isArray(parsed.moves)) {
-        records.push(parsed);
-      }
+      const parsed: unknown = JSON.parse(await deps.readFile(`${dir}/${entry.name}`));
+      if (isUndoRecord(parsed)) records.push(parsed);
     } catch {
       // Unreadable: skipped, not fatal.
     }
   }
-  records.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  records.sort((a, b) => b.at.localeCompare(a.at));
   return records[0] ?? null;
 }
 

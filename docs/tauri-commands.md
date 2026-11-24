@@ -372,6 +372,8 @@ pub async fn copilot_lsp_conversation_create(
     message: String,
     model: Option<String>,
     tools: Option<Vec<Value>>,
+    doc_uri: Option<String>,
+    doc_language_id: Option<String>,
 ) -> Result<Value, String>
 ```
 
@@ -380,6 +382,8 @@ pub async fn copilot_lsp_conversation_create(
 - `message`: First user message to send
 - `model`: Optional model ID (e.g., `"gpt-4o"`, `"claude-sonnet-4"`)
 - `tools`: Optional array of tool definitions to register with the conversation
+- `doc_uri`: Optional URI of the active document, attached as the conversation's `doc` context
+- `doc_language_id`: Optional language id for that document (only used together with `doc_uri`)
 
 **Returns:**
 
@@ -397,7 +401,9 @@ pub async fn copilot_lsp_conversation_turn(
     conversation_id: String,
     message: String,
     model: Option<String>,
-) -> Result<(), String>
+    doc_uri: Option<String>,
+    doc_language_id: Option<String>,
+) -> Result<Value, String>
 ```
 
 **Parameters:**
@@ -405,6 +411,13 @@ pub async fn copilot_lsp_conversation_turn(
 - `conversation_id`: ID returned from `copilot_lsp_conversation_create`
 - `message`: User message to send
 - `model`: Optional model ID override
+- `doc_uri`: Optional URI of the active document, attached as the turn's `doc` context
+- `doc_language_id`: Optional language id for that document (only used together with `doc_uri`)
+
+**Returns:**
+
+- `Ok(Value)`: The language server's raw `conversation/turn` result (arrives once the whole turn is over)
+- `Err(String)`: Error message if the turn fails
 
 ### copilot_lsp_conversation_destroy
 
@@ -463,7 +476,7 @@ await tauriApi.copilotLspConversationDestroy(conversationId);
 
 ## ACP Session Lifecycle
 
-Located in `src-tauri/src/commands/acp.rs`. All four commands forward directly to the ACP `ClientSideConnection`; capability gating (`sessionCapabilities.{list, fork, resume, close}`) is done on the frontend — the backend is a passthrough.
+Located in `src-tauri/src/commands/acp/mod.rs`. All four commands forward an `AgentCmd` to the agent thread (`acp/agent_thread.rs`), which sends the request over its `ConnectionTo<Agent>` handle; capability gating (`sessionCapabilities.{list, fork, resume, close}`) is done on the frontend — the backend is a passthrough.
 
 ### acp_session_close
 
@@ -549,6 +562,30 @@ chatStore.branchFromMessage(messageTimestamp, forked.session_id);
 // Close on conversation delete (best-effort, fire-and-forget)
 await tauriApi.acpSessionClose(instanceId, sessionId);
 ```
+
+## Local Model Fit
+
+Located in `src-tauri/src/commands/model_fit/` (`mod.rs`, `hardware.rs`). Hardware-aware local model recommendation; the types (`HardwareProfile`, `ModelFitInput`, `ModelFitResult`, `GgufCapabilities`) live in `model_fit/types.rs`.
+
+```rust
+#[tauri::command]
+pub async fn detect_hardware_profile() -> Result<HardwareProfile, String>
+
+#[tauri::command]
+pub async fn estimate_model_fit(
+    candidates: Vec<ModelFitInput>,
+    profile: HardwareProfile,
+    planning_ctx: u32,
+) -> Result<Vec<ModelFitResult>, String>
+
+#[tauri::command]
+pub async fn read_gguf_capabilities(
+    resolve_url: Option<String>,
+    local_path: Option<String>,
+) -> Result<GgufCapabilities, String>
+```
+
+`commands/transcription_stub.rs` is the mobile stand-in for `transcription.rs`: it registers the same recording / Whisper command names on mobile targets, where each one returns an "unavailable" error (those features are desktop-only).
 
 ## Credential Operations
 
@@ -643,12 +680,16 @@ Generates text using an AI provider.
 
 ```rust
 #[tauri::command]
-pub async fn ai_generate_text(request: AIRequest) -> Result<String, String>
+pub async fn ai_generate_text(
+    request: AIRequest,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
+) -> Result<String, String>
 ```
 
 **Parameters:**
 
 - `request`: AIRequest struct (see below)
+- `state`: Managed local-inference state (injected automatically)
 
 **Returns:**
 
@@ -663,18 +704,30 @@ Multi-turn chat with an AI provider (non-streaming).
 #[tauri::command]
 pub async fn ai_chat(
     messages: Vec<ChatMessage>,
-    provider: String,
+    provider: AIProviderType,
     api_key: Option<String>,
+    connection_id: Option<String>,
     ollama_url: Option<String>,
+    model: Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    base_url: Option<String>,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<String, String>
 ```
 
 **Parameters:**
 
 - `messages`: Array of ChatMessage structs
-- `provider`: "anthropic", "openai", or "ollama"
-- `api_key`: API key for Anthropic/OpenAI (None for Ollama)
-- `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
+- `provider`: `AIProviderType` enum — on the wire `"anthropic"`, `"openai"`, `"ollama"`, `"openai_compatible"` or `"local_bundled"`. An unknown value is rejected at deserialization
+- `api_key`: Last-resort fallback only, for callers with no `connection_id` (the current frontend never sends it)
+- `connection_id`: The connection whose API key is resolved from the OS keychain inside the backend. The keychain is authoritative and is consulted first, so keys do not transit IPC
+- `ollama_url`: Ollama server URL (Ollama only)
+- `model`: Optional model ID
+- `temperature`: Optional sampling temperature
+- `max_tokens`: Optional output-token cap
+- `base_url`: Optional provider base URL override (OpenAI-compatible endpoints, proxies)
+- `state`: Managed local-inference state (injected automatically; used by `local_bundled`)
 
 **Returns:**
 
@@ -690,13 +743,20 @@ Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (
 pub async fn ai_chat_stream(
     window: tauri::Window,
     messages: Vec<ChatMessage>,
-    provider: String,
+    provider: AIProviderType,
     api_key: Option<String>,
+    connection_id: Option<String>,
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
     tools: Option<Vec<ToolDefinition>>,
+    model: Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    base_url: Option<String>,
     response_format: Option<serde_json::Value>,
     stream_id: Option<String>,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
+    stream_state: tauri::State<'_, AiStreamState>,
 ) -> Result<(), String>
 ```
 
@@ -704,11 +764,17 @@ pub async fn ai_chat_stream(
 
 - `window`: Tauri window handle (injected automatically)
 - `messages`: Array of ChatMessage structs
-- `provider`: "anthropic", "openai", or "ollama"
-- `api_key`: API key for Anthropic/OpenAI (None for Ollama)
-- `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
+- `provider`: `AIProviderType` enum — on the wire `"anthropic"`, `"openai"`, `"ollama"`, `"openai_compatible"` or `"local_bundled"`
+- `api_key`: Last-resort fallback only, for callers with no `connection_id` (the current frontend never sends it)
+- `connection_id`: The connection whose API key is resolved from the OS keychain inside the backend (authoritative, consulted first)
+- `ollama_url`: Ollama server URL (Ollama only)
 - `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
 - `tools`: Optional array of tool definitions for client-side tool calling
+- `model`: Optional model ID
+- `temperature`: Optional sampling temperature
+- `max_tokens`: Optional output-token cap
+- `base_url`: Optional provider base URL override
+- `state` / `stream_state`: Managed local-inference state and the in-flight stream registry used by `ai_chat_stream_cancel` (both injected automatically)
 - `response_format`: Optional OpenAI-style structured-output envelope, e.g. `{ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }`. Forwarded verbatim to `local_bundled` (llama-server converts the schema to GBNF — invalid tokens get `-inf` logits, so output is guaranteed to satisfy the schema) and `openai_compatible`. Unwrapped to Ollama's bare-schema `format` field by `ollama_response_format`. Ignored for `anthropic` / `openai` (the OpenAI Responses API uses a different envelope and Anthropic has no equivalent). Not sent together with `tools` for `local_bundled`: llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Frontend callers should use the `generateStructured()` helper in `src/lib/ai/structured.ts` rather than building the envelope by hand.
 - `stream_id`: Optional per-request correlation id. When present, every event below is emitted on the **suffixed** name `<event>:<stream_id>` (e.g. `ai-stream-chunk:6f2c…`) instead of the bare global name. Each frontend caller (`useDirectApiChat`, `generateStructured`, `useAgentTaskOperations`) generates a unique id and listens only on its own suffixed channel, so concurrent generations can't cross-contaminate the global event bus (a structured/intent call firing during a chat stream, two background agent tasks, etc.). Omitted/empty → legacy global names. Backend mirror: `stream_event(base, stream_id)` in `ai_streaming.rs`; frontend mirror: `streamEvent()` in `src/lib/ai/stream-events.ts`.
 
@@ -771,11 +837,16 @@ await invoke('ai_chat_stream_cancel', { streamId }).catch(() => {});
 ```rust
 #[derive(Serialize, Deserialize)]
 pub struct AIRequest {
-    pub provider: String,        // "anthropic" | "openai" | "ollama"
+    pub provider: AIProviderType,      // "anthropic" | "openai" | "ollama" | "openai_compatible" | "local_bundled"
     pub prompt: String,
-    pub api_key: Option<String>, // For Anthropic/OpenAI
-    pub ollama_url: Option<String>, // For Ollama
+    pub api_key: Option<String>,       // Fallback only — see connection_id
+    pub connection_id: Option<String>, // Key resolved from the OS keychain in the backend
+    pub ollama_url: Option<String>,    // For Ollama
     pub stream: bool,
+    pub model: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub base_url: Option<String>,
 }
 ```
 
@@ -876,6 +947,10 @@ pub async fn export_pdf(
     include_toc: bool,
     include_page_numbers: bool,
     page_size: String,
+    project_root: Option<String>,
+    typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<Vec<u8>, String>
 ```
 
@@ -887,6 +962,10 @@ pub async fn export_pdf(
 - `include_toc`: Whether to generate a table of contents
 - `include_page_numbers`: Whether to show page numbers
 - `page_size`: Page dimensions — `"a4"`, `"letter"`, or `"a5"`
+- `project_root`: Optional project root path for resolving drawing SVG files
+- `typography`: Optional `TypographyPresets` (camelCase JSON from the editor's typography settings). `None` uses the defaults
+- `page_settings`: Optional `DocumentPageSettings` (custom header/footer)
+- `embedded_svgs`: Optional pre-rendered SVG strings for inline chart / Excalidraw blocks, in document order
 
 **Returns:**
 
@@ -922,6 +1001,9 @@ pub async fn export_docx(
     include_page_numbers: bool,
     page_size: String,
     project_root: Option<String>,
+    typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<Vec<u8>, String>
 ```
 
@@ -934,6 +1016,9 @@ pub async fn export_docx(
 - `include_page_numbers`: Whether to show page numbers in the footer
 - `page_size`: Page dimensions — `"a4"`, `"letter"`, or `"a5"`
 - `project_root`: Optional project root path for resolving images and drawing SVGs
+- `typography`: Optional `TypographyPresets` (camelCase JSON from the editor's typography settings). `None` uses the defaults
+- `page_settings`: Optional `DocumentPageSettings` (custom header/footer)
+- `embedded_svgs`: Optional pre-rendered SVG strings for inline chart / Excalidraw blocks, in document order
 
 **Returns:**
 
@@ -966,6 +1051,9 @@ pub async fn render_html(
     theme: String,
     include_styles: bool,
     project_root: Option<String>,
+    typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<String, String>
 ```
 
@@ -976,6 +1064,9 @@ pub async fn render_html(
 - `theme`: `"light"` or `"dark"` — controls syntax highlighting theme and CSS
 - `include_styles`: `true` for standalone HTML document, `false` for clipboard body fragment
 - `project_root`: Optional project root path for resolving drawing SVG sidecar files
+- `typography`: Optional `TypographyPresets` (camelCase JSON from the editor's typography settings). `None` uses the defaults
+- `page_settings`: Optional `DocumentPageSettings` (custom header/footer)
+- `embedded_svgs`: Optional pre-rendered SVG strings for inline chart / Excalidraw blocks, in document order
 
 **Returns:**
 
@@ -1516,7 +1607,7 @@ pub struct TranscriptionState {
 
 ## MCP Operations
 
-Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
+Located in `src-tauri/src/commands/mcp/mod.rs` (helpers in `mcp/{transport,state,types,config,validation,catalog,stderr_drain}.rs`) and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
 
 | Command | Signature (abridged) | Purpose |
 | --- | --- | --- |

@@ -228,18 +228,6 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
     Ok(())
 }
 
-/// Stop watching all directories.
-#[tauri::command]
-pub async fn unwatch_directory(app: AppHandle) -> Result<(), String> {
-    let state = app.state::<WatcherState>();
-
-    *state.watcher.lock() = None;
-    state.watched_paths.lock().clear();
-    state.self_writes.lock().clear();
-
-    Ok(())
-}
-
 /// Mark a file path as a self-write so change events for it are suppressed
 /// for the next 2 seconds. Call this before writing a file from the frontend.
 #[tauri::command]

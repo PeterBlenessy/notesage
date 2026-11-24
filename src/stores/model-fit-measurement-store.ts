@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 /**
  * A measured runtime sample for one local model on the current machine.
@@ -74,6 +75,6 @@ export const useModelFitMeasurementStore = create<ModelFitMeasurementStore>()(
 
       clear: () => set({ measurements: {}, chipName: null }),
     }),
-    { name: 'notesage-model-fit-measurements' },
+    { name: 'notesage-model-fit-measurements', onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-model-fit-measurements", error) },
   ),
 );

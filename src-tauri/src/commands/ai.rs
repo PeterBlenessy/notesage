@@ -1101,23 +1101,6 @@ async fn openai_compatible_chat(
     Ok(content)
 }
 
-#[tauri::command]
-pub async fn ollama_model_supports_vision(
-    ollama_url: Option<String>,
-    model: String,
-    base_url: Option<String>,
-) -> Result<bool, String> {
-    let base = base_url
-        .as_deref()
-        .or(ollama_url.as_deref())
-        .unwrap_or("http://localhost:11434");
-
-    let client = reqwest::Client::new();
-    let result =
-        crate::commands::segment_builder::detect_vision_support(&client, base, &model).await;
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

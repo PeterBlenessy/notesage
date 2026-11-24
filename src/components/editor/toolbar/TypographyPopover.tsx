@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { Check, FileDown, RotateCcw, Type } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 import { toast } from "sonner";
@@ -23,6 +23,8 @@ import { useEditorStore } from "@/stores/editor-store";
 import { presetsToDocumentStyle } from "@/lib/frontmatter";
 import { type FullBlockType } from "@/lib/typography-presets";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -151,6 +153,8 @@ interface TypographyPopoverProps {
 }
 
 export function TypographyPopover({ editor }: TypographyPopoverProps) {
+  useLocale();
+  const fieldId = useId();
   const { systemFonts, presets } = useEditorStylesStore();
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [fontSearch, setFontSearch] = useState("");
@@ -216,6 +220,7 @@ export function TypographyPopover({ editor }: TypographyPopoverProps) {
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("settings.typography")}
               className="text-muted-foreground"
             >
               <Type className="size-4" strokeWidth={1.5} />
@@ -237,7 +242,7 @@ export function TypographyPopover({ editor }: TypographyPopoverProps) {
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-foreground">{blockLabel}</span>
               {hasOverrides && (
-                <span className="text-[10px] text-muted-foreground/70">Modified</span>
+                <span className="text-[10px] text-muted-foreground">Modified</span>
               )}
             </div>
 
@@ -245,12 +250,14 @@ export function TypographyPopover({ editor }: TypographyPopoverProps) {
 
             {/* Font Family */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Font</Label>
+              <Label id={`${fieldId}-font-label`} className="text-xs text-muted-foreground">Font</Label>
               <Popover open={fontPickerOpen} onOpenChange={setFontPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     role="combobox"
+                    id={`${fieldId}-font`}
+                    aria-labelledby={`${fieldId}-font-label ${fieldId}-font`}
                     aria-expanded={fontPickerOpen}
                     className="w-full h-8 justify-between text-xs font-normal"
                   >
@@ -316,12 +323,12 @@ export function TypographyPopover({ editor }: TypographyPopoverProps) {
 
             {/* Font Weight */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Weight</Label>
+              <Label htmlFor={`${fieldId}-1`} className="text-xs text-muted-foreground">Weight</Label>
               <Select
                 value={String(effectiveStyle.fontWeight)}
                 onValueChange={(v) => setOverride(editor, "fontWeight", Number(v))}
               >
-                <SelectTrigger className="h-7 text-xs">
+                <SelectTrigger id={`${fieldId}-1`} className="h-7 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -473,7 +480,7 @@ function PresetGroup({
           <Check className={cn("size-3 shrink-0 self-start mt-0.5", current === f.value ? "opacity-100" : "opacity-0")} strokeWidth={1.5} />
           <div className="min-w-0 flex-1">
             <span className="block truncate" style={{ fontFamily: f.css }}>{f.label}</span>
-            <span className="block truncate text-[10px] text-muted-foreground/60" style={{ fontFamily: f.css }}>
+            <span className="block truncate text-[10px] text-muted-foreground" style={{ fontFamily: f.css }}>
               The quick brown fox jumps over the lazy dog
             </span>
           </div>
@@ -507,7 +514,7 @@ function SystemFontGroup({
           <Check className={cn("size-3 shrink-0 self-start mt-0.5", current === f.family ? "opacity-100" : "opacity-0")} strokeWidth={1.5} />
           <div className="min-w-0 flex-1">
             <span className="block truncate" style={{ fontFamily: `"${f.family}"` }}>{f.family}</span>
-            <span className="block truncate text-[10px] text-muted-foreground/60" style={{ fontFamily: `"${f.family}"` }}>
+            <span className="block truncate text-[10px] text-muted-foreground" style={{ fontFamily: `"${f.family}"` }}>
               The quick brown fox jumps over the lazy dog
             </span>
           </div>

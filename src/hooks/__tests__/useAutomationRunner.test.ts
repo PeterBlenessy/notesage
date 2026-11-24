@@ -290,6 +290,67 @@ describe('useAutomationRunner', () => {
     });
   });
 
+  describe('guardrails at admission', () => {
+    /** Park another automation inside its agent step so the single queue is busy. */
+    async function occupyQueue() {
+      const parked: TaskCallbacks[] = [];
+      mocks.startTask.mockImplementation(async (_prompt, callbacks) => {
+        if (callbacks) parked.push(callbacks);
+        return 'task-id';
+      });
+      const blocker = makeAutomation({ steps: [agentStep('block', 'blocker')] });
+      return { blocker, parked };
+    }
+
+    it('debounces a burst of file events that arrives while the run is still queued', async () => {
+      const { blocker, parked } = await occupyQueue();
+      const watcher = makeAutomation({
+        mode: 'queued',
+        trigger: { type: 'file', event: 'file-modified' },
+        steps: [agentStep('a', 'react to change')],
+      });
+      install(blocker, watcher);
+      await runNow(blocker);
+      expect(mocks.startTask).toHaveBeenCalledTimes(1);
+
+      for (let i = 0; i < 3; i++) {
+        emitMockEvent('file-changed-batch', [{ path: `${PROJECT}/notes/burst.md`, kind: 'modify' }]);
+        await settle();
+      }
+
+      const skipped = runs(watcher).filter((r) => r.status === 'skipped');
+      expect(skipped.map((r) => r.steps[0].result?.output)).toEqual(['debounced (60s)', 'debounced (60s)']);
+
+      // Free the queue: exactly one run of the watcher follows.
+      parked[0].onComplete?.('blocker done');
+      await settle();
+      expect(mocks.startTask.mock.calls.map((c) => c[0])).toEqual(['blocker', 'react to change']);
+    });
+
+    it('counts queued runs towards the daily cap', async () => {
+      const { blocker, parked } = await occupyQueue();
+      const automation = makeAutomation({
+        mode: 'queued',
+        steps: [agentStep('a', 'capped')],
+        guardrails: { maxRunsPerDay: 2, debounceMs: 0, maxStepsPerRun: 25 },
+      });
+      install(blocker, automation);
+      seedRunsToday(automation, 1, 'done');
+      await runNow(blocker);
+
+      await runNow(automation); // queued: 1 persisted + 1 queued = cap
+      await runNow(automation); // must be refused, nothing has been persisted yet
+
+      const skipped = runs(automation).filter((r) => r.status === 'skipped');
+      expect(skipped).toHaveLength(1);
+      expect(skipped[0].steps[0].result?.output).toBe('daily limit reached (2/day)');
+
+      parked[0].onComplete?.('blocker done');
+      await settle();
+      expect(mocks.startTask.mock.calls.map((c) => c[0])).toEqual(['blocker', 'capped']);
+    });
+  });
+
   describe('write-path resolution (SEC-1)', () => {
     it('writes only to the path resolveAutomationWritePath returned', async () => {
       const automation = makeAutomation({ steps: [writeStep()] });

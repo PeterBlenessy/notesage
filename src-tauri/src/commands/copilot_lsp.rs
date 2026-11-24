@@ -1145,6 +1145,8 @@ pub async fn copilot_lsp_accept_completion(
 /// Create a new conversation session and send the first message.
 /// Returns the conversation ID. Streaming response arrives via $/progress
 /// events (copilot-chat-chunk, copilot-chat-thinking, copilot-chat-done).
+/// Each event carries the request's `workDoneToken`; pass `work_done_token`
+/// to choose it, so the caller can recognise its own stream's events.
 #[tauri::command]
 pub async fn copilot_lsp_conversation_create(
     state: State<'_, CopilotLspState>,
@@ -1153,15 +1155,13 @@ pub async fn copilot_lsp_conversation_create(
     tools: Option<Vec<Value>>,
     doc_uri: Option<String>,
     doc_language_id: Option<String>,
+    work_done_token: Option<String>,
 ) -> Result<Value, String> {
     // Do NOT hold the process lock across the request: the response only
     // arrives once the whole turn is over (see `conversation_handles`).
     let (transport, active_conversations) = state.conversation_handles().await?;
 
-    let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let work_done_token = copilot_protocol::chat_work_done_token(work_done_token.as_deref());
 
     let mut params = serde_json::json!({
         "workDoneToken": work_done_token,
@@ -1242,15 +1242,13 @@ pub async fn copilot_lsp_conversation_turn(
     model: Option<String>,
     doc_uri: Option<String>,
     doc_language_id: Option<String>,
+    work_done_token: Option<String>,
 ) -> Result<Value, String> {
     // Do NOT hold the process lock across the request: the response only
     // arrives once the whole turn is over (see `conversation_handles`).
     let (transport, _) = state.conversation_handles().await?;
 
-    let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let work_done_token = copilot_protocol::chat_work_done_token(work_done_token.as_deref());
 
     let mut params = serde_json::json!({
         "workDoneToken": work_done_token,

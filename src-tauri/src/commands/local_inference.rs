@@ -51,6 +51,15 @@ pub struct LocalInferenceState {
     /// overflow, slot state and truncation lives here instead, which is exactly
     /// what you need when an agent "just stops" mid-task.
     log_tail: std::sync::Mutex<std::collections::VecDeque<String>>,
+    /// Serializes start/stop of the main chat server. Without it two
+    /// concurrent `start_local_server` calls (chat auto-start and the Local
+    /// Agent setup, say) both miss the reuse check and both spawn a server;
+    /// the second overwrites `server_pid`, and the first — gigabytes of model
+    /// weights — is left running with nothing able to stop it.
+    lifecycle: tokio::sync::Mutex<()>,
+    /// The same, for the completion server. Separate so a completion start
+    /// does not queue behind a chat server's cold load.
+    completion_lifecycle: tokio::sync::Mutex<()>,
 }
 
 /// How many llama-server log lines to retain. Bounded on purpose: the previous
@@ -173,29 +182,85 @@ fn fit_context_to_ram(
     target
 }
 
-/// Drain one of the server's pipes for the life of the process, logging each
-/// line and retaining it in the bounded tail.
+/// Which of the two llama-server processes something belongs to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ServerKind {
+    /// The main chat server.
+    Chat,
+    /// The dedicated FIM completion server.
+    Completion,
+}
+
+/// Clear a PID slot if it still holds `pid`. Returns whether it did.
+fn clear_pid_if_current(slot: &std::sync::Mutex<Option<u32>>, pid: u32) -> bool {
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if *guard == Some(pid) {
+        *guard = None;
+        true
+    } else {
+        false
+    }
+}
+
+/// Whether a PID slot still holds `pid` — i.e. the server this caller started
+/// has neither exited (the reaper clears the slot) nor been stopped.
+fn pid_is_current(slot: &std::sync::Mutex<Option<u32>>, pid: u32) -> bool {
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) == Some(pid)
+}
+
+/// Remove a PID file if it still records `pid`.
+fn remove_pid_file_if_records(pid_file: &std::path::Path, pid: u32) {
+    let recorded = std::fs::read_to_string(pid_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    if recorded == Some(pid) {
+        let _ = std::fs::remove_file(pid_file);
+    }
+}
+
+/// Read a pipe line by line until it closes, handing each non-blank line to
+/// `on_line`. Holds one line at a time, however much the process writes.
+async fn drain_log_lines<R>(reader: R, mut on_line: impl FnMut(String))
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut lines = BufReader::new(reader).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+        on_line(line);
+    }
+}
+
+/// Drain one of a server's pipes for the life of the process, logging each
+/// line. The chat server's lines are also retained in the bounded tail; the
+/// completion server's are not, because it logs timings for every debounced
+/// keystroke and would push the chat server's diagnostics out of it.
 ///
 /// Generic over the pipe because `ChildStdout` and `ChildStderr` are distinct
 /// types. Ends when the pipe closes (i.e. the server exits).
-fn spawn_log_drain<R>(reader: R, is_stderr: bool, app: AppHandle)
+fn spawn_log_drain<R>(reader: R, is_stderr: bool, kind: ServerKind, app: AppHandle)
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    use tokio::io::{AsyncBufReadExt, BufReader};
     tokio::spawn(async move {
-        let mut lines = BufReader::new(reader).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if line.trim().is_empty() {
-                continue;
-            }
+        drain_log_lines(reader, |line| {
+            let prefix = match kind {
+                ServerKind::Chat => "",
+                ServerKind::Completion => "[completion] ",
+            };
             if is_stderr && looks_like_server_problem(&line) {
-                log::warn!(target: "notesage::llama_server", "{}", line);
+                log::warn!(target: "notesage::llama_server", "{}{}", prefix, line);
             } else {
-                log::debug!(target: "notesage::llama_server", "{}", line);
+                log::debug!(target: "notesage::llama_server", "{}{}", prefix, line);
             }
-            app.state::<LocalInferenceState>().push_log_line(line);
-        }
+            if kind == ServerKind::Chat {
+                app.state::<LocalInferenceState>().push_log_line(line);
+            }
+        })
+        .await;
     });
 }
 
@@ -218,7 +283,26 @@ impl LocalInferenceState {
             completion_port: tokio::sync::Mutex::new(None),
             completion_model: tokio::sync::Mutex::new(None),
             log_tail: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            lifecycle: tokio::sync::Mutex::new(()),
+            completion_lifecycle: tokio::sync::Mutex::new(()),
         }
+    }
+
+    /// Forget a server process that has exited: clear its PID slot and remove
+    /// its PID file, but only while they still record `pid`.
+    ///
+    /// Called by the task that reaps the child. Without it a crashed server
+    /// (OOM, say) left its PID in state and on disk, and the next start, stop
+    /// or app exit sent SIGTERM then SIGKILL to that number — by then possibly
+    /// some unrelated process. The `pid` guard keeps a late reaper from
+    /// wiping the record of the server that replaced it.
+    fn forget_exited_server(&self, kind: ServerKind, pid: u32) {
+        let (slot, pid_filename) = match kind {
+            ServerKind::Chat => (&self.server_pid, ".server.pid"),
+            ServerKind::Completion => (&self.completion_server_pid, ".completion.pid"),
+        };
+        clear_pid_if_current(slot, pid);
+        remove_pid_file_if_records(&self.models_dir.join(pid_filename), pid);
     }
 
     /// Record one line of server output, evicting the oldest past the cap.
@@ -404,6 +488,11 @@ pub async fn start_local_server(
     gpu_layers: Option<i32>,
 ) -> Result<u16, String> {
     let ctx_len = context_length.unwrap_or(4096);
+
+    // One start (or stop) at a time. Taken before the reuse check, so a second
+    // concurrent call waits here and then finds the first call's server to
+    // reuse instead of spawning its own.
+    let _lifecycle = state.lifecycle.lock().await;
 
     // Reuse the running server if it already serves THIS model with at least
     // the requested context. Verifying liveness via /health (the stored pid can
@@ -626,15 +715,21 @@ pub async fn start_local_server(
     // Every line is retained in the bounded tail regardless of level.
     state.clear_log_tail();
     if let Some(out) = child.stdout.take() {
-        spawn_log_drain(out, false, app.clone());
+        spawn_log_drain(out, false, ServerKind::Chat, app.clone());
     }
     if let Some(err) = child.stderr.take() {
-        spawn_log_drain(err, true, app.clone());
+        spawn_log_drain(err, true, ServerKind::Chat, app.clone());
     }
 
-    // Reap the child (prevents a zombie) once its pipes are drained above.
+    // Reap the child (prevents a zombie) once its pipes are drained above, and
+    // forget its PID the moment it is gone so nothing signals that number later.
+    let reaper_app = app.clone();
     tokio::spawn(async move {
-        match child.wait().await {
+        let exit = child.wait().await;
+        reaper_app
+            .state::<LocalInferenceState>()
+            .forget_exited_server(ServerKind::Chat, pid);
+        match exit {
             Ok(status) if status.success() => {
                 log::info!(target: "notesage::llama_server", "Process exited normally");
             }
@@ -668,6 +763,14 @@ pub async fn start_local_server(
     let mut healthy = false;
     for _ in 0..(HEALTH_TIMEOUT_SECS * 2) {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        // The slot no longer holding our PID means the server exited (the
+        // reaper cleared it) or `stop_local_server` killed it. Either way
+        // there is nothing left to wait for.
+        if !pid_is_current(&state.server_pid, pid) {
+            return Err(
+                "llama-server exited or was stopped before it became healthy".to_string(),
+            );
+        }
         if let Ok(resp) = client.get(&health_url).send().await {
             if resp.status().is_success() {
                 healthy = true;
@@ -722,6 +825,12 @@ pub async fn stop_local_server(
     app: AppHandle,
     state: State<'_, LocalInferenceState>,
 ) -> Result<(), String> {
+    // Kill first, without the lock: a start that is still waiting for its
+    // server to become healthy holds the lock, sees its PID gone and gives up,
+    // so Stop is not stuck behind a cold load.
+    kill_server_process(&state);
+    let _lifecycle = state.lifecycle.lock().await;
+    // And again under the lock, for a start that was queued ahead of this stop.
     kill_server_process(&state);
 
     *state.port.lock().await = None;
@@ -860,6 +969,9 @@ pub async fn start_completion_server(
     context_length: Option<u32>,
     gpu_layers: Option<i32>,
 ) -> Result<u16, String> {
+    // One start (or stop) at a time, as for the chat server.
+    let _lifecycle = state.completion_lifecycle.lock().await;
+
     // Stop any existing completion server first.
     kill_completion_server_process(&state);
     *state.completion_port.lock().await = None;
@@ -918,7 +1030,7 @@ pub async fn start_completion_server(
         }
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start completion server: {}", e))?;
 
@@ -930,16 +1042,35 @@ pub async fn start_completion_server(
     let pid_file = state.models_dir.join(".completion.pid");
     let _ = std::fs::write(&pid_file, pid.to_string());
 
+    // Drain the pipes line by line, as the chat server does. This used to be
+    // `wait_with_output`, which collects ALL of stdout and stderr in memory
+    // until the process exits — and this server logs timings for every
+    // debounced keystroke, for the whole session.
+    if let Some(out) = child.stdout.take() {
+        spawn_log_drain(out, false, ServerKind::Completion, app.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        spawn_log_drain(err, true, ServerKind::Completion, app.clone());
+    }
+
+    // Reap the child and forget its PID once it is gone.
+    let reaper_app = app.clone();
     tokio::spawn(async move {
-        let output = child.wait_with_output().await;
-        if let Ok(out) = output {
-            if !out.status.success() {
-                let stderr = String::from_utf8_lossy(&out.stderr);
+        let exit = child.wait().await;
+        reaper_app
+            .state::<LocalInferenceState>()
+            .forget_exited_server(ServerKind::Completion, pid);
+        match exit {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
                 log::warn!(
                     target: "notesage::llama_server",
-                    "Completion server exited with {}: {}",
-                    out.status, stderr
+                    "Completion server exited with {} — see the preceding [completion] lines for its own output",
+                    status
                 );
+            }
+            Err(e) => {
+                log::warn!(target: "notesage::llama_server", "Failed to wait for completion server: {}", e);
             }
         }
     });
@@ -954,6 +1085,12 @@ pub async fn start_completion_server(
     let mut healthy = false;
     for _ in 0..60 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        // Exited, or stopped by `stop_completion_server`: nothing to wait for.
+        if !pid_is_current(&state.completion_server_pid, pid) {
+            return Err(
+                "Completion server exited or was stopped before it became healthy".to_string(),
+            );
+        }
         if let Ok(resp) = client.get(&health_url).send().await {
             if resp.status().is_success() {
                 healthy = true;
@@ -992,6 +1129,9 @@ pub async fn stop_completion_server(
     app: AppHandle,
     state: State<'_, LocalInferenceState>,
 ) -> Result<(), String> {
+    // Same shape as `stop_local_server`: kill, take the lock, kill again.
+    kill_completion_server_process(&state);
+    let _lifecycle = state.completion_lifecycle.lock().await;
     kill_completion_server_process(&state);
     *state.completion_port.lock().await = None;
     *state.completion_model.lock().await = None;
@@ -1795,6 +1935,90 @@ pub fn build_server_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- Server PID bookkeeping (a dead server's PID must not be signalled) ---
+
+    fn state_in(dir: &std::path::Path) -> LocalInferenceState {
+        let mut state = LocalInferenceState::new();
+        state.models_dir = dir.to_path_buf();
+        state
+    }
+
+    #[test]
+    fn an_exited_server_is_forgotten_in_state_and_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_in(dir.path());
+        *state.server_pid.lock().unwrap() = Some(4242);
+        std::fs::write(dir.path().join(".server.pid"), "4242").unwrap();
+
+        state.forget_exited_server(ServerKind::Chat, 4242);
+
+        // Nothing left for the next start/stop/exit to send SIGKILL to.
+        assert_eq!(*state.server_pid.lock().unwrap(), None);
+        assert!(!dir.path().join(".server.pid").exists());
+        assert!(!pid_is_current(&state.server_pid, 4242));
+    }
+
+    #[test]
+    fn a_late_reaper_does_not_forget_the_server_that_replaced_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_in(dir.path());
+        // Server 100 was replaced by 200 before 100's reaper ran.
+        *state.completion_server_pid.lock().unwrap() = Some(200);
+        std::fs::write(dir.path().join(".completion.pid"), "200").unwrap();
+
+        state.forget_exited_server(ServerKind::Completion, 100);
+
+        assert_eq!(*state.completion_server_pid.lock().unwrap(), Some(200));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".completion.pid")).unwrap(),
+            "200"
+        );
+        assert!(pid_is_current(&state.completion_server_pid, 200));
+    }
+
+    #[test]
+    fn forgetting_one_server_leaves_the_other_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_in(dir.path());
+        *state.server_pid.lock().unwrap() = Some(7);
+        *state.completion_server_pid.lock().unwrap() = Some(7);
+
+        state.forget_exited_server(ServerKind::Completion, 7);
+
+        assert_eq!(*state.server_pid.lock().unwrap(), Some(7));
+        assert_eq!(*state.completion_server_pid.lock().unwrap(), None);
+    }
+
+    // --- Log drain (bounded, unlike `wait_with_output`) ---
+
+    #[tokio::test]
+    async fn drain_log_lines_streams_a_long_output_line_by_line() {
+        use tokio::io::AsyncWriteExt;
+        // Far more output than the pipe holds, so the writer only finishes if
+        // the drain keeps reading while the "server" is still running.
+        const LINES: usize = 20_000;
+        let (mut tx, rx) = tokio::io::duplex(1024);
+        let writer = tokio::spawn(async move {
+            for i in 0..LINES {
+                tx.write_all(format!("slot update_slots: id {i} | timings\n\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let mut seen = 0usize;
+        let mut longest = 0usize;
+        drain_log_lines(rx, |line| {
+            seen += 1;
+            longest = longest.max(line.len());
+        })
+        .await;
+        writer.await.unwrap();
+
+        assert_eq!(seen, LINES, "blank lines are skipped, every other line is delivered");
+        assert!(longest < 64, "lines arrive one at a time, not as one buffer");
+    }
 
     // --- LocalGenerationSpan (runtime-calibration capture events) ---
 

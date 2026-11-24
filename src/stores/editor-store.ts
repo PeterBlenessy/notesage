@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { FileType, ViewMode } from "@/lib/file-utils";
 import { clearBinaryData, moveBinaryData } from "@/lib/binary-cache";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 
 export type { FileType, ViewMode } from "@/lib/file-utils";
@@ -89,8 +90,6 @@ interface EditorStore {
   scrollPositions: Record<string, number>;
   /** Ephemeral: paths with pending external changes → disk content. Not persisted. */
   externalChanges: Record<string, string>;
-  /** Ephemeral: tab ID awaiting save/discard decision. Not persisted. */
-  pendingCloseTabId: string | null;
   /** Persisted list of open file paths so we can re-open them on restart. */
   persistedTabs: PersistedTab[];
   /** Persisted: which file was active, so we can re-activate it on restart. */
@@ -159,8 +158,6 @@ interface EditorStore {
   setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => void;
   /** Set a text scroll target. Cleared after Editor.tsx consumes it. */
   setScrollToText: (tabId: string, text: string | undefined) => void;
-  /** Set tab awaiting save/discard decision (for dirty tab close). */
-  setPendingCloseTabId: (tabId: string | null) => void;
   /** Stash a comrak-rendered HTML preview on a tab and flip its `previewState`
    *  to `ready`. Called by `Editor.tsx` after `render_markdown_preview`
    *  resolves. See PRD § "Layer 1". */
@@ -179,7 +176,6 @@ export const useEditorStore = create<EditorStore>()(
       recentFiles: [],
       scrollPositions: {},
       externalChanges: {},
-      pendingCloseTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
       documentAccessOrder: [],
@@ -197,10 +193,10 @@ export const useEditorStore = create<EditorStore>()(
           // Quiet Composer is a single-document shell — opening a new doc
           // evicts the previously-active one. We only evict when adding a
           // NEW tab; when the user clicks a doc that's already open we just
-          // re-activate it (nothing to evict). Dirty docs rely on the
-          // 1-second debounced auto-save in `Editor.tsx` having already
-          // flushed by the time the user opens a sibling — the warn-if-dirty
-          // path is in the call site, not in the store mutator.
+          // re-activate it (nothing to evict). A dirty doc is NOT saved
+          // here: the call site does that before calling this mutator
+          // (`saveActiveDocumentBeforeLeaving` in `useFileOperations`), so
+          // eviction never depends on the debounced auto-save having run.
 
           // Check if tab already exists
           const existingTab = state.openDocuments.find((tab) => tab.filePath === filePath);
@@ -525,10 +521,6 @@ export const useEditorStore = create<EditorStore>()(
         }));
       },
 
-      setPendingCloseTabId: (tabId: string | null) => {
-        set({ pendingCloseTabId: tabId });
-      },
-
       setPreview: (tabId, html) => {
         set((state) => ({
           openDocuments: state.openDocuments.map((tab) =>
@@ -620,6 +612,7 @@ export const useEditorStore = create<EditorStore>()(
     }),
     {
       name: "notesage-editor",
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-editor", error),
       version: 2,
 
       migrate: (persisted: unknown, version: number) => {

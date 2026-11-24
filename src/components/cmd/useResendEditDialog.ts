@@ -49,7 +49,12 @@ export interface UseResendEditDialogArgs {
   setExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   interactiveConnection: Connection | null;
   sendChatMessage: SendChatMessage;
-  messagesForSend: ChatMessageType[];
+  /**
+   * Reads the active thread at call time. A getter, not the array: passing the
+   * subscribed array re-rendered the whole composer on every streamed chunk
+   * only so a send handler could read it later (audit 2026-11-22 §3).
+   */
+  getMessagesForSend: () => ChatMessageType[];
 }
 
 export interface ResendEditDialog {
@@ -85,7 +90,7 @@ export function useResendEditDialog({
   setExpanded,
   interactiveConnection,
   sendChatMessage,
-  messagesForSend,
+  getMessagesForSend,
 }: UseResendEditDialogArgs): ResendEditDialog {
   const allConnections = useConnectionsStore((s) => s.connections);
   const setRouting = useRoutingStore((s) => s.setRouting);
@@ -124,6 +129,9 @@ export function useResendEditDialog({
         return;
       }
 
+      // Snapshot the thread BEFORE the delete below — the same thread the
+      // handler used to close over from the last render.
+      const messagesForSend = getMessagesForSend();
       if (message.id) {
         useChatStore.getState().deleteMessageAndDescendants(message.id);
       }
@@ -131,7 +139,7 @@ export function useResendEditDialog({
       if (trimmed.length === 0) return;
       void sendChatMessage(trimmed, messagesForSend);
     },
-    [sendChatMessage, messagesForSend, interactiveConnection?.id],
+    [sendChatMessage, getMessagesForSend, interactiveConnection?.id],
   );
 
   // Edit a user message — prefill the composer + capture edit context so
@@ -161,6 +169,8 @@ export function useResendEditDialog({
       const dialog = resendDialog;
       if (!dialog) return;
       setResendDialog(null);
+      // Snapshot the thread before any delete below (see handleStreamResend).
+      const messagesForSend = getMessagesForSend();
 
       const targetId =
         choice === "original"
@@ -214,7 +224,7 @@ export function useResendEditDialog({
       interactiveConnection?.id,
       setRouting,
       sendChatMessage,
-      messagesForSend,
+      getMessagesForSend,
       setInputValue,
       setChips,
       setActivePrefix,

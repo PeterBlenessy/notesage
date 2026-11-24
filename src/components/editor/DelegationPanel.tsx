@@ -11,6 +11,8 @@ import {
 import { InlineActivityLog } from '@/components/editor/CommentThread';
 import type { Comment, DelegationActivity } from '@/stores/comment-store';
 import type { Conversation } from '@/stores/chat-store';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 export interface DelegationPanelProps {
   /** The comment this panel belongs to */
@@ -44,6 +46,7 @@ export function DelegationPanel({
   onCancelDelegation,
   onClose,
 }: DelegationPanelProps) {
+  useLocale();
   const [replyText, setReplyText] = useState('');
   const replyInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +76,7 @@ export function DelegationPanel({
                 }
               }}
               placeholder="Reply to agent..."
+              aria-label={t('editor.replyToAgent')}
               className="flex-1 h-7 text-xs"
             />
             <TooltipProvider delayDuration={300}>

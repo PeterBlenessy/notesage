@@ -40,8 +40,10 @@ import { t } from "@/lib/i18n";
  * QuietSidebar — flat-list sidebar shell for the quiet-composer UI refresh
  * (PRD `2026-04-21-ui-refresh`, task #30).
  *
- * Renders six stacked sections in fixed order: Pinned, Projects, Folders,
- * Recent, Tags, Mentions. Sections are wired to the workspace-store, editor-store,
+ * Renders stacked sections in fixed order: Inbox, Recordings, Pinned,
+ * Folders (ProjectsSection, whose visible header is "Folders", followed by
+ * the headerless FoldersSection shown as "External folders"), Recent, Tags,
+ * Mentions. Sections are wired to the workspace-store, editor-store,
  * and SQLite index. Tags and Mentions self-hide when their cap is 0 (the
  * slider IS the visibility control — see settings-store v11→v12 migration).
  *

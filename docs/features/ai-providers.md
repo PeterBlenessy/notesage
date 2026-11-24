@@ -59,7 +59,7 @@ interface AIProvider {
 - ACP crate version 0.14.0 (schema 0.13.6) with `usage_update` event support. Builder/component API (`role::acp::Client.builder()…connect_with(transport, |conn| …)`) replacing the old `ClientSideConnection`; inbound `request_permission` / `session/update` are handled via registered `on_receive_request` / `on_receive_notification` handlers instead of a `Client` trait impl, and the connection handle is `Send + Clone` (no `!Send` thread isolation needed). `session/close` and `session/resume` are stable. The dedicated session-model API (`session/set_model`) was removed upstream — model selection goes through the session config option with category `model`; assistant message identity is agent-assigned via `ContentChunk.message_id` (the old client-supplied `PromptRequest.message_id` was removed)
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
 - Context-aware command bar: "Search" toggle for direct API connections
-- **Session modes**: Permission-level mode picker (Shield icon) in command bar (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
+- **Session modes**: Permission-level mode picker (Shield icon) in command bar (hidden by default, toggle in Settings > AI Providers). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
 - **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in command bar. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
 - **Capability probing**: At connection registration, lightweight spawn → session → read → stop cycle discovers available modes, config options, and capabilities. Stored on connection, auto-refreshed when stale (>24h).
 - **Connection defaults**: Default mode and thinking effort configurable in connection settings dialog, applied automatically to new sessions.
@@ -81,7 +81,7 @@ interface AIProvider {
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents via ACP protocol, the LSP handles completions and chat via JSON-RPC
 - Full capabilities: `['interactive', 'inline_completion', 'agent_tasks']` — users can use their Copilot subscription for all AI features
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
-- **Project isolation.** `workingDir` reflects the command bar's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
+- **Project isolation.** `workingDir` reflects the command bar's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Writing restores the legacy behavior.
 - OAuth device flow authentication with two protocol variants:
   - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
   - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
@@ -137,7 +137,7 @@ Ghost text completions via the Copilot Language Server or local/compatible provi
 5. For OpenAI-compatible: `/v1/completions` endpoint
 6. Error backoff: stops after 5 consecutive failures; resets on connection/model/tab change
 
-**Project isolation.** Both flows check `isUriInScope(activeTabUri, { projectRoots, notesRootPath })` before firing a completion request. Out-of-scope tabs skip the request entirely — no LSP traffic for Copilot, no FIM call for local/compatible. The editor StatusBar shows a muted "Completions: off (outside project)" indicator when suppressed, with a tooltip linking to the Settings > Advanced toggle. `completionsOnOutOfScope: true` restores legacy behavior.
+**Project isolation.** Both flows check `isUriInScope(activeTabUri, { projectRoots, notesRootPath })` before firing a completion request. Out-of-scope tabs skip the request entirely — no LSP traffic for Copilot, no FIM call for local/compatible. The editor StatusBar shows a muted "Completions: off (outside project)" indicator when suppressed, with a tooltip linking to the Settings > Writing toggle. `completionsOnOutOfScope: true` restores legacy behavior.
 
 ## Local AI (Bundled Inference)
 
@@ -317,7 +317,7 @@ When a tool call errors or the user denies permission, `buildToolResultContent` 
 
 **Settings:**
 
-- `toolCallingEnabled` toggle in Settings > Advanced (default: enabled)
+- `toolCallingEnabled` toggle in Settings > AI Providers (default: enabled)
 - Web search backend is DuckDuckGo, wired directly in the Rust `web_search` command (the former `searchProvider` setting was removed as dead code)
 - Tools indicator badge in command bar showing count of available tools
 
@@ -435,7 +435,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | --- | --- |
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
 | `src-tauri/src/commands/credentials.rs` | OS keychain credential storage (store, get, delete, migrate) |
-| `src-tauri/src/commands/acp.rs` | ACP agent management; MCP pass-through (`build_acp_mcp_servers`), `acp_agent_smoke_test` |
+| `src-tauri/src/commands/acp/` | ACP agent management (`mod.rs` commands, `agent_thread.rs`, `state.rs`, `types.rs`); MCP pass-through (`helpers.rs` `build_acp_mcp_servers`), `acp_agent_smoke_test` |
 | `src-tauri/src/commands/local_agent.rs` | Local Agent preset: `local_agent_write_config(agent)` — Goose env (provider + host + model + isolated XDG tree, no config file) OR pi flat config tree (models.json + settings.json + shipped extensions + `PI_OFFLINE`/`PI_CODING_AGENT_DIR` env + piArgs) |
 | `bridges/pi-acp/extensions/` | The two pi extensions Notesage ships into the pi config dir (permission-gate, mcp-tools), **vendored** from the upstream bridge repo and embedded via `include_str!`. The bridge itself lives at [`PeterBlenessy/notesage-acp-pi`](https://github.com/PeterBlenessy/notesage-acp-pi) — fix bugs there, then re-vendor and move the pin. See `bridges/pi-acp/README.md`. |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |

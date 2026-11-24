@@ -303,7 +303,7 @@ export function ConnectCustomAgent({
                     className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground transition-colors duration-150"
                     onClick={() => updateEnvRow(row.id, { show: !row.show })}
                     aria-label={row.show ? t("custagent.hideValue") : t("custagent.showValue")}
-                    tabIndex={-1}
+                    aria-pressed={row.show}
                   >
                     {row.show ? (
                       <EyeOff className="h-3.5 w-3.5" strokeWidth={1.5} />

@@ -26,7 +26,7 @@ export function ContextPill({ item, onDismiss }: ContextPillProps) {
                 e.stopPropagation();
                 onDismiss(item.id);
               }}
-              className="shrink-0 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-accent-foreground/10 p-px"
+              className="shrink-0 rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 hover:bg-accent-foreground/10 p-px"
               aria-label={`Remove ${item.label} from context`}
             >
               <X className="h-3 w-3" strokeWidth={1.5} />

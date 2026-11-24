@@ -9,6 +9,37 @@ describe('permission-store skill script permissions', () => {
     });
   });
 
+  // The contract the direct-API chat relies on (audit 2026-11-22 §6): a
+  // hashed skill-script check is answered ONLY by skill-script grants pinned
+  // to that hash. Name-only tool grants live in a different list and can never
+  // satisfy it — which is what keeps an old "Always" on `execute_skill_script`
+  // from covering every script.
+  describe('hashed skill-script checks ignore name-only tool grants', () => {
+    beforeEach(() => {
+      usePermissionStore.setState({ toolCallSession: new Set<string>(), toolCallAlways: [] });
+    });
+
+    it('a tool-name "always"/"session" grant does not allow a skill script', () => {
+      const store = usePermissionStore.getState();
+      store.allowToolAlways('execute_skill_script', null, null);
+      store.allowToolSession('execute_skill_script');
+      store.allowToolAlways('web-research', null, null);
+
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH')).toBe('none');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('execute_skill_script', null, null, 'HASH')).toBe('none');
+    });
+
+    it('an unpinned skill grant does not satisfy a hashed check; a pinned one matches only its hash', () => {
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null);
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH')).toBe('none');
+
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null, 'HASH');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH')).toBe('always');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'OTHER')).toBe('none');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('other-skill', null, null, 'HASH')).toBe('none');
+    });
+  });
+
   describe('isSkillScriptAllowed', () => {
     it('returns none by default', () => {
       expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null)).toBe(

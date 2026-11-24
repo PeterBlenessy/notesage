@@ -171,7 +171,7 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
                 disabled={moving || projects.length === 0}
                 onClick={(e) => e.stopPropagation()}
                 aria-label={t("activity.moveToProject")}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 {moving ? (
                   <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
@@ -257,7 +257,7 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
                 size="icon-xs"
                 onClick={(e) => e.stopPropagation()}
                 aria-label={t("activity.rerunTranscription")}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
               </Button>
@@ -385,6 +385,15 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
         canOpen ? 'cursor-pointer hover:bg-muted/50 active:bg-muted/70' : ''
       }`}
       onClick={canOpen ? () => { void handleOpen(); } : undefined}
+      role={canOpen ? 'button' : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      onKeyDown={canOpen ? (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          void handleOpen();
+        }
+      } : undefined}
     >
       <div className="flex items-start gap-2">
         <div className="shrink-0 mt-0.5">
@@ -410,17 +419,17 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
                 : t("activity.transcribing")}
           </p>
           {summary && (
-            <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
+            <p className="text-[11px] text-muted-foreground tabular-nums">{summary}</p>
           )}
           {/* Provenance — a bundle the phone recorded says so, so three cards
               after a Mac wakes up are not a mystery. */}
           {task.sourceDevice && (
-            <p className="text-[11px] text-muted-foreground/80" data-testid="transcription-source-device">
+            <p className="text-[11px] text-muted-foreground" data-testid="transcription-source-device">
               {t("activity.fromDevice", { device: task.sourceDevice })}
             </p>
           )}
           {languageUsed && (
-            <p className="text-[11px] text-muted-foreground/80">
+            <p className="text-[11px] text-muted-foreground">
               {autoDetected ? 'Detected language' : 'Language'}:{' '}
               {autoDetected
                 ? languageDisplayName(languageUsed)
@@ -438,7 +447,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
               <IconActionButton
                 label={t("activity.revealInFinder")}
                 onClick={(e) => { e.stopPropagation(); void handleReveal(); }}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
               </IconActionButton>
@@ -447,7 +456,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
               <IconActionButton
                 label="Remove from this list — the audio and transcript stay on disk (use Reveal in Finder to delete them)"
                 onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3 w-3" strokeWidth={1.5} />
               </IconActionButton>
@@ -458,7 +467,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
 
       {/* Bundle path — "where did my recording go" should never be a question. */}
       {!isRunning && bundlePath && (
-        <p className="pl-5 text-[11px] text-muted-foreground/70 truncate" title={bundlePath}>
+        <p className="pl-5 text-[11px] text-muted-foreground truncate" title={bundlePath}>
           {bundlePath}
         </p>
       )}

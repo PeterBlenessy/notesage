@@ -108,7 +108,6 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
           return false;
         },
         watch_directory: () => null,
-        unwatch_directory: () => null,
         mark_self_write: () => null,
         clear_self_write: () => null,
         open_folder_dialog: () => projectPath,
@@ -170,7 +169,6 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Sync
         get_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
-        read_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
 
         // Automations
         list_automations: () => [],

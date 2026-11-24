@@ -319,6 +319,7 @@ export function ConnectCopilotLsp({
                 onClick={handleCopyCode}
                 className="p-1 rounded hover:bg-muted transition-colors"
                 title={t("connectAgent.copyCode")}
+                aria-label={t("connectAgent.copyCode")}
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-foreground" strokeWidth={2} />
@@ -358,7 +359,7 @@ export function ConnectCopilotLsp({
 
       {phase === 'connected' && (
         <div className="flex items-center gap-2.5 py-3">
-          <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
+          <Check className="h-4 w-4 text-[var(--color-status-ok)]" strokeWidth={2} />
           <span className="text-sm font-medium">{t("connect.connected")}</span>
         </div>
       )}

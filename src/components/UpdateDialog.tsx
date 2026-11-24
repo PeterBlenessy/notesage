@@ -117,7 +117,20 @@ function SectionItems({
   );
 }
 
-export function UpdateDialog({
+/**
+ * The dialog itself, rendered only while there is an update to describe.
+ *
+ * Split from `UpdateDialog` so that `useChangelog()` is called on EVERY
+ * render of the component that owns it. It used to sit below an
+ * `if (!updateInfo) return null` in one component — a hook that runs on some
+ * renders and not others, which React only tolerates by accident (no hook ran
+ * before it) and would throw on as soon as one was added above.
+ *
+ * Calling the hook above the early return instead would be the smaller diff,
+ * but `useChangelog` fetches on mount: that would add a network request to
+ * every launch, update or not.
+ */
+function UpdateDialogBody({
   open,
   onOpenChange,
   updateInfo,
@@ -126,10 +139,9 @@ export function UpdateDialog({
   onInstall,
   onRestartNow,
   onDismiss,
-}: UpdateDialogProps) {
-  if (!updateInfo) return null;
-
+}: UpdateDialogProps & { updateInfo: UpdateInfo }) {
   const { getChangesBetween } = useChangelog();
+
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
 
@@ -267,4 +279,10 @@ export function UpdateDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+export function UpdateDialog(props: UpdateDialogProps) {
+  const { updateInfo } = props;
+  if (!updateInfo) return null;
+  return <UpdateDialogBody {...props} updateInfo={updateInfo} />;
 }

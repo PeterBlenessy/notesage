@@ -43,6 +43,60 @@ pub fn sample_rss_bytes(pid: u32) -> u64 {
     0
 }
 
+/// Ceiling for one warm-up or decode request. Generous (a large model decoding
+/// a few hundred tokens on a slow machine takes minutes), but finite: with no
+/// limit a stalled server hung the calibration run forever.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Background peak-RSS sampler that stops when dropped.
+///
+/// The stop used to be a `stop.store(true)` after the measured request, which
+/// the `?` returns before it skipped — leaving a thread spawning `ps` every
+/// 100 ms for the rest of the process's life. Tying it to `Drop` covers every
+/// exit path.
+struct RssSampler {
+    stop: Arc<AtomicBool>,
+    peak: Arc<AtomicU64>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl RssSampler {
+    fn start(pid: Option<u32>, interval: Duration, sample: fn(u32) -> u64) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let peak = Arc::new(AtomicU64::new(0));
+        let thread = {
+            let stop = stop.clone();
+            let peak = peak.clone();
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    if let Some(pid) = pid {
+                        peak.fetch_max(sample(pid), Ordering::Relaxed);
+                    }
+                    std::thread::sleep(interval);
+                }
+            })
+        };
+        Self {
+            stop,
+            peak,
+            thread: Some(thread),
+        }
+    }
+
+    fn peak_bytes(&self) -> u64 {
+        self.peak.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for RssSampler {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// Start `llama-server` for `model_path`, run a fixed decode workload, and
 /// measure tok/s + peak RSS. The server is killed before returning.
 pub async fn measure_model_runtime(
@@ -71,8 +125,11 @@ pub async fn measure_model_runtime(
         "127.0.0.1",
     ])
     .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    // Discarded, not piped: nothing here reads the server's output, and
+    // llama-server logs enough at model load and per request to fill an unread
+    // pipe and block mid-measurement.
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
     .kill_on_drop(true);
 
     // Same library-path injection as the production server launcher.
@@ -91,13 +148,21 @@ pub async fn measure_model_runtime(
         .map_err(|e| format!("failed to start llama-server: {e}"))?;
     let pid = child.id();
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
     let base = format!("http://127.0.0.1:{port}");
 
     // Wait for /health (up to ~60s — large models load slowly).
     let mut ready = false;
     for _ in 0..120 {
-        if let Ok(r) = client.get(format!("{base}/health")).send().await {
+        let health = client
+            .get(format!("{base}/health"))
+            .timeout(Duration::from_secs(2))
+            .send()
+            .await;
+        if let Ok(r) = health {
             if r.status().is_success() {
                 ready = true;
                 break;
@@ -110,22 +175,8 @@ pub async fn measure_model_runtime(
         return Err("llama-server did not become healthy in time".into());
     }
 
-    // Background RSS sampler.
-    let stop = Arc::new(AtomicBool::new(false));
-    let peak = Arc::new(AtomicU64::new(0));
-    let sampler = {
-        let stop = stop.clone();
-        let peak = peak.clone();
-        std::thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
-                if let Some(pid) = pid {
-                    let rss = sample_rss_bytes(pid);
-                    peak.fetch_max(rss, Ordering::Relaxed);
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        })
-    };
+    // Background RSS sampler. Stops when dropped, on every exit path below.
+    let sampler = RssSampler::start(pid, Duration::from_millis(100), sample_rss_bytes);
 
     let chat = format!("{base}/v1/chat/completions");
 
@@ -160,8 +211,8 @@ pub async fn measure_model_runtime(
         .await
         .map_err(|e| format!("failed to parse server response: {e}"))?;
 
-    stop.store(true, Ordering::Relaxed);
-    let _ = sampler.join();
+    let peak_ram_bytes = sampler.peak_bytes();
+    drop(sampler);
     let _ = child.kill().await;
 
     // llama.cpp reports decode rate under `timings.predicted_per_second`.
@@ -174,7 +225,53 @@ pub async fn measure_model_runtime(
     Ok(RuntimeMeasurement {
         model_path: model_path.to_string(),
         measured_tok_per_sec: tps,
-        peak_ram_bytes: peak.load(Ordering::Relaxed),
+        peak_ram_bytes,
         decode_tokens,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    static SAMPLES: AtomicUsize = AtomicUsize::new(0);
+
+    fn counting_sample(_pid: u32) -> u64 {
+        SAMPLES.fetch_add(1, Ordering::SeqCst);
+        4096
+    }
+
+    #[test]
+    fn rss_sampler_stops_when_dropped_on_an_early_return() {
+        // The shape of the leak: a `?` leaves the function while the sampler
+        // is still running. Nothing stops it explicitly here either.
+        fn fails_early() -> Result<(), String> {
+            let _sampler = RssSampler::start(Some(1), Duration::from_millis(1), counting_sample);
+            while SAMPLES.load(Ordering::SeqCst) == 0 {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err::<(), String>("decode request failed".to_string())?;
+            Ok(())
+        }
+        assert!(fails_early().is_err());
+
+        // Drop joined the thread, so the count can no longer move.
+        let after_drop = SAMPLES.load(Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(SAMPLES.load(Ordering::SeqCst), after_drop);
+    }
+
+    #[test]
+    fn rss_sampler_reports_the_peak() {
+        fn rising(_pid: u32) -> u64 {
+            static NEXT: AtomicU64 = AtomicU64::new(1);
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        }
+        let sampler = RssSampler::start(Some(1), Duration::from_millis(1), rising);
+        while sampler.peak_bytes() < 3 {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(sampler.peak_bytes() >= 3);
+    }
 }

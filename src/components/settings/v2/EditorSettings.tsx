@@ -293,7 +293,7 @@ export function EditorSettings() {
           description={
             <>
               {t("ed.externalDiffDesc")}{' '}
-              <span className="text-muted-foreground/60">
+              <span className="text-muted-foreground">
                 {t("ed.betaFormatting")}
               </span>
             </>

@@ -53,9 +53,10 @@ vi.mock('@/lib/tauri', () => ({
 
 vi.mock('@/hooks/useAcpSessionListeners', () => ({
   setupAcpChatListeners: vi.fn().mockResolvedValue({
-    unlistenUpdate: vi.fn(),
+    unlisten: vi.fn(),
     unlistenPermission: vi.fn(),
-    unlistenUsage: vi.fn(),
+    getStreamedContent: () => '',
+    flush: vi.fn(),
   }),
   buildAcpChatCleanup: vi.fn().mockReturnValue(vi.fn()),
 }));

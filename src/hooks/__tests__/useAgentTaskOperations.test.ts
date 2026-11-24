@@ -1347,17 +1347,23 @@ describe('useAgentTaskOperations', () => {
       streamDeferred.resolve();
     });
 
-    it('marks direct API task as cancelled without ACP session cancel', async () => {
+    it('stops the provider stream of a direct API task and reports it cancelled', async () => {
       const conn = makeApiKeyConnection();
       useConnectionsStore.setState({ connections: [conn] });
       setupRouting(conn.id);
       const { streamDeferred } = registerDirectApiHandlers();
+      const cancelledStreams: string[] = [];
+      const acpCancels: unknown[] = [];
+      setMockInvokeHandler('ai_chat_stream_cancel', (args) => { cancelledStreams.push(sidOf(args)); return undefined; });
+      setMockInvokeHandler('acp_session_cancel', (args) => { acpCancels.push(args); return undefined; });
 
       const { result } = renderHook(() => useAgentTaskOperations());
+      const onError = vi.fn();
+      const onComplete = vi.fn();
 
       let taskId: string | undefined;
       await act(async () => {
-        taskId = await result.current.startTask('direct task');
+        taskId = await result.current.startTask('direct task', { onError, onComplete });
       });
 
       let cancelled: boolean | undefined;
@@ -1365,12 +1371,95 @@ describe('useAgentTaskOperations', () => {
         cancelled = await result.current.cancelTask(taskId!);
       });
 
-      // Direct API tasks don't have instanceId/sessionId
-      expect(cancelled).toBe(false);
+      // The backend stream is told to stop (it used to run, and bill, to the end) …
+      expect(cancelledStreams).toEqual([lastStreamId]);
+      expect(acpCancels).toEqual([]);
+      // … and the caller is told the task WAS cancelled, not "already finished".
+      expect(cancelled).toBe(true);
+      expect(useActivityStore.getState().tasks[0].status).toBe('cancelled');
 
-      const tasks = useActivityStore.getState().tasks;
-      expect(tasks[0].status).toBe('cancelled');
+      // The cancelled stream then ends in an error: that is not a failed task.
+      await act(async () => {
+        streamDeferred.reject(new Error('stream aborted'));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(onError).not.toHaveBeenCalled();
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(result.current.getTask(taskId!)?.status).toBe('cancelled');
+      expect(useActivityStore.getState().tasks[0].status).toBe('cancelled');
+    });
+
+    it('a second cancel of the same direct API task does nothing', async () => {
+      const conn = makeApiKeyConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { streamDeferred } = registerDirectApiHandlers();
+      let cancelCalls = 0;
+      setMockInvokeHandler('ai_chat_stream_cancel', () => { cancelCalls += 1; return undefined; });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('direct task');
+      });
+
+      let second: boolean | undefined;
+      await act(async () => {
+        await result.current.cancelTask(taskId!);
+        second = await result.current.cancelTask(taskId!);
+      });
+      expect(second).toBe(false);
+      expect(cancelCalls).toBe(1);
       streamDeferred.resolve();
+    });
+
+    it('destroys the LSP conversation of a Copilot task and reports it cancelled', async () => {
+      const conn = makeAgentConnection({
+        id: 'conn-copilot-lsp',
+        credentials: { type: 'agent_managed', agentBinary: 'copilot-language-server' },
+      });
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const createDeferred_ = createDeferred<{ conversationId: string }>();
+      let token = '';
+      const destroyed: string[] = [];
+      setMockInvokeHandler('copilot_lsp_conversation_create', (args) => {
+        token = String((args as { workDoneToken?: string })?.workDoneToken);
+        return createDeferred_.promise;
+      });
+      setMockInvokeHandler('copilot_lsp_conversation_destroy', (args) => {
+        destroyed.push(String((args as { conversationId?: string })?.conversationId));
+        return undefined;
+      });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+      const onError = vi.fn();
+
+      let taskId: string | undefined;
+      await act(async () => {
+        // Resolves while the turn is still running, so the task can be cancelled.
+        taskId = await result.current.startTask('copilot task', { onError });
+      });
+      await act(async () => {
+        emitMockEvent('copilot-chat-begin', { token, conversationId: 'cop-task' });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      let cancelled: boolean | undefined;
+      await act(async () => {
+        cancelled = await result.current.cancelTask(taskId!);
+      });
+
+      expect(cancelled).toBe(true);
+      expect(destroyed).toEqual(['cop-task']);
+      expect(useActivityStore.getState().tasks[0].status).toBe('cancelled');
+
+      await act(async () => {
+        createDeferred_.reject(new Error('conversation destroyed'));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(onError).not.toHaveBeenCalled();
+      expect(result.current.getTask(taskId!)?.status).toBe('cancelled');
     });
   });
 

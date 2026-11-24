@@ -4,7 +4,7 @@ import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
 import type { AcpMcpServerInput } from './ai/acp-mcp';
-import type { AutomationFile, AutomationValidation } from './automations/types';
+import type { AutomationFile } from './automations/types';
 
 /** What the Inbox row shows for a saved article — the capture's own header. */
 export interface InboxCardMeta {
@@ -27,6 +27,12 @@ export interface FileEntry {
   /** Visible children, DIRECTORIES only. Populated by the iOS library
    *  listing (#684); absent on every desktop path. */
   child_count?: number;
+  /** A directory the recursive listing could not read. Its `children` are
+   *  empty because they are unknown, not because the folder is empty. */
+  unreadable?: boolean;
+  /** A directory at the listing's depth limit: its `children` were not
+   *  listed. */
+  truncated?: boolean;
 }
 
 export type GitStatus = 'modified' | 'added' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
@@ -44,12 +50,6 @@ export interface DiffHunk {
   new_lines: number;
   delete_text: string;
   insert_text: string;
-}
-
-export interface WorktreeInfo {
-  path: string;
-  branch: string;
-  is_main: boolean;
 }
 
 /**
@@ -73,13 +73,6 @@ export interface LibraryMarker {
 
 /** See `tauriApi.libraryContainerAccess`. */
 export type ContainerAccess = "missing" | "denied" | "ready";
-
-export interface SyncSettings {
-  version: number;
-  icloudEnabled: boolean;
-  syncQuickNotes: boolean;
-  syncedProjects: string[];
-}
 
 export interface PptxTemplateInfo {
   id: string;
@@ -628,25 +621,6 @@ export interface RecordingResult {
 /** Mirrors the Rust `DownloadState` (`rename_all = "lowercase"`). */
 export type ICloudDownloadState = "ready" | "downloading" | "failed";
 
-export interface WhisperModelInfo {
-  name: string;
-  size_bytes: number;
-  downloaded: boolean;
-  path?: string;
-  author?: string;
-  license?: string;
-  parameters?: string;
-  description?: string;
-  languages_count?: number;
-  hf_repo_id?: string;
-  /** Longer explanation, shown on demand rather than in the row. */
-  detail?: string;
-  /** Exactly where the file is fetched from, so the claim is checkable. */
-  download_url?: string;
-  /** On disk but no longer offered — still listed so it can be deleted. */
-  retired?: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Local AI types
 // ---------------------------------------------------------------------------
@@ -1029,10 +1003,6 @@ export const tauriApi = {
     return await invoke<DiffHunk[]>("git_diff_file", { repoPath, baseBranch, compareBranch, filePath });
   },
 
-  async gitWorktreeList(repoPath: string): Promise<WorktreeInfo[]> {
-    return await invoke<WorktreeInfo[]>("git_worktree_list", { repoPath });
-  },
-
   // Grant the WebView asset-protocol read access to a user-opened workspace
   // root (replaces the removed blanket `$HOME/**` static asset scope — security
   // H1). Called for every root in `useStartWatchers`.
@@ -1043,10 +1013,6 @@ export const tauriApi = {
   // Filesystem watcher operations
   async watchDirectory(path: string): Promise<void> {
     await invoke("watch_directory", { path });
-  },
-
-  async unwatchDirectory(): Promise<void> {
-    await invoke("unwatch_directory");
   },
 
   async markSelfWrite(path: string): Promise<void> {
@@ -1097,18 +1063,6 @@ export const tauriApi = {
     embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_docx", options);
-  },
-
-  async renderHtml(options: {
-    markdown: string;
-    title: string;
-    theme: string;
-    includeStyles: boolean;
-    projectRoot?: string;
-    typography?: BackendTypographyPresets;
-    embeddedSvgs?: string[];
-  }): Promise<string> {
-    return await invoke<string>("render_html", options);
   },
 
   /**
@@ -1207,24 +1161,12 @@ export const tauriApi = {
     return await invoke<string[]>("list_evicted_placeholders", { root });
   },
 
-  async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {
-    return await invoke<SyncSettings | null>("read_sync_settings", { notesagePath });
-  },
-
-  async writeSyncSettings(notesagePath: string, settings: SyncSettings): Promise<void> {
-    await invoke("write_sync_settings", { notesagePath, settings });
-  },
-
   async migrateToICloud(projectPath: string, icloudNotesagePath: string): Promise<string> {
     return await invoke<string>("migrate_to_icloud", { projectPath, icloudNotesagePath });
   },
 
   async migrateFromICloud(projectPath: string, localNotesagePath: string): Promise<string> {
     return await invoke<string>("migrate_from_icloud", { projectPath, localNotesagePath });
-  },
-
-  async migrateQuickNotes(fromPath: string, toPath: string): Promise<number> {
-    return await invoke<number>("migrate_quick_notes", { fromPath, toPath });
   },
 
   /**
@@ -1241,53 +1183,6 @@ export const tauriApi = {
       "migrate_user_content_paths",
       { folderPath },
     );
-  },
-
-  // ACP (Agent Client Protocol) operations
-  async acpAgentSpawn(
-    agentBinary: string,
-    agentArgs: string[] | null,
-    role: string,
-    workingDirectory: string,
-    sandboxEnabled?: boolean | null,
-    sandboxPaths?: string[] | null,
-    networkSandboxEnabled?: boolean | null,
-    networkAllowedDomains?: string[] | null,
-    kernelNetworkDeny?: boolean | null,
-    /** Connection id + env-var names for keychain secret resolution at spawn
-     *  (`notesage:<connectionId>:env:<KEY>`). Values never transit IPC here. */
-    connectionId?: string | null,
-    envVarKeys?: string[] | null,
-    /** Inline env passed to the spawned agent (e.g. the Local Agent preset's
-     *  generated Goose env). Keychain-resolved values still win backend-side. */
-    envVars?: Record<string, string> | null,
-    /** Extra localhost ports to allow through the kernel network sandbox
-     *  alongside the proxy port (e.g. the bundled llama-server port, #9). */
-    extraLocalhostPorts?: number[] | null,
-  ): Promise<AcpSpawnResult> {
-    return await invoke<AcpSpawnResult>("acp_agent_spawn", {
-      agentBinary,
-      agentArgs,
-      role,
-      workingDirectory,
-      sandboxEnabled: sandboxEnabled ?? null,
-      sandboxPaths: sandboxPaths ?? null,
-      networkSandboxEnabled: networkSandboxEnabled ?? null,
-      networkAllowedDomains: networkAllowedDomains ?? null,
-      kernelNetworkDeny: kernelNetworkDeny ?? null,
-      connectionId: connectionId ?? null,
-      envVarKeys: envVarKeys ?? null,
-      envVars: envVars ?? null,
-      extraLocalhostPorts: extraLocalhostPorts ?? null,
-    });
-  },
-
-  async acpAgentStop(instanceId: string): Promise<void> {
-    await invoke("acp_agent_stop", { instanceId });
-  },
-
-  async acpAgentAuthenticate(instanceId: string): Promise<void> {
-    await invoke("acp_agent_authenticate", { instanceId });
   },
 
   /**
@@ -1325,6 +1220,7 @@ export const tauriApi = {
     });
   },
 
+  // ACP (Agent Client Protocol) operations
   async acpSessionNew(
     instanceId: string,
     workingDirectory: string,
@@ -1411,11 +1307,6 @@ export const tauriApi = {
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
-  },
-
-  // Ollama vision capability detection
-  async ollamaModelSupportsVision(ollamaUrl: string | null, model: string, baseUrl?: string): Promise<boolean> {
-    return invoke<boolean>("ollama_model_supports_vision", { ollamaUrl, model, baseUrl: baseUrl ?? null });
   },
 
   // Ollama FIM completion
@@ -1512,10 +1403,6 @@ export const tauriApi = {
     await invoke('network_domain_respond', { instanceId, requestId, decision });
   },
 
-  async networkDefaultDomains(agentId: string): Promise<string[]> {
-    return await invoke<string[]>('network_default_domains', { agentId });
-  },
-
   async networkProxyStatus(): Promise<NetworkProxyStatus[]> {
     return await invoke<NetworkProxyStatus[]>('network_proxy_status');
   },
@@ -1527,10 +1414,6 @@ export const tauriApi = {
 
   async indexFile(path: string): Promise<void> {
     await invoke("index_file", { path });
-  },
-
-  async indexRebuild(projectPath?: string): Promise<IndexStats> {
-    return await invoke<IndexStats>("index_rebuild", { projectPath: projectPath ?? null });
   },
 
   async indexReset(projectPath?: string): Promise<void> {
@@ -1619,10 +1502,6 @@ export const tauriApi = {
     });
   },
 
-  async indexStats(projectPath?: string): Promise<IndexStats> {
-    return await invoke<IndexStats>("index_stats", { projectPath: projectPath ?? null });
-  },
-
   // --- Link graph (OKF wiki-navigation, ADR 0002–0007) ---
   // All four query the standalone `links.db`, not the content index.
 
@@ -1664,10 +1543,6 @@ export const tauriApi = {
 
   async deleteAutomation(path: string): Promise<void> {
     await invoke("delete_automation", { path });
-  },
-
-  async validateAutomation(yaml: string): Promise<AutomationValidation> {
-    return await invoke<AutomationValidation>("validate_automation", { yaml });
   },
 
   /** Resolve a document-step write path within `base`, rejecting absolute paths
@@ -1770,18 +1645,6 @@ export const tauriApi = {
       model,
       language: language ?? null,
     });
-  },
-
-  async listWhisperModels(): Promise<WhisperModelInfo[]> {
-    return await invoke<WhisperModelInfo[]>("list_whisper_models");
-  },
-
-  async downloadWhisperModel(size: string): Promise<void> {
-    await invoke("download_whisper_model", { size });
-  },
-
-  async deleteWhisperModel(size: string): Promise<void> {
-    await invoke("delete_whisper_model", { size });
   },
 
   // Local AI inference
@@ -1918,12 +1781,17 @@ export const tauriApi = {
   },
 
   // Copilot LSP conversation operations
-  copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>, docUri?: string, docLanguageId?: string) {
-    return invoke<CopilotConversationRef>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+  /**
+   * `workDoneToken` is the caller's correlation token (see
+   * `@/lib/ai/copilot-correlation`): the backend echoes it as `token` on every
+   * `copilot-chat-*` event of this request.
+   */
+  copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>, docUri?: string, docLanguageId?: string, workDoneToken?: string) {
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null, workDoneToken: workDoneToken ?? null });
   },
 
-  copilotLspConversationTurn(conversationId: string, message: string, model?: string, docUri?: string, docLanguageId?: string) {
-    return invoke<CopilotConversationRef>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+  copilotLspConversationTurn(conversationId: string, message: string, model?: string, docUri?: string, docLanguageId?: string, workDoneToken?: string) {
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null, workDoneToken: workDoneToken ?? null });
   },
 
   copilotLspConversationDestroy(conversationId: string) {

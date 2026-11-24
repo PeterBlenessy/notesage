@@ -35,7 +35,7 @@ export function ActionsGroup({ onOpenActions }: { onOpenActions?: () => void }) 
                 ? "No open actions"
                 : `${openCount} open ${openCount === 1 ? "action" : "actions"}`}
             </span>
-            <span className="text-[10px] text-muted-foreground/60 tabular-nums">{"⌘!"}</span>
+            <span className="text-[10px] text-muted-foreground tabular-nums">{"⌘!"}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs max-w-[220px]">

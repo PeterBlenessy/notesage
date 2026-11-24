@@ -161,6 +161,26 @@ describe('ActivityTaskCard — approval mode badges', () => {
   });
 });
 
+describe('ActivityTaskCard — keyboard access', () => {
+  it('a finished agent card opens with Enter or Space; a running one is not a button', () => {
+    const onClick = vi.fn();
+    const task = makeTask();
+    const { unmount } = renderWithProviders(<ActivityTaskCard task={task} onClick={onClick} />);
+    const card = screen.getByText('Test Task').closest('[role="button"]') as HTMLElement;
+    expect(card.tabIndex).toBe(0);
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(onClick).toHaveBeenCalledTimes(2);
+    expect(onClick).toHaveBeenCalledWith(task);
+    unmount();
+
+    renderWithProviders(
+      <ActivityTaskCard task={makeTask({ status: 'running', completedAt: undefined })} onClick={onClick} />,
+    );
+    expect(screen.getByText('Test Task').closest('[role="button"]')).toBeNull();
+  });
+});
+
 describe('ActivityTaskCard — full path tooltip', () => {
   it('wires the truncated row as a tooltip trigger with the full path available', () => {
     // Radix Tooltip in jsdom can't fully open (no ResizeObserver / no real portal),
@@ -326,6 +346,32 @@ describe('ActivityTaskCard — transcription kind', () => {
     expect(screen.getByText(/click to open/i)).toBeTruthy();
     fireEvent.click(screen.getByText('Recording 2026-05-30'));
 
+    await waitFor(() => {
+      expect(openFileMock).toHaveBeenCalledWith(
+        '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+        'transcript.md',
+      );
+    });
+  });
+
+  it('opens the transcript with Enter on the card, but not from a nested button', async () => {
+    openFileMock.mockResolvedValue(undefined);
+    setMockInvokeHandler('reveal_in_finder', vi.fn(() => undefined));
+    const task = txTask({
+      status: 'done',
+      progress: 100,
+      completedAt: Date.now(),
+      transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+    });
+    renderWithProviders(<ActivityTaskCard task={task} />);
+
+    const card = screen.getByText('Recording 2026-05-30').closest('[role="button"]') as HTMLElement;
+    expect(card.tabIndex).toBe(0);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /reveal in finder/i }), { key: 'Enter' });
+    expect(openFileMock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(card, { key: 'Enter' });
     await waitFor(() => {
       expect(openFileMock).toHaveBeenCalledWith(
         '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',

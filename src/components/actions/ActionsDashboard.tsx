@@ -99,7 +99,7 @@ export function ActionsDashboard({
               <div className="text-center py-12">
                 <CheckSquare2 className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" strokeWidth={1} />
                 <p className="text-sm text-muted-foreground">No open actions</p>
-                <p className="text-xs text-muted-foreground/60 mt-1 max-w-sm mx-auto">
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                   Create tasks with &ldquo;- [ ] Task text&rdquo; in any markdown file, or delegate comments to agents.
                 </p>
               </div>
@@ -116,7 +116,7 @@ export function ActionsDashboard({
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       {label}
                     </span>
-                    <span className="text-[10px] text-muted-foreground/50">
+                    <span className="text-[10px] text-muted-foreground">
                       ({items.length} open)
                     </span>
                     <div className="flex-1 h-px bg-border" />

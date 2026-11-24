@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -144,6 +144,40 @@ pub async fn dispatch_response(pending: &PendingRequests, msg: &JsonRpcMessage) 
         }
     }
     false
+}
+
+/// JSON-RPC "server error" code used for requests that are failed locally
+/// because the peer went away (a server never sends it for this reason).
+pub const PEER_GONE_ERROR_CODE: i64 = -32000;
+
+/// Fail every in-flight request with `reason` and empty the map.
+///
+/// A reader loop calls this when it exits for good. The transport kept in
+/// managed state holds its own `Arc` to the map, so the senders would otherwise
+/// never be dropped and every waiter would hang forever. Returns how many
+/// requests were failed.
+pub async fn fail_all_pending(pending: &PendingRequests, reason: &str) -> usize {
+    let drained: Vec<_> = pending.lock().await.drain().collect();
+    let count = drained.len();
+    for (_, tx) in drained {
+        let _ = tx.send(Err(JsonRpcError {
+            code: PEER_GONE_ERROR_CODE,
+            message: reason.to_string(),
+            data: None,
+        }));
+    }
+    count
+}
+
+/// Mark a transport closed (see [`JsonRpcTransport::closed_flag`]) and fail
+/// everything in flight, for a reader loop's fatal exit.
+///
+/// The flag is set BEFORE the map is drained, and `send_request_with_timeout`
+/// checks it AFTER inserting, so a request racing the close is failed by one
+/// side or the other and is never left waiting.
+pub async fn close_pending(pending: &PendingRequests, closed: &AtomicBool, reason: &str) -> usize {
+    closed.store(true, Ordering::SeqCst);
+    fail_all_pending(pending, reason).await
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +342,10 @@ pub fn is_process_alive(pid: Option<u32>) -> bool {
 pub struct JsonRpcTransport {
     pub writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     pub pending: PendingRequests,
+    /// Set once the reader loop has exited for good (see [`close_pending`]).
+    /// A request sent after that fails at once instead of waiting for a reply
+    /// that nothing will ever read.
+    closed: Arc<AtomicBool>,
 }
 
 impl JsonRpcTransport {
@@ -319,6 +357,7 @@ impl JsonRpcTransport {
         Self {
             writer: Arc::new(Mutex::new(BufWriter::new(stdin))),
             pending: new_pending_requests(),
+            closed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -327,27 +366,75 @@ impl JsonRpcTransport {
         Self {
             writer: self.writer.clone(),
             pending: self.pending.clone(),
+            closed: self.closed.clone(),
         }
     }
 
-    /// Send a JSON-RPC request and wait for the response.
+    /// The closed flag, for the reader loop, which holds the pending map but
+    /// not the transport itself (holding the transport would keep the child's
+    /// stdin open). It passes both to [`close_pending`] on its fatal exit.
+    pub fn closed_flag(&self) -> Arc<AtomicBool> {
+        self.closed.clone()
+    }
+
+    /// Send a JSON-RPC request and wait for the response, with no time limit.
     pub async fn send_request(
         &self,
         method: &str,
         params: Option<Value>,
     ) -> Result<Value, String> {
+        self.send_request_with_timeout(method, params, None).await
+    }
+
+    /// Send a JSON-RPC request and wait at most `limit` for the response
+    /// (`None` waits indefinitely).
+    ///
+    /// The pending entry is removed on every failure path (write error,
+    /// timeout, closed transport), so a request that will never be answered
+    /// does not stay in the map.
+    pub async fn send_request_with_timeout(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        limit: Option<Duration>,
+    ) -> Result<Value, String> {
         let id = next_request_id();
         let msg = JsonRpcRequest::new(id, method, params);
+        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
 
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id, tx);
 
-        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        write_message(&mut *writer, &json).await?;
-        drop(writer);
+        if self.closed.load(Ordering::SeqCst) {
+            self.pending.lock().await.remove(&id);
+            return Err("Server process has exited".to_string());
+        }
 
-        match rx.await {
+        let written = {
+            let mut writer = self.writer.lock().await;
+            write_message(&mut *writer, &json).await
+        };
+        if let Err(e) = written {
+            self.pending.lock().await.remove(&id);
+            return Err(e);
+        }
+
+        let outcome = match limit {
+            Some(limit) => match timeout(limit, rx).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    self.pending.lock().await.remove(&id);
+                    return Err(format!(
+                        "Request '{}' timed out after {}s",
+                        method,
+                        limit.as_secs_f32()
+                    ));
+                }
+            },
+            None => rx.await,
+        };
+
+        match outcome {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(rpc_err)) => Err(rpc_err.to_string()),
             Err(_) => Err("Response channel closed (process may have exited)".to_string()),
@@ -375,7 +462,10 @@ impl JsonRpcTransport {
 pub enum ReadMessageResult {
     /// Successfully read and parsed a message.
     Message(JsonRpcMessage),
-    /// Timeout occurred but process is still alive — caller should retry.
+    /// No message started within the timeout (or one was skipped as
+    /// unparseable) and the process is still alive — caller should retry.
+    /// Never returned part-way through a message: the stream is always at a
+    /// message boundary when the caller reads again.
     Timeout,
     /// Fatal error — process exited, EOF, or IO failure.
     Fatal(String),
@@ -407,22 +497,38 @@ pub async fn read_next_message<R: AsyncBufRead + Unpin>(
         }
     };
 
-    // 2. Read body with timeout
+    // 2. Read the body. A timeout here must NOT abandon the message: the bytes
+    //    already consumed would be lost and the next header read would start
+    //    in the middle of this body, breaking the framing for good. So the
+    //    partial buffer is kept and the read resumes for as long as the
+    //    process is alive (the size cap above already bounds the body).
     let mut body = vec![0u8; content_length];
-    match timeout(timeout_duration, reader.read_exact(&mut body)).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) => {
-            return ReadMessageResult::Fatal(format!("Failed to read body: {}", e))
-        }
-        Err(_) => {
-            if !is_process_alive(child_pid) {
+    let mut filled = 0usize;
+    while filled < content_length {
+        match timeout(timeout_duration, reader.read(&mut body[filled..])).await {
+            Ok(Ok(0)) => {
                 return ReadMessageResult::Fatal(
-                    "Process died during body read".to_string(),
+                    "EOF while reading body (process exited)".to_string(),
+                )
+            }
+            Ok(Ok(n)) => filled += n,
+            Ok(Err(e)) => {
+                return ReadMessageResult::Fatal(format!("Failed to read body: {}", e))
+            }
+            Err(_) => {
+                if !is_process_alive(child_pid) {
+                    return ReadMessageResult::Fatal(
+                        "Process died during body read".to_string(),
+                    );
+                }
+                log::debug!(
+                    "JSON-RPC body read stalled at {}/{} bytes, still waiting",
+                    filled,
+                    content_length
                 );
             }
-            return ReadMessageResult::Timeout;
         }
-    };
+    }
 
     // 3. Parse UTF-8 + JSON
     let body_str = match String::from_utf8(body) {
@@ -714,5 +820,156 @@ mod tests {
 
         let dispatched = dispatch_response(&pending, &msg).await;
         assert!(!dispatched, "should return false when no pending request matches");
+    }
+
+    #[tokio::test]
+    async fn fail_all_pending_resolves_every_waiter_with_the_reason() {
+        let pending = new_pending_requests();
+        let (tx1, rx1) = oneshot::channel();
+        let (tx2, rx2) = oneshot::channel();
+        pending.lock().await.insert(1, tx1);
+        pending.lock().await.insert(2, tx2);
+
+        assert_eq!(fail_all_pending(&pending, "server exited").await, 2);
+
+        for rx in [rx1, rx2] {
+            let err = rx.await.expect("waiter is resolved, not dropped").unwrap_err();
+            assert_eq!(err.code, PEER_GONE_ERROR_CODE);
+            assert_eq!(err.message, "server exited");
+        }
+        assert!(pending.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_next_message_survives_a_stall_in_the_middle_of_a_body() {
+        // The peer pauses mid-body for longer than the read timeout, then
+        // finishes and sends a second message. Both must arrive intact: the
+        // old code returned `Timeout` with the first half already consumed,
+        // so the retry parsed the second half as a header.
+        use tokio::io::AsyncWriteExt;
+        let first = r#"{"jsonrpc":"2.0","id":1,"result":{"text":"a slow tool result"}}"#;
+        let second = r#"{"jsonrpc":"2.0","id":2,"result":null}"#;
+        let (mut tx, rx) = tokio::io::duplex(4096);
+        let writer = tokio::spawn(async move {
+            let (head, tail) = first.split_at(first.len() / 2);
+            let framed_head = format!("Content-Length: {}\r\n\r\n{}", first.len(), head);
+            tx.write_all(framed_head.as_bytes()).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            tx.write_all(tail.as_bytes()).await.unwrap();
+            let framed_second = format!("Content-Length: {}\r\n\r\n{}", second.len(), second);
+            tx.write_all(framed_second.as_bytes()).await.unwrap();
+            tx
+        });
+        let mut reader = BufReader::new(rx);
+        let short = Duration::from_millis(40);
+
+        let mut ids = Vec::new();
+        while ids.len() < 2 {
+            match read_next_message(&mut reader, short, None).await {
+                ReadMessageResult::Message(m) => ids.push(m.id.and_then(|v| v.as_u64())),
+                ReadMessageResult::Timeout => continue,
+                ReadMessageResult::Fatal(e) => panic!("framing was lost: {e}"),
+            }
+        }
+        assert_eq!(ids, vec![Some(1), Some(2)]);
+        drop(writer.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn read_next_message_reports_eof_inside_a_body_as_fatal() {
+        let input = b"Content-Length: 50\r\n\r\n{\"jsonrpc\":";
+        let mut reader = BufReader::new(&input[..]);
+        match read_next_message(&mut reader, Duration::from_secs(1), None).await {
+            ReadMessageResult::Fatal(e) => assert!(e.contains("EOF"), "{e}"),
+            _ => panic!("a truncated body must be fatal"),
+        }
+    }
+
+    /// A transport over a real child's stdin (the writer type is concrete).
+    /// `sleep` never reads it and never answers: the silent-server case.
+    #[cfg(unix)]
+    fn transport_over_sleep(seconds: &str) -> (tokio::process::Child, JsonRpcTransport) {
+        let mut child = tokio::process::Command::new("sleep")
+            .arg(seconds)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn sleep");
+        let stdin = child.stdin.take().expect("piped");
+        (child, JsonRpcTransport::new(stdin))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn send_request_times_out_and_forgets_the_request() {
+        let (_child, transport) = transport_over_sleep("30");
+
+        let err = transport
+            .send_request_with_timeout("tools/call", None, Some(Duration::from_millis(100)))
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("timed out"), "{err}");
+        assert!(
+            transport.pending.lock().await.is_empty(),
+            "a timed-out request must not stay in the pending map"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn send_request_forgets_the_request_when_the_write_fails() {
+        let (mut child, transport) = transport_over_sleep("0");
+        let _ = child.wait().await; // the read end of its stdin is now closed
+
+        let result = transport
+            .send_request_with_timeout("initialize", None, Some(Duration::from_secs(5)))
+            .await;
+
+        assert!(result.is_err());
+        assert!(
+            transport.pending.lock().await.is_empty(),
+            "a request that was never written must not stay in the pending map"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn close_fails_requests_in_flight_and_every_later_one() {
+        let (_child, transport) = transport_over_sleep("30");
+        let in_flight = transport.clone_handle();
+        let waiting =
+            tokio::spawn(async move { in_flight.send_request("tools/call", None).await });
+        // Let the request reach the pending map.
+        while transport.pending.lock().await.is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let failed = close_pending(
+            &transport.pending,
+            &transport.closed_flag(),
+            "Server process exited: EOF",
+        )
+        .await;
+        assert_eq!(failed, 1);
+
+        let err = tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .expect("the in-flight request is failed, not left hanging")
+            .unwrap()
+            .unwrap_err();
+        assert!(err.contains("Server process exited"), "{err}");
+
+        // No time limit given: this would hang if `closed` were ignored.
+        let later = tokio::time::timeout(
+            Duration::from_secs(5),
+            transport.send_request("tools/list", None),
+        )
+        .await
+        .expect("a request on a closed transport fails at once");
+        assert!(later.is_err());
+        assert!(transport.pending.lock().await.is_empty());
     }
 }

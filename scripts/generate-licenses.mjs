@@ -34,6 +34,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectNpmPackages } from "./license-npm-closure.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "src/generated/third-party-licenses.json");
@@ -129,21 +130,9 @@ function npmComponents() {
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
   });
-  const roots = JSON.parse(raw);
-  const seen = new Map();
-  const walk = (deps) => {
-    for (const [name, dep] of Object.entries(deps ?? {})) {
-      if (!dep?.version) continue;
-      const key = `${name}@${dep.version}`;
-      if (!seen.has(key)) {
-        seen.set(key, { name, version: dep.version, path: dep.path ?? null });
-        walk(dep.dependencies);
-      }
-    }
-  };
-  for (const root of roots) walk(root.dependencies);
-
-  return [...seen.values()]
+  // The walk lives in its own module: it has a subtree-dropping failure mode
+  // that needs a test, and importing this file writes the notice.
+  return collectNpmPackages(JSON.parse(raw))
     // Not installed on this machine, so not in this build: the optional
     // per-platform binaries of a native package (`@napi-rs/canvas-win32-*`
     // and friends) are in the dependency graph on every OS and unpacked on

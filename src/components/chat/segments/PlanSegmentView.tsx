@@ -44,7 +44,7 @@ export const PlanSegmentView = memo(function PlanSegmentView({ segment, isStream
           : <ChevronRight className="h-3 w-3" strokeWidth={1.5} />
         }
         <span className="font-medium">{t("chat.plan")}</span>
-        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+        <span className="text-[10px] text-muted-foreground tabular-nums">
           {segment.entries.length} {segment.entries.length === 1 ? 'step' : 'steps'}
         </span>
       </button>

@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils";
  *
  * These are semantic status indicators (a traffic-light for the local
  * inference server), so they intentionally use chromatic status colours
- * rather than the strict-neutral UI palette — matching the always-visible
- * strip dot users already recognise:
+ * rather than the strict-neutral UI palette — via the audited status tokens
+ * in `globals.css` (`--color-status-ok` / `--color-status-warn`) and
+ * `--color-destructive`, never hardcoded Tailwind hues:
  *   running  → green
  *   starting → amber, pulsing (pulse gated on reduced motion)
  *   error    → red
@@ -17,11 +18,11 @@ import { cn } from "@/lib/utils";
  */
 export function localAiDotClass(serverStatus: string, reducedMotion: boolean): string {
   return serverStatus === "running"
-    ? "bg-green-500"
+    ? "bg-[var(--color-status-ok)]"
     : serverStatus === "starting"
-      ? cn("bg-amber-500", !reducedMotion && "animate-pulse")
+      ? cn("bg-[var(--color-status-warn)]", !reducedMotion && "animate-pulse")
       : serverStatus === "error"
-        ? "bg-red-500"
+        ? "bg-destructive"
         : "bg-muted-foreground/30";
 }
 

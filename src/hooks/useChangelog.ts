@@ -19,6 +19,45 @@ export interface Changelog {
   releases: Release[];
 }
 
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((item) => typeof item === 'string');
+}
+
+function isRelease(v: unknown): v is Release {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  if (typeof r.version !== 'string' || typeof r.date !== 'string') return false;
+  if (r.previousVersion !== undefined && typeof r.previousVersion !== 'string') return false;
+  if (typeof r.sections !== 'object' || r.sections === null || Array.isArray(r.sections)) return false;
+  const sections = r.sections as Record<string, unknown>;
+  for (const key of ['features', 'fixes', 'improvements']) {
+    if (sections[key] !== undefined && !isStringArray(sections[key])) return false;
+  }
+  return r.underTheHood === undefined || isStringArray(r.underTheHood);
+}
+
+/**
+ * Validate a fetched `changelog.json`.
+ *
+ * The remote copy is network data that every OLDER client reads too, so a
+ * future format change must not reach consumers that index into it in render
+ * (`changelog.releases.filter`, `release.sections.features`). Entries of the
+ * wrong shape are dropped; a document with no usable `releases` array is
+ * rejected as a whole (`null`), and the caller keeps what it already has.
+ */
+export function parseChangelog(data: unknown): Changelog | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const releases = (data as { releases?: unknown }).releases;
+  if (!Array.isArray(releases)) return null;
+  const valid = releases.filter(isRelease).map((r) => ({
+    ...r,
+    previousVersion: r.previousVersion ?? '',
+  }));
+  // Entries, but none of them usable: a format this build does not know.
+  if (releases.length > 0 && valid.length === 0) return null;
+  return { releases: valid };
+}
+
 // One binary, one stream — the alpha channel is gone. The listing carries no
 // `-` prerelease segment, and there is only ever one URL to fetch.
 // File names + URLs mirror the build artifact naming in
@@ -107,8 +146,8 @@ export function useChangelog() {
       try {
         const res = await fetch(bundledUrl);
         if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) setChangelog(data);
+          const data = parseChangelog(await res.json());
+          if (data && !cancelled) setChangelog(data);
         }
       } catch {
         // Expected: bundled changelog may not exist in dev builds
@@ -121,8 +160,9 @@ export function useChangelog() {
         const res = await tauriFetch(remoteUrl, { signal: controller.signal });
         clearTimeout(timeout);
         if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) setChangelog(data);
+          // A remote copy that fails validation leaves the bundled one in place.
+          const data = parseChangelog(await res.json());
+          if (data && !cancelled) setChangelog(data);
         }
       } catch {
         // Expected: remote changelog unavailable (offline, timeout) — bundled data already loaded

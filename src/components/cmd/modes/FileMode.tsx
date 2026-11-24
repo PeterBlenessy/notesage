@@ -87,6 +87,8 @@ function FileMode({
   useLocale();
   const [results, setResults] = useState<IndexFilenameSearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // A failed index query is not "no files match": keep the error and show it.
+  const [searchError, setSearchError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   // MRU empty-state — when the filter is empty, we render this list
@@ -111,6 +113,7 @@ function FileMode({
     if (isEmptyFilter) {
       setResults([]);
       setHighlightedIndex(0);
+      setSearchError(null);
       return;
     }
 
@@ -126,11 +129,13 @@ function FileMode({
         if (cancelled) return;
         setResults(fetched);
         setHighlightedIndex(0);
+        setSearchError(null);
       } catch (err) {
         if (cancelled) return;
         console.error("[FileMode] indexSearchFilenames failed", err);
         setResults([]);
         setHighlightedIndex(0);
+        setSearchError(err instanceof Error ? err.message : String(err));
       }
     }, QUERY_DEBOUNCE_MS);
 
@@ -257,6 +262,21 @@ function FileMode({
           className="px-3 py-2 text-xs text-muted-foreground"
         >
           No recent files in the active scope.
+        </div>
+      );
+    }
+    if (searchError) {
+      return (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={t("cmd.fileSearchResults")}
+          className="px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span role="alert" className="text-destructive">
+            {t("search.indexUnavailable")}
+          </span>
+          <span className="block mt-1 text-[11px] opacity-70">{searchError}</span>
         </div>
       );
     }

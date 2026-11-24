@@ -277,7 +277,7 @@ function RecentRow({
               ) : parentHint ? (
                 <span
                   aria-hidden="true"
-                  className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
+                  className="text-xs text-muted-foreground truncate ml-auto max-w-[10ch]"
                 >
                   {parentHint}
                 </span>
@@ -416,16 +416,12 @@ export function RecentSection({
             ))}
           </div>
           {hasOverflow && (
-            // `tabIndex={-1}` per the audit 2026-04-27 finding #11
-            // follow-up — keeps the temporary "Show more" affordance
-            // out of the natural Tab order so Tab from a recent row
-            // jumps straight to the next section. Mouse users still
-            // see and click it; users who want a permanent larger
-            // view bump the cap in Settings > Appearance > Sidebar
-            // Composition.
+            // In the Tab order on purpose (audit 2026-11-22 §11): rows
+            // beyond the cap are not rendered, so this toggle is the only
+            // keyboard path to them. An earlier `tabIndex={-1}` (audit
+            // 2026-04-27 #11) made them unreachable without a mouse.
             <button
               type="button"
-              tabIndex={-1}
               aria-expanded={effectiveExpanded}
               aria-label={
                 effectiveExpanded ? "Show fewer recent files" : "Show more recent files"
@@ -435,6 +431,7 @@ export function RecentSection({
                 "self-start px-2 py-0.5 text-xs text-muted-foreground",
                 "hover:text-foreground underline-offset-2 hover:underline",
                 "transition-colors duration-150",
+                "rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               )}
             >
               {effectiveExpanded ? "Show fewer" : "Show more"}

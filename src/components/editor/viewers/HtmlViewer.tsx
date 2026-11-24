@@ -3,6 +3,7 @@ import { Eye, ShieldAlert, Search, ChevronUp, ChevronDown, X } from "lucide-reac
 import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
+import { resolveLocalScriptPath } from "@/lib/html-local-script";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import {
   injectFindScript,
@@ -288,8 +289,10 @@ export function HtmlViewer({
       let processed = content;
       const matches = [...content.matchAll(srcPattern)];
       for (const match of matches) {
-        const relPath = match[1];
-        const absPath = `${dir}/${relPath.replace(/^\.\//, "")}`;
+        // Only files inside the HTML file's own directory are inlined; a
+        // `./../…` src is left as the (unresolvable) tag it was.
+        const absPath = resolveLocalScriptPath(dir, match[1]);
+        if (absPath === null) continue;
         try {
           const fileContent = await invoke<string>("read_file", { path: absPath });
           processed = processed.replace(match[0], `<script>${fileContent}</script>`);

@@ -8,6 +8,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { PptxPresentation } from "@/lib/pptx-types";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -158,15 +160,16 @@ interface PptxZoomControlsProps {
 }
 
 export function PptxZoomControls({ zoom }: PptxZoomControlsProps) {
+  useLocale();
   return (
     <>
-      <Button variant="ghost" size="icon-xs" onClick={zoom.zoomOut} title="Zoom out">
+      <Button variant="ghost" size="icon-xs" onClick={zoom.zoomOut} title={t("editor.zoomOut")} aria-label={t("editor.zoomOut")}>
         <ZoomOut className="h-3.5 w-3.5" strokeWidth={1.5} />
       </Button>
       <span className="text-xs text-muted-foreground tabular-nums min-w-[40px] text-center">
         {Math.round(zoom.scale * 100)}%
       </span>
-      <Button variant="ghost" size="icon-xs" onClick={zoom.zoomIn} title="Zoom in">
+      <Button variant="ghost" size="icon-xs" onClick={zoom.zoomIn} title={t("editor.zoomIn")} aria-label={t("editor.zoomIn")}>
         <ZoomIn className="h-3.5 w-3.5" strokeWidth={1.5} />
       </Button>
       <Separator orientation="vertical" className="h-4 mx-1" />
@@ -175,7 +178,8 @@ export function PptxZoomControls({ zoom }: PptxZoomControlsProps) {
         size="icon-xs"
         onClick={zoom.toggleFitWidth}
         className={zoom.fitMode === "width" ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
-        title="Fit to width"
+        title={t("editor.fitToWidth")}
+        aria-label={t("editor.fitToWidth")}
       >
         <SquareDashedBottom className="h-3.5 w-3.5" strokeWidth={1.5} />
       </Button>
@@ -184,7 +188,8 @@ export function PptxZoomControls({ zoom }: PptxZoomControlsProps) {
         size="icon-xs"
         onClick={zoom.toggleFitPage}
         className={zoom.fitMode === "page" ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
-        title="Fit to page"
+        title={t("editor.fitToPage")}
+        aria-label={t("editor.fitToPage")}
       >
         <RectangleVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
       </Button>

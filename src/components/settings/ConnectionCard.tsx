@@ -39,9 +39,9 @@ const AUTH_BADGES: Record<string, string> = {
 
 function StatusDot({ status, tooltip }: { status: Connection['status']; tooltip?: string }) {
   const colors: Record<Connection['status'], string> = {
-    connected: 'bg-green-500',
-    expired: 'bg-yellow-500',
-    error: 'bg-red-500',
+    connected: 'bg-[var(--color-status-ok)]',
+    expired: 'bg-[var(--color-status-warn)]',
+    error: 'bg-destructive',
     not_installed: 'bg-muted-foreground/40',
   };
 
@@ -507,9 +507,10 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             onClick={testConnection}
             disabled={health === 'testing'}
             title={t("conn.testConnection")}
+            aria-label={t("conn.testConnection")}
           >
             {health === 'testing' && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />}
-            {health === 'ok' && <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />}
+            {health === 'ok' && <Check className="h-3.5 w-3.5 text-[var(--color-status-ok)]" strokeWidth={1.5} />}
             {health === 'fail' && <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />}
             {health === 'idle' && <HeartPulse className="h-3.5 w-3.5" strokeWidth={1.5} />}
           </Button>
@@ -528,6 +529,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 onClick={() => setReauthOpen(true)}
                 title="Re-authenticate"
+                aria-label="Re-authenticate"
               >
                 <KeyRound className="h-3.5 w-3.5" strokeWidth={1.5} />
               </Button>
@@ -564,6 +566,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={() => onConfigure(connection)}
               title={t("conn.configure")}
+              aria-label={t("conn.configure")}
             >
               <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -575,6 +578,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               className="h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => onDisconnect(connection)}
               title={t("conn.disconnect")}
+              aria-label={t("conn.disconnect")}
             >
               <Unplug className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>

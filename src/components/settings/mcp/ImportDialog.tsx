@@ -16,9 +16,10 @@ import {
   useMcpStore,
   type McpServerEntry,
 } from '@/stores/mcp-store';
-import { filterValidMcpConfigs, extractMcpServersRecord } from '@/lib/mcp/config-guards';
+import { filterValidMcpConfigs } from '@/lib/mcp/config-guards';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
+import { McpConfigUnreadableError, readMcpServersForUpdate } from './mcp-config-file';
 
 interface ImportSource {
   id: string;
@@ -108,16 +109,10 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       // Read existing global config
       const home = await invoke<string>('get_home_dir');
       const configPath = `${home}/.notesage/mcp.json`;
-      let existing: Record<string, unknown> = {};
-      try {
-        const content = await invoke<string>('read_file', { path: configPath });
-        // The file is user-editable — a half-written or hand-edited envelope
-        // must degrade to an empty record, not crash the import.
-        const parsed: unknown = JSON.parse(content);
-        existing = extractMcpServersRecord(parsed);
-      } catch {
-        // File doesn't exist or contains invalid JSON
-      }
+      // The file is user-editable. A missing file starts fresh; a half-written
+      // or hand-edited one throws, so the save below (which rewrites the whole
+      // file) cannot delete the servers already in it.
+      const existing = await readMcpServersForUpdate(configPath);
 
       // Merge
       const merged = { ...existing, ...configs };
@@ -127,7 +122,11 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       requestRescan();
       onOpenChange(false);
     } catch (err) {
-      toast.error(`Failed to import: ${err}`);
+      if (err instanceof McpConfigUnreadableError) {
+        toast.error(t("mcp.configUnreadable"));
+      } else {
+        toast.error(`Failed to import: ${err}`);
+      }
     } finally {
       setImporting(false);
     }

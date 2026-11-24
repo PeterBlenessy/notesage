@@ -309,7 +309,7 @@ export function UseCaseRoutingSettings() {
                           <span
                             className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                               conn.status === 'connected'
-                                ? 'bg-green-500'
+                                ? 'bg-[var(--color-status-ok)]'
                                 : conn.status === 'error'
                                   ? 'bg-destructive'
                                   : 'bg-muted-foreground'

@@ -193,7 +193,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isActivelyStream
 
         {/* Interrupted indicator */}
         {!isUser && message.interrupted && (
-          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
+          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
             <CircleStop size={10} strokeWidth={1.5} className="shrink-0" />
             <span className="italic">{t("chat.interrupted")}</span>
           </div>
@@ -201,7 +201,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isActivelyStream
 
         {/* Provider badge */}
         {!isUser && message.connectionProvider && !isActivelyStreaming && message.content && (
-          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
+          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
             <ProviderLogo provider={message.connectionProvider} className="w-3 h-3" />
             <span>{message.connectionLabel || message.connectionProvider}</span>
           </div>

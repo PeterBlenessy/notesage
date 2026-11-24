@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Command;
+use std::process::Output;
+use std::time::Duration;
+use tokio::process::Command;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -36,16 +38,6 @@ pub struct DiffHunk {
     pub insert_text: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorktreeInfo {
-    /// Absolute path to the worktree
-    pub path: String,
-    /// Branch name (empty if detached HEAD)
-    pub branch: String,
-    /// Whether this is the main (bare) worktree
-    pub is_main: bool,
-}
-
 /// Config overrides passed to every git invocation, ahead of the subcommand.
 ///
 /// `core.fsmonitor` names a program git runs on `status`, `diff`, `add`, … The
@@ -58,6 +50,36 @@ const GIT_SAFE_CONFIG: [&str; 2] = ["-c", "core.fsmonitor=false"];
 /// `git diff` flags that stop it running configured programs: external diff
 /// drivers (`diff.external`, `diff.<driver>.command`) and textconv filters.
 const GIT_DIFF_NO_EXEC: [&str; 2] = ["--no-ext-diff", "--no-textconv"];
+
+/// Turns hooks off for one invocation. Passed to the commands that only READ
+/// the repository (`status`, `rev-parse`, `branch`, `diff`):
+/// they still write the index when they refresh it, and git then runs the
+/// repo's `post-index-change` hook, which for a folder the app merely opened
+/// is someone else's program. Commands the user asks for by name (`commit`,
+/// `switch`, `add`, `reset`, `init`) keep their hooks.
+const GIT_NO_HOOKS: [&str; 2] = ["-c", "core.hooksPath=/dev/null"];
+
+/// How long a git command may run before it is killed. Every command here is
+/// awaited by the UI, and a git that waits on a credential or signing prompt
+/// nobody can see would otherwise never return.
+const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// `git commit` runs the user's pre-commit hooks, which can be slow.
+const GIT_COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The only `git config --global` keys the app reads or writes (the commit
+/// dialog's identity form). Anything else is refused: a writable
+/// `core.fsmonitor`, `core.pager` or `alias.*` is a way to run a program, and
+/// an option-style "key" such as `--edit` or `--file=…` is not a key at all.
+const GIT_CONFIG_KEYS: [&str; 2] = ["user.name", "user.email"];
+
+fn validate_config_key(key: &str) -> Result<(), String> {
+    if GIT_CONFIG_KEYS.contains(&key) {
+        Ok(())
+    } else {
+        Err(format!("Unsupported git config key: '{}'", key))
+    }
+}
 
 /// Reject a branch/ref name that git would read as an option.
 ///
@@ -91,26 +113,65 @@ fn branch_diff_args<'a>(extra: &[&'a str], range: &'a str, file: Option<&'a str>
     args
 }
 
-/// Run a git command in the given directory, returning stdout on success.
-fn git(dir: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .current_dir(dir)
-        .args(GIT_SAFE_CONFIG)
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+/// Run a prepared command to completion without blocking a runtime worker,
+/// killing it if it outlives `timeout`.
+///
+/// stdin is closed and terminal prompts are off, so a git that wants a
+/// password fails at once instead of waiting for input that cannot arrive.
+async fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<Output, String> {
+    command
+        .stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        // Dropping the timed-out future must not leave the process running.
+        .kill_on_drop(true);
+    match tokio::time::timeout(timeout, command.output()).await {
+        Ok(result) => result.map_err(|e| format!("Failed to run git: {}", e)),
+        Err(_) => Err(format!(
+            "git timed out after {} seconds",
+            timeout.as_secs()
+        )),
+    }
+}
 
+/// Run git with the safe config, `config` overrides (e.g. [`GIT_NO_HOOKS`])
+/// and `args`, in `dir` when given.
+async fn git_output(
+    dir: Option<&str>,
+    config: &[&str],
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Output, String> {
+    let mut command = Command::new("git");
+    if let Some(dir) = dir {
+        command.current_dir(dir);
+    }
+    command.args(GIT_SAFE_CONFIG).args(config).args(args);
+    run_with_timeout(command, timeout).await
+}
+
+fn stdout_or_stderr(output: Output) -> Result<String, String> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(stderr)
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
+}
+
+/// Run a git command the user asked for (hooks enabled) in the given
+/// directory, returning stdout on success.
+async fn git(dir: &str, args: &[&str]) -> Result<String, String> {
+    stdout_or_stderr(git_output(Some(dir), &[], args, GIT_TIMEOUT).await?)
+}
+
+/// Run a git command that only reads the repository: as [`git`], with hooks
+/// off (see [`GIT_NO_HOOKS`]).
+async fn git_read(dir: &str, args: &[&str]) -> Result<String, String> {
+    stdout_or_stderr(git_output(Some(dir), &GIT_NO_HOOKS, args, GIT_TIMEOUT).await?)
 }
 
 #[tauri::command]
 pub async fn git_check_available() -> Result<bool, String> {
-    match Command::new("git").arg("--version").output() {
+    match git_output(None, &[], &["--version"], GIT_TIMEOUT).await {
         Ok(output) => Ok(output.status.success()),
         Err(_) => Ok(false),
     }
@@ -118,7 +179,7 @@ pub async fn git_check_available() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn git_is_repo(path: String) -> Result<bool, String> {
-    match git(&path, &["rev-parse", "--is-inside-work-tree"]) {
+    match git_read(&path, &["rev-parse", "--is-inside-work-tree"]).await {
         Ok(_) => Ok(true),
         Err(_) => Ok(false),
     }
@@ -126,16 +187,14 @@ pub async fn git_is_repo(path: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn git_init(path: String) -> Result<(), String> {
-    git(&path, &["init"])?;
+    git(&path, &["init"]).await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn git_get_config(key: String) -> Result<Option<String>, String> {
-    let output = Command::new("git")
-        .args(["config", "--global", &key])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    validate_config_key(&key)?;
+    let output = git_output(None, &[], &["config", "--global", &key], GIT_TIMEOUT).await?;
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -151,10 +210,14 @@ pub async fn git_get_config(key: String) -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub async fn git_set_config(key: String, value: String) -> Result<(), String> {
-    let output = Command::new("git")
-        .args(["config", "--global", &key, &value])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    validate_config_key(&key)?;
+    let output = git_output(
+        None,
+        &[],
+        &["config", "--global", &key, &value],
+        GIT_TIMEOUT,
+    )
+    .await?;
 
     if output.status.success() {
         Ok(())
@@ -166,16 +229,17 @@ pub async fn git_set_config(key: String, value: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
-    let repo_root = git(&path, &["rev-parse", "--show-toplevel"])?;
+    let repo_root = git_read(&path, &["rev-parse", "--show-toplevel"]).await?;
 
     // Use -z for NUL-terminated entries — paths are output verbatim, never C-quoted.
     // This avoids encoding/quoting issues that corrupt path parsing.
-    let output = Command::new("git")
-        .current_dir(&path)
-        .args(GIT_SAFE_CONFIG)
-        .args(["status", "--porcelain=v1", "-z"])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let output = git_output(
+        Some(&path),
+        &GIT_NO_HOOKS,
+        &["status", "--porcelain=v1", "-z"],
+        GIT_TIMEOUT,
+    )
+    .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -287,9 +351,9 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
 
 #[tauri::command]
 pub async fn git_branch_current(path: String) -> Result<String, String> {
-    match git(&path, &["branch", "--show-current"]) {
+    match git_read(&path, &["branch", "--show-current"]).await {
         Ok(branch) if !branch.is_empty() => Ok(branch),
-        Ok(_) => match git(&path, &["rev-parse", "--short", "HEAD"]) {
+        Ok(_) => match git_read(&path, &["rev-parse", "--short", "HEAD"]).await {
             Ok(hash) => Ok(format!("HEAD ({})", hash)),
             Err(_) => Ok("main".to_string()),
         },
@@ -299,7 +363,7 @@ pub async fn git_branch_current(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn git_branch_list(path: String) -> Result<Vec<String>, String> {
-    let output = git(&path, &["branch", "--list", "--format=%(refname:short)"])?;
+    let output = git_read(&path, &["branch", "--list", "--format=%(refname:short)"]).await?;
     let mut names: Vec<String> = output
         .lines()
         .filter(|l| !l.is_empty())
@@ -312,7 +376,7 @@ pub async fn git_branch_list(path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn git_branch_switch(path: String, branch: String) -> Result<(), String> {
     validate_ref_name(&branch)?;
-    git(&path, &["switch", &branch])?;
+    git(&path, &["switch", &branch]).await?;
     Ok(())
 }
 
@@ -324,7 +388,7 @@ pub async fn git_stage(path: String, files: Vec<String>) -> Result<(), String> {
     let mut args = vec!["add", "--"];
     let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
     args.extend(file_refs);
-    git(&path, &args)?;
+    git(&path, &args).await?;
     Ok(())
 }
 
@@ -336,22 +400,16 @@ pub async fn git_unstage(path: String, files: Vec<String>) -> Result<(), String>
     let mut args = vec!["reset", "HEAD", "--"];
     let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
     args.extend(file_refs);
-    git(&path, &args)?;
+    git(&path, &args).await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn git_commit(path: String, message: String) -> Result<String, String> {
-    let name_check = Command::new("git")
-        .current_dir(&path)
-        .args(["config", "user.name"])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
-    let email_check = Command::new("git")
-        .current_dir(&path)
-        .args(["config", "user.email"])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let name_check =
+        git_output(Some(&path), &[], &["config", "user.name"], GIT_TIMEOUT).await?;
+    let email_check =
+        git_output(Some(&path), &[], &["config", "user.email"], GIT_TIMEOUT).await?;
 
     let has_name = name_check.status.success()
         && !String::from_utf8_lossy(&name_check.stdout).trim().is_empty();
@@ -362,9 +420,17 @@ pub async fn git_commit(path: String, message: String) -> Result<String, String>
         return Err("GIT_CONFIG_MISSING".to_string());
     }
 
-    git(&path, &["commit", "-m", &message])?;
+    stdout_or_stderr(
+        git_output(
+            Some(&path),
+            &[],
+            &["commit", "-m", &message],
+            GIT_COMMIT_TIMEOUT,
+        )
+        .await?,
+    )?;
 
-    let hash = git(&path, &["rev-parse", "--short", "HEAD"])?;
+    let hash = git_read(&path, &["rev-parse", "--short", "HEAD"]).await?;
     Ok(hash)
 }
 
@@ -382,7 +448,8 @@ pub async fn git_diff_files(
     validate_ref_name(&base_branch)?;
     validate_ref_name(&compare_branch)?;
     let range = format!("{}...{}", base_branch, compare_branch);
-    let output = git(&repo_path, &branch_diff_args(&["--name-only"], &range, None))?;
+    let output =
+        git_read(&repo_path, &branch_diff_args(&["--name-only"], &range, None)).await?;
     Ok(output
         .lines()
         .filter(|l| !l.is_empty())
@@ -401,18 +468,12 @@ pub async fn git_diff_file(
     validate_ref_name(&base_branch)?;
     validate_ref_name(&compare_branch)?;
     let range = format!("{}...{}", base_branch, compare_branch);
-    let output = git(
+    let output = git_read(
         &repo_path,
         &branch_diff_args(&["--no-color"], &range, Some(&file_path)),
-    )?;
+    )
+    .await?;
     Ok(parse_unified_diff(&output))
-}
-
-/// List active worktrees and their branches.
-#[tauri::command]
-pub async fn git_worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
-    let output = git(&repo_path, &["worktree", "list", "--porcelain"])?;
-    Ok(parse_worktree_list(&output))
 }
 
 // ---------------------------------------------------------------------------
@@ -506,54 +567,11 @@ fn parse_range(s: &str) -> Option<(u32, u32)> {
     }
 }
 
-/// Parse `git worktree list --porcelain` output.
-fn parse_worktree_list(output: &str) -> Vec<WorktreeInfo> {
-    let mut worktrees = Vec::new();
-    let mut current_path = String::new();
-    let mut current_branch = String::new();
-    let mut is_main = false;
-
-    for line in output.lines() {
-        if let Some(path) = line.strip_prefix("worktree ") {
-            // Save previous worktree if we have one
-            if !current_path.is_empty() {
-                worktrees.push(WorktreeInfo {
-                    path: current_path.clone(),
-                    branch: current_branch.clone(),
-                    is_main,
-                });
-            }
-            current_path = path.to_string();
-            current_branch = String::new();
-            is_main = false;
-        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
-            // Branch ref like "refs/heads/main" -> "main"
-            current_branch = branch_ref
-                .strip_prefix("refs/heads/")
-                .unwrap_or(branch_ref)
-                .to_string();
-        } else if line == "bare" {
-            is_main = true;
-        } else if line.is_empty() {
-            // Blank line separates worktree entries — handled by next "worktree " prefix
-        }
-    }
-
-    // Don't forget the last entry
-    if !current_path.is_empty() {
-        worktrees.push(WorktreeInfo {
-            path: current_path,
-            branch: current_branch,
-            is_main,
-        });
-    }
-
-    worktrees
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The fixtures below shell out synchronously; the module itself is async.
+    use std::process::Command;
 
     // -----------------------------------------------------------------------
     // Helper: check if git is available on this machine
@@ -760,76 +778,6 @@ diff --git a/file.txt b/file.txt
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].delete_text, "removed 1\nremoved 2");
         assert!(hunks[0].insert_text.is_empty());
-    }
-
-    // =======================================================================
-    // parse_worktree_list
-    // =======================================================================
-
-    #[test]
-    fn parse_worktree_list_empty() {
-        let result = parse_worktree_list("");
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn parse_worktree_list_single_worktree() {
-        let output = "\
-worktree /home/user/project
-HEAD abc1234
-branch refs/heads/main";
-        let result = parse_worktree_list(output);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].path, "/home/user/project");
-        assert_eq!(result[0].branch, "main");
-        assert!(!result[0].is_main);
-    }
-
-    #[test]
-    fn parse_worktree_list_main_plus_linked() {
-        let output = "\
-worktree /home/user/project
-HEAD abc1234
-branch refs/heads/main
-
-worktree /home/user/project-feature
-HEAD def5678
-branch refs/heads/feature-x";
-        let result = parse_worktree_list(output);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].path, "/home/user/project");
-        assert_eq!(result[0].branch, "main");
-        assert_eq!(result[1].path, "/home/user/project-feature");
-        assert_eq!(result[1].branch, "feature-x");
-    }
-
-    #[test]
-    fn parse_worktree_list_bare_repo() {
-        let output = "\
-worktree /home/user/project.git
-HEAD abc1234
-bare
-
-worktree /home/user/project-main
-HEAD abc1234
-branch refs/heads/main";
-        let result = parse_worktree_list(output);
-        assert_eq!(result.len(), 2);
-        assert!(result[0].is_main); // bare = main worktree
-        assert_eq!(result[0].branch, ""); // bare repos have no branch
-        assert!(!result[1].is_main);
-        assert_eq!(result[1].branch, "main");
-    }
-
-    #[test]
-    fn parse_worktree_list_detached_head() {
-        let output = "\
-worktree /home/user/project
-HEAD abc1234
-detached";
-        let result = parse_worktree_list(output);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].branch, ""); // no branch line for detached HEAD
     }
 
     // =======================================================================
@@ -1191,5 +1139,79 @@ detached";
         assert!(leftovers.is_empty(), "git wrote a file named by a branch argument");
         // Still on main: `--detach` was not interpreted.
         assert_eq!(git_branch_current(path).await.unwrap(), "main");
+    }
+
+    #[test]
+    fn config_keys_are_limited_to_the_commit_identity() {
+        assert!(validate_config_key("user.name").is_ok());
+        assert!(validate_config_key("user.email").is_ok());
+        for key in [
+            "core.fsmonitor",
+            "core.pager",
+            "core.hooksPath",
+            "alias.st",
+            "--edit",
+            "--file=/tmp/x",
+            "",
+            "user.name ",
+        ] {
+            assert!(validate_config_key(key).is_err(), "accepted {:?}", key);
+        }
+    }
+
+    #[tokio::test]
+    async fn config_commands_refuse_other_keys_before_running_git() {
+        // No git needed: the key check comes first.
+        let err = git_set_config("core.fsmonitor".to_string(), "/tmp/x.sh".to_string())
+            .await
+            .unwrap_err();
+        assert!(err.contains("Unsupported git config key"), "{}", err);
+        assert!(git_get_config("--edit".to_string()).await.is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_that_outlives_its_timeout_is_stopped_with_an_error() {
+        let mut command = Command::new("sleep");
+        command.arg("30");
+        let started = std::time::Instant::now();
+        let err = run_with_timeout(command.into(), Duration::from_millis(200))
+            .await
+            .unwrap_err();
+        assert!(err.contains("timed out"), "{}", err);
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the timeout did not cut the command short"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn read_only_commands_do_not_run_repo_hooks() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_git_repo();
+        let markers = tempfile::tempdir().unwrap();
+        let marker = markers.path().join("hook-ran");
+        // `git status` refreshes the index, which fires post-index-change.
+        let hooks = repo.path().join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        marker_script(&hooks, "post-index-change", &marker);
+
+        let path = repo.path().to_string_lossy().to_string();
+        // Same content, new mtime: status must refresh the entry and so
+        // rewrite the index, which is what fires the hook.
+        std::fs::File::options()
+            .write(true)
+            .open(repo.path().join("init.md"))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600))
+            .unwrap();
+        git_status(path.clone()).await.unwrap();
+        git_branch_list(path.clone()).await.unwrap();
+        git_branch_current(path).await.unwrap();
+
+        assert!(!marker.exists(), "a read-only git command ran a repo hook");
     }
 }

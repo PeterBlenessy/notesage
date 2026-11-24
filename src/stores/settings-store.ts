@@ -9,6 +9,7 @@ import {
 } from '@/lib/quiet-chrome-presets';
 import { setLocale as applyLocale, SUPPORTED_LOCALES, type Locale } from '@/lib/i18n';
 import type { LibraryRootKind } from "@/lib/library-root";
+import { reportRehydrateError } from "@/lib/persist-rehydrate";
 
 
 type Theme = "light" | "dark" | "system";
@@ -1258,7 +1259,8 @@ export const useSettingsStore = create<SettingsStore>()(
         const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, libraryHoldRoots: _lhr, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) reportRehydrateError("notesage-settings", error);
         // Push the persisted language into the i18n module, which starts at the
         // platform default — without this the app would launch in the OS
         // language and only switch once Settings was touched (#705). A value

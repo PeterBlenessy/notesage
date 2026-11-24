@@ -9,10 +9,61 @@ import { hashPath } from "@/lib/comment-storage";
 import { isUnder } from "@/lib/library-migration-paths";
 import { followPath, planLibraryFollow } from "@/lib/library-follow";
 import { log } from "@/lib/logger";
+import { toast } from "sonner";
+import { t } from "@/lib/i18n";
 
 export interface FollowResult {
   /** Projects and explorer folders re-pointed at the new library. */
   followed: string[];
+}
+
+/** Delays between attempts to re-read a followed tree that could not be listed. */
+export const FOLLOW_TREE_RETRY_DELAYS_MS = [5_000, 20_000, 60_000];
+
+interface UnreadTree {
+  kind: "project" | "folder";
+  path: string;
+}
+
+/**
+ * A followed project or folder whose new location could not be listed is
+ * re-pointed with an empty tree — and nothing would ever fill it: the
+ * watchers on the new root report only future events. So the read is retried
+ * for a while (the usual cause is iCloud still bringing the folder down).
+ */
+function retryUnreadTrees(pending: UnreadTree[], attempt = 0): void {
+  if (pending.length === 0 || attempt >= FOLLOW_TREE_RETRY_DELAYS_MS.length) {
+    for (const p of pending) {
+      log.warn("startup", `library follow: gave up reading ${p.path}; it shows empty until the next refresh`);
+    }
+    return;
+  }
+  setTimeout(() => {
+    void (async () => {
+      const still: UnreadTree[] = [];
+      for (const entry of pending) {
+        const ws = useWorkspaceStore.getState();
+        // Removed or moved again in the meantime: nothing left to fill.
+        const present =
+          entry.kind === "project"
+            ? ws.projects.some((p) => p.path === entry.path)
+            : ws.explorerFolders.some((f) => f.path === entry.path);
+        if (!present) continue;
+        try {
+          const tree = await tauriApi.listDirectory(
+            entry.path,
+            useSettingsStore.getState().showHiddenFiles,
+          );
+          if (entry.kind === "project") useWorkspaceStore.getState().updateProjectTree(entry.path, tree);
+          else useWorkspaceStore.getState().updateExplorerTree(entry.path, tree);
+        } catch (err) {
+          log.warn("startup", `library follow: ${entry.path} still unreadable (attempt ${attempt + 1})`, err);
+          still.push(entry);
+        }
+      }
+      retryUnreadTrees(still, attempt + 1);
+    })();
+  }, FOLLOW_TREE_RETRY_DELAYS_MS[attempt]);
 }
 
 /**
@@ -60,6 +111,7 @@ export async function followLibraryMove(oldRoot: string, newRoot: string): Promi
   if (plan.renames.length === 0) return { followed: [] };
   const to = (p: string) => followPath(p, plan, oldRoot, newRoot);
   const followed: string[] = [];
+  const unread: UnreadTree[] = [];
 
   // Projects: the shared bookkeeping (tree re-read, metadata re-key, tabs).
   for (const project of ws.projects) {
@@ -68,6 +120,11 @@ export async function followLibraryMove(oldRoot: string, newRoot: string): Promi
     await applyProjectMoved(project.path, dest, {
       listDirectory: (p) => tauriApi.listDirectory(p, useSettingsStore.getState().showHiddenFiles),
       writeFile: (p, c) => tauriApi.writeFile(p, c),
+      onTreeReadFailure: (path, error) => {
+        log.warn("startup", `library follow: could not read ${path}`, error);
+        // Also reported for the project.json rewrite, which needs no retry.
+        if (path === dest) unread.push({ kind: "project", path: dest });
+      },
     });
     followed.push(dest);
   }
@@ -78,8 +135,11 @@ export async function followLibraryMove(oldRoot: string, newRoot: string): Promi
     let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
     try {
       tree = await tauriApi.listDirectory(dest, useSettingsStore.getState().showHiddenFiles);
-    } catch {
+    } catch (err) {
       // Still re-pointed: the right place with an empty tree beats removal.
+      // But the empty tree is not the truth, so it is retried below.
+      log.warn("startup", `library follow: could not read ${dest}`, err);
+      unread.push({ kind: "folder", path: dest });
     }
     useWorkspaceStore.getState().updateExplorerFolderPath(folder.path, dest, tree);
     followed.push(dest);
@@ -110,6 +170,11 @@ export async function followLibraryMove(oldRoot: string, newRoot: string): Promi
     } catch (err) {
       log.warn("startup", `library follow: comment sidecars not re-keyed: ${err}`);
     }
+  }
+
+  if (unread.length > 0) {
+    toast.warning(t("toast.libraryFollowStillSyncing"), { id: "library-follow-still-syncing" });
+    retryUnreadTrees(unread);
   }
 
   log.info("startup", `Followed library move for ${plan.renames.length} entries`, {

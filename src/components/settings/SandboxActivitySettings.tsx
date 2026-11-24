@@ -156,7 +156,7 @@ export function SandboxActivitySettings() {
                     className="transition-transform duration-150 group-data-[state=open]:rotate-90"
                   />
                   {t("sandbox.effectiveAllowlist")}
-                  <span className="text-muted-foreground/60">({domains.length})</span>
+                  <span className="text-muted-foreground">({domains.length})</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   {domains.length > 0 ? (
@@ -171,7 +171,7 @@ export function SandboxActivitySettings() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-1 pl-10 text-[11px] italic text-muted-foreground/70">
+                    <p className="mt-1 pl-10 text-[11px] italic text-muted-foreground">
                       {t("sandbox.noDomains")}
                     </p>
                   )}

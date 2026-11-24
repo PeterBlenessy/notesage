@@ -17,6 +17,8 @@ import { PptxZoomControls, usePptxZoom } from "./PptxZoomControls";
 import { PptxCommentOverlay } from "./PptxCommentOverlay";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useEditorStore } from "@/stores/editor-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -35,6 +37,7 @@ interface PptxViewerProps {
 // ---------------------------------------------------------------------------
 
 export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
+  useLocale();
   const [presentation, setPresentation] = useState<PptxPresentation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,8 +116,13 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
     setLoading(true);
     setError(null);
 
+    // A parse that resolves after the file changed (or after unmount) must
+    // not put its slides under the new file's path.
+    let cancelled = false;
+
     parsePptx(data)
       .then((pres) => {
+        if (cancelled) return;
         setPresentation(pres);
         // Restore saved slide, clamped to valid range
         const maxSlide = Math.max(0, pres.slides.length - 1);
@@ -123,10 +131,15 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error("PPTX parse error:", err);
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, isLegacyPpt]);
 
   // ---------------------------------------------------------------------------
@@ -241,7 +254,8 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
               size="icon-xs"
               onClick={goPrev}
               disabled={currentSlide === 0}
-              title="Previous slide"
+              title={t("editor.previousSlide")}
+              aria-label={t("editor.previousSlide")}
             >
               <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -281,7 +295,8 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
               size="icon-xs"
               onClick={goNext}
               disabled={currentSlide === slideCount - 1}
-              title="Next slide"
+              title={t("editor.nextSlide")}
+              aria-label={t("editor.nextSlide")}
             >
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -293,7 +308,8 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
           size="icon-xs"
           onClick={() => setNotesOpen(!notesOpen)}
           className={notesOpen ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
-          title="Speaker notes"
+          title={t("editor.speakerNotes")}
+          aria-label={t("editor.speakerNotes")}
           aria-pressed={notesOpen}
         >
           <StickyNote className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -304,7 +320,8 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
             size="icon-xs"
             onClick={() => setCommentsVisible(!commentsVisible)}
             className={commentsVisible ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
-            title="Comments"
+            title={t("cmd.comments")}
+            aria-label={t("cmd.comments")}
             aria-pressed={commentsVisible}
           >
             <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -315,7 +332,8 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
           size="icon-xs"
           onClick={openFindBar}
           className={search.findBarOpen ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
-          title="Find in slides"
+          title={t("editor.findInSlides")}
+          aria-label={t("editor.findInSlides")}
           aria-pressed={search.findBarOpen}
         >
           <Search className="h-3.5 w-3.5" strokeWidth={1.5} />

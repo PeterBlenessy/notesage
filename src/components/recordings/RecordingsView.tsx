@@ -239,7 +239,7 @@ export function RecordingsView() {
             {loading ? "Looking…" : "No recordings yet"}
           </p>
           {!loading && dir && (
-            <p className="max-w-sm text-xs text-muted-foreground/80">
+            <p className="max-w-sm text-xs text-muted-foreground">
               A recording made here, or one your phone finishes, lands in {dir} and is transcribed
               automatically.
             </p>

@@ -28,6 +28,10 @@ interface PendingSerialize {
 // held in a single module-level timer so `useEditorTabSwitch` can flush it for
 // the editor it is about to load another document into.
 const pendingSerializes = new WeakMap<Editor, PendingSerialize>();
+// The editors that currently have an entry above. A WeakMap cannot be
+// enumerated, and `flushAllPendingSerializes` has no editor to ask for. An
+// editor is only held here while its serialize is pending (≤ the debounce).
+const editorsWithPending = new Set<Editor>();
 
 export function scheduleSerialize(
   editor: Editor,
@@ -41,6 +45,7 @@ export function scheduleSerialize(
   if (existing) clearTimeout(existing.timer);
   const timer = setTimeout(() => flushPendingSerialize(editor), SERIALIZE_DEBOUNCE_MS);
   pendingSerializes.set(editor, { timer, documentId, onUpdate });
+  editorsWithPending.add(editor);
 }
 
 /**
@@ -56,6 +61,19 @@ export function flushPendingSerialize(editor: Editor): void {
   if (!pending) return;
   clearTimeout(pending.timer);
   pendingSerializes.delete(editor);
+  editorsWithPending.delete(editor);
   if (editor.isDestroyed) return;
   pending.onUpdate(getMarkdownFromEditor(editor), pending.documentId);
+}
+
+/**
+ * Flush every editor's pending serialize.
+ *
+ * For callers that are about to drop a document from the store and have no
+ * editor instance to hand: opening another file evicts the current document
+ * BEFORE the switch pipeline (and its flush) runs, and a flush for a document
+ * that is no longer in the store is discarded.
+ */
+export function flushAllPendingSerializes(): void {
+  for (const editor of [...editorsWithPending]) flushPendingSerialize(editor);
 }

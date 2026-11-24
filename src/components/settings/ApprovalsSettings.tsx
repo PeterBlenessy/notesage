@@ -35,7 +35,7 @@ function ConnectionCell({
   connection: Connection | undefined;
 }) {
   if (connectionId === null) {
-    return <span className="italic text-muted-foreground/70">any</span>;
+    return <span className="italic text-muted-foreground">any</span>;
   }
   if (!connection) {
     const short = connectionId.startsWith('conn-') ? connectionId.slice(-6) : connectionId;
@@ -319,7 +319,7 @@ export function ApprovalsSettings() {
                                 <TooltipContent>{approval.projectRoot}</TooltipContent>
                               </Tooltip>
                             ) : (
-                              <span className="italic text-muted-foreground/70">any</span>
+                              <span className="italic text-muted-foreground">any</span>
                             )}
                           </td>
                           <td className="px-2.5 py-1.5 text-muted-foreground tabular-nums whitespace-nowrap">
@@ -396,7 +396,7 @@ export function ApprovalsSettings() {
                                 <TooltipContent>{row.projectRoot}</TooltipContent>
                               </Tooltip>
                             ) : (
-                              <span className="italic text-muted-foreground/70">any</span>
+                              <span className="italic text-muted-foreground">any</span>
                             )}
                           </td>
                           <td className="px-2.5 py-1.5 text-right whitespace-nowrap">

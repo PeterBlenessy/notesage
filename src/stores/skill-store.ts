@@ -9,6 +9,7 @@ import type {
 } from '@/lib/tauri';
 import type { ToolDefinition } from '@/lib/ai/types';
 import { log } from '@/lib/logger';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
@@ -653,6 +654,7 @@ export const useSkillStore = create<SkillStore>()(
     }),
     {
       name: 'notesage-skills',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-skills", error),
 
       partialize: (state) => ({
         enabledOverrides: state.enabledOverrides,

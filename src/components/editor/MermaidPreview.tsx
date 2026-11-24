@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
 import { convertMermaidToExcalidraw } from "@/lib/mermaid-to-drawing";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 let mermaidInstance: typeof import("mermaid").default | null = null;
 let mermaidInitialized = false;
@@ -32,6 +34,7 @@ async function initMermaid(isDark: boolean) {
 }
 
 export function MermaidPreview({ node, selected, updateAttributes, editor, getPos }: NodeViewProps) {
+  useLocale();
   const source = (node.attrs.source as string) || "";
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +197,8 @@ export function MermaidPreview({ node, selected, updateAttributes, editor, getPo
               className="mermaid-edit-btn mermaid-convert-btn"
               onClick={handleConvertToDrawing}
               disabled={isConverting}
-              title="Convert to Excalidraw drawing"
+              title={t("editor.convertToExcalidraw")}
+              aria-label={t("editor.convertToExcalidraw")}
             >
               <Pencil size={14} strokeWidth={1.5} />
             </button>
@@ -205,7 +209,8 @@ export function MermaidPreview({ node, selected, updateAttributes, editor, getPo
                 setEditSource(source);
                 setIsEditing(true);
               }}
-              title="Edit source"
+              title={t("editor.editSource")}
+              aria-label={t("editor.editSource")}
             >
               <Code size={14} strokeWidth={1.5} />
             </button>

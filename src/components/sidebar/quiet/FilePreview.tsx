@@ -370,7 +370,7 @@ function RelationNameList({
       <div className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
         {icon}
         <span>{label}</span>
-        <span className="text-muted-foreground/60 tabular-nums">
+        <span className="text-muted-foreground tabular-nums">
           {entries.length}
         </span>
       </div>
@@ -378,7 +378,7 @@ function RelationNameList({
         entry.unresolved ? (
           <span
             key={entry.path}
-            className="truncate text-xs italic text-muted-foreground/70"
+            className="truncate text-xs italic text-muted-foreground"
           >
             {entry.label}
           </span>
@@ -394,7 +394,7 @@ function RelationNameList({
         ),
       )}
       {more > 0 ? (
-        <span className="text-[11px] text-muted-foreground/70">
+        <span className="text-[11px] text-muted-foreground">
           +{more} more
         </span>
       ) : null}

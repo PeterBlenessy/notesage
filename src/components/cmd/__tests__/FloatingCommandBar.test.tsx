@@ -193,6 +193,10 @@ vi.mock('@/hooks/useAIOperations', () => ({
 // (same pattern as the settings-store mock above).
 let mockActiveConversationId: string | null = null;
 
+// The thread the store would return. A mock so the tests can assert WHEN the
+// bar reads it: at send time, never as a render-time subscription.
+const selectMessagesMock = vi.fn<(state: unknown) => unknown[]>(() => []);
+
 vi.mock('@/stores/chat-store', () => {
   // State surface for the selectors used by FloatingCommandBar. Keep
   // minimal — the bar reads `isLoading` directly and `setActiveConversation`
@@ -211,7 +215,7 @@ vi.mock('@/stores/chat-store', () => {
       // useMessageQueueDrain subscribes at mount — no-op unsubscribe here.
       subscribe: () => () => {},
     }),
-    selectMessages: () => [],
+    selectMessages: (state: unknown) => selectMessagesMock(state),
     // #118 — the history-mode selector is a pure projection of
     // `conv.projectPaths`. Stubbed to an empty list; the ChatHistoryView
     // render is mocked separately.
@@ -256,6 +260,8 @@ describe('FloatingCommandBar', () => {
     sendChatMessageMock.mockReset();
     sendChatMessageMock.mockImplementation(() => Promise.resolve());
     cancelChatMock.mockReset();
+    selectMessagesMock.mockReset();
+    selectMessagesMock.mockImplementation(() => []);
     // Reset the (real) queue + run stores used by the queued-message strip.
     mockActiveConversationId = null;
     useMessageQueueStore.setState({ queues: {} });
@@ -725,6 +731,28 @@ describe('FloatingCommandBar', () => {
       await waitFor(() => expect(sendChatMessageMock).toHaveBeenCalledTimes(1));
       const [content] = sendChatMessageMock.mock.calls[0];
       expect(content).toBe('hello world');
+    });
+
+    // Audit 2026-11-22 §3 — the bar used to hold `useChatStore(selectMessages)`
+    // only to pass the thread along at send time, so every streamed chunk
+    // re-rendered the whole composer and recreated its send handlers.
+    it('does not subscribe to the thread while rendering or typing', () => {
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'typing does not need the thread' } });
+
+      expect(selectMessagesMock).not.toHaveBeenCalled();
+    });
+
+    it('reads the thread from the store at send time and passes it on', async () => {
+      const thread = [{ role: 'user', content: 'earlier', timestamp: 1 }];
+      selectMessagesMock.mockImplementation(() => thread);
+
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'next' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      await waitFor(() => expect(sendChatMessageMock).toHaveBeenCalledTimes(1));
+      expect(sendChatMessageMock.mock.calls[0][1]).toBe(thread);
     });
 
     it('Enter with empty input AND no chips is a no-op (sendChatMessage NOT called)', () => {

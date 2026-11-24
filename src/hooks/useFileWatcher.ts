@@ -9,7 +9,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { processPendingCommentFile } from "@/lib/pending-comments";
+import { schedulePendingCommentFile } from "@/lib/pending-comments";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import { deleteCachedViewport } from "@/lib/viewport-cache";
 import { toastExternalReload } from "@/lib/notifications";
@@ -206,10 +206,9 @@ export function useFileWatcher() {
         const notesageIdx = path.indexOf('/.notesage/pending-comments/');
         if (notesageIdx > 0) {
           const projectRoot = path.slice(0, notesageIdx);
-          // Debounce slightly to let the file finish writing
-          setTimeout(() => {
-            processPendingCommentFile(path, projectRoot);
-          }, 300);
+          // Debounced per path (lets the file finish writing) and never run
+          // twice at once for one file — see schedulePendingCommentFile.
+          schedulePendingCommentFile(path, projectRoot);
         }
       }
 

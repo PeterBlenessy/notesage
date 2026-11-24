@@ -84,7 +84,6 @@ describe('StatusTray — popover anchors to click coordinates', () => {
       recentFiles: [],
       scrollPositions: {},
       externalChanges: {},
-      pendingCloseTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
     });

@@ -1645,6 +1645,8 @@ mod ios_impl {
                 hidden: e.hidden,
                 modified: e.modified,
                 child_count: e.child_count,
+                unreadable: false,
+                truncated: false,
             })
             .collect()
     }

@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@/test/tauri-mock';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 
 vi.mock('@/lib/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -484,5 +484,90 @@ describe('useAIContext — ReAct guidance in localSystemMessage', () => {
     const msg = result.current.composedSystemMessage;
 
     expect(msg).not.toMatch(/Tool use protocol/i);
+  });
+});
+
+// Audit 2026-11-22 §3 — the hook used to select the whole active-tab object,
+// which the editor store replaces on every content serialization (each typing
+// pause). Every system message was rebuilt each time, in every mounted
+// `useAIOperations`, and the new strings recreated the send callbacks.
+describe('useAIContext — does not rebuild on editor content updates', () => {
+  beforeEach(() => {
+    resetAll();
+  });
+
+  function typeInActiveTab(content: string) {
+    useEditorStore.setState((s) => ({
+      openDocuments: s.openDocuments.map((d) =>
+        d.id === 'tab-1' ? { ...d, content, dirty: true } : d,
+      ),
+    }));
+  }
+
+  it('keeps messages and builders referentially stable when only the content changes', () => {
+    seedActiveConversation(['/projects/A']);
+    seedActiveTab('/projects/A/notes.md', 'notes.md');
+
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useAIContext();
+    });
+    const before = result.current;
+    const rendersBefore = renders;
+    expect(before.composedSystemMessage).toContain('Currently editing: /projects/A/notes.md');
+
+    act(() => typeInActiveTab('first edit'));
+    act(() => typeInActiveTab('second edit'));
+
+    // No subscription fired, so nothing re-rendered and nothing was rebuilt.
+    expect(renders).toBe(rendersBefore);
+    expect(result.current.buildComposedSystemMessage).toBe(before.buildComposedSystemMessage);
+    expect(result.current.buildAcpSystemMessage).toBe(before.buildAcpSystemMessage);
+    expect(result.current.composedSystemMessage).toBe(before.composedSystemMessage);
+  });
+
+  it('still follows the active tab when its PATH changes', () => {
+    seedActiveConversation(['/projects/A']);
+    seedActiveTab('/projects/A/notes.md', 'notes.md');
+
+    const { result } = renderHook(() => useAIContext());
+    expect(result.current.localSystemMessage).toContain('Currently editing: /projects/A/notes.md');
+
+    act(() => seedActiveTab('/projects/A/other.md', 'other.md'));
+
+    expect(result.current.composedSystemMessage).toContain('Currently editing: /projects/A/other.md');
+    expect(result.current.localSystemMessage).toContain('Currently editing: /projects/A/other.md');
+    expect(result.current.acpSystemMessage).toContain('Currently editing: /projects/A/other.md');
+  });
+
+  it('derives the skill strings once per skill-store change, not once per render', () => {
+    const realGetter = useSkillStore.getState().getSkillDescriptionsForPrompt;
+    const getter = vi.fn(realGetter);
+    useSkillStore.setState({
+      skills: [skillEntry({ name: 'world-skill', source: 'notesage-global', description: 'Global skill' })],
+      getSkillDescriptionsForPrompt: getter,
+    });
+    seedActiveConversation(['/projects/A']);
+
+    try {
+      const { result, rerender } = renderHook(() => useAIContext());
+      expect(result.current.composedSystemMessage).toContain('world-skill');
+      const callsAfterMount = getter.mock.calls.length;
+
+      rerender();
+      rerender();
+      expect(getter.mock.calls.length).toBe(callsAfterMount);
+
+      // A real skill change still flows through.
+      act(() => {
+        useSkillStore.setState({
+          skills: [skillEntry({ name: 'new-skill', source: 'notesage-global', description: 'New' })],
+        });
+      });
+      expect(result.current.composedSystemMessage).toContain('new-skill');
+    } finally {
+      useSkillStore.setState({ getSkillDescriptionsForPrompt: realGetter });
+    }
   });
 });

@@ -7,6 +7,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DialogErrorBoundary } from "@/components/DialogErrorBoundary";
 import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
 import { MissedRunsDialog } from "@/components/automations/MissedRunsDialog";
 import { LocalAgentSetupDialog } from "@/components/settings/LocalAgentSetupDialog";
@@ -767,6 +768,12 @@ function App() {
           />
         </ErrorBoundary>
 
+        {/*
+          The dialogs below are siblings of the workspace, so its boundary
+          does not cover them. Each gets its own: a render error or a lazy
+          chunk that fails to load takes out that dialog, not the editor.
+         */}
+        <DialogErrorBoundary name="Settings">
         <Suspense fallback={null}>
           <SettingsDialogV2
             open={settingsOpen}
@@ -793,6 +800,8 @@ function App() {
             />
           )}
         </Suspense>
+        </DialogErrorBoundary>
+        <DialogErrorBoundary name="Update">
         <UpdateDialog
           open={updateDialogOpen}
           onOpenChange={setUpdateDialogOpen}
@@ -803,16 +812,21 @@ function App() {
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
         />
+        </DialogErrorBoundary>
+        <DialogErrorBoundary name="Calibration">
         <CalibrationShareDialog
           open={calibrationShare.open}
           onOpenChange={calibrationShare.setOpen}
         />
+        </DialogErrorBoundary>
+        <DialogErrorBoundary name="Keyboard shortcuts">
         <Suspense fallback={null}>
           <KeyboardShortcutsDialogV2
             open={shortcutsOpen}
             onOpenChange={setShortcutsOpen}
           />
         </Suspense>
+        </DialogErrorBoundary>
         {/*
           #128 — Global commit dialog for the sidebar's "Commit…" menu
           item. Mounted at the App root so it survives sidebar row
@@ -820,6 +834,7 @@ function App() {
           `sidebar:commit-file` CustomEvent.
         */}
         {commitDialogState && (
+          <DialogErrorBoundary name="Commit">
           <Suspense fallback={null}>
             <SidebarCommitDialog
               repoPath={commitDialogState.projectPath}
@@ -829,7 +844,9 @@ function App() {
               }}
             />
           </Suspense>
+          </DialogErrorBoundary>
         )}
+        <DialogErrorBoundary name="Actions">
         <Suspense fallback={null}>
         <ActionsDialog
           open={actionsDialogOpen}
@@ -877,10 +894,17 @@ function App() {
           }}
         />
         </Suspense>
+        </DialogErrorBoundary>
       </div>
-      <McpDeepLinkInstaller />
-      <LocalAgentSetupDialog />
-      <MissedRunsDialog />
+      <DialogErrorBoundary name="MCP install">
+        <McpDeepLinkInstaller />
+      </DialogErrorBoundary>
+      <DialogErrorBoundary name="Local agent setup">
+        <LocalAgentSetupDialog />
+      </DialogErrorBoundary>
+      <DialogErrorBoundary name="Missed runs">
+        <MissedRunsDialog />
+      </DialogErrorBoundary>
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

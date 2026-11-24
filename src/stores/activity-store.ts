@@ -4,6 +4,7 @@ import type { DelegationActivity } from '@/stores/comment-store';
 import type { ToolCallContentItem, ActivityApprovalMode } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { emitWorkflowEvent } from '@/lib/automations/event-bus';
+import { reportRehydrateError } from "@/lib/persist-rehydrate";
 
 const MAX_COMPLETED_TASKS = 100;
 const MAX_ACTIVITIES_PER_TASK = 200;
@@ -528,7 +529,8 @@ export const useActivityStore = create<ActivityStore>()(
       }),
       // On rehydration, mark any previously-running tasks as interrupted
       // and clear transient streaming state
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) reportRehydrateError("notesage-activity", error);
         if (!state) return;
         const now = Date.now();
         state.tasks = state.tasks

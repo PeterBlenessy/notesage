@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AIProviderType } from '@/lib/ai/types';
+import { reportRehydrateError } from "@/lib/persist-rehydrate";
 
 /** Kept for persona→agent migration compatibility (useSkillOperations). */
 export interface AIPersona {
@@ -88,7 +89,8 @@ export const useAIStore = create<AIStore>()(
     }),
     {
       name: 'notesage-ai-settings',
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) reportRehydrateError("notesage-ai-settings", error);
         if (!state) return;
         if (state.defaultPromptsBundled) return;
         // Seed default custom prompts once — never overwrite existing user prompts
@@ -96,9 +98,17 @@ export const useAIStore = create<AIStore>()(
         const newPrompts = DEFAULT_CUSTOM_PROMPTS
           .filter((dp) => !existing.some((ep) => ep.name === dp.name))
           .map((dp) => ({ ...dp, id: `default-${dp.name.toLowerCase().replace(/\s+/g, '-')}` }));
-        useAIStore.setState({
-          customPrompts: [...existing, ...newPrompts],
-          defaultPromptsBundled: true,
+        // Deferred: localStorage hydration runs synchronously inside
+        // `create`, before `useAIStore` is assigned. Setting state here
+        // directly throws, and zustand hands that back as a rehydration
+        // error — which silently skipped the seeding for years and, once
+        // rehydration errors were reported, told every user their settings
+        // could not be restored.
+        queueMicrotask(() => {
+          useAIStore.setState({
+            customPrompts: [...existing, ...newPrompts],
+            defaultPromptsBundled: true,
+          });
         });
       },
     }

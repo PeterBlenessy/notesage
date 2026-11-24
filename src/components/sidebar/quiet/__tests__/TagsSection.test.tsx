@@ -457,4 +457,39 @@ describe('TagsSection', () => {
       expect(document.activeElement).toBe(alpha);
     });
   });
+  it('shows that the search index is unavailable when the query fails, instead of an empty section', async () => {
+    indexTagsMock.mockRejectedValue(new Error('database is locked'));
+
+    renderWithProviders(<TagsSection />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(alert.getAttribute('title')).toBe('database is locked');
+  });
+
+  it('shows no error when the index simply has no entries', async () => {
+    indexTagsMock.mockResolvedValue([]);
+
+    renderWithProviders(<TagsSection />);
+
+    await waitFor(() => {
+      expect(indexTagsMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('"Show more" is reachable with the keyboard (in the Tab order)', async () => {
+    indexTagsMock.mockResolvedValue(
+      Array.from({ length: DEFAULT_TAG_CAP + 3 }, (_, i) => ({ tag: `tag${i}`, file_count: 100 - i })),
+    );
+
+    renderWithProviders(<TagsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText('tag0')).toBeTruthy();
+    });
+    const showMore = screen.getByRole('button', { name: /show more/i }) as HTMLButtonElement;
+    expect(showMore.getAttribute('tabindex')).toBeNull();
+    expect(showMore.tabIndex).toBe(0);
+  });
 });

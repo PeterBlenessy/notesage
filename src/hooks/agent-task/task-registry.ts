@@ -31,6 +31,20 @@ export interface InternalTask {
   createdAt: number;
 }
 
+/**
+ * How many FINISHED task records (completed / failed / cancelled) the registry
+ * keeps. Each record holds the task's full prompt and full streamed output, and
+ * automations create tasks continuously in a tray-resident app, so finished
+ * records must not accumulate for the app's lifetime. A short tail is kept so
+ * `getTask` still answers for a task that just ended; the durable, UI-visible
+ * mirror lives in `activity-store`.
+ */
+export const MAX_FINISHED_TASKS = 20;
+
+function isFinished(task: InternalTask): boolean {
+  return task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
+}
+
 export class AgentTaskRegistry {
   private tasks = new Map<string, InternalTask>();
   private cleanups = new Map<string, () => void>();
@@ -41,6 +55,30 @@ export class AgentTaskRegistry {
 
   setTask(task: InternalTask): void {
     this.tasks.set(task.id, task);
+    this.pruneFinished();
+  }
+
+  /**
+   * Drop the oldest finished records beyond {@link MAX_FINISHED_TASKS}. Runs
+   * when a task is added, so it needs no timer and covers every terminal
+   * transition (complete, fail, cancel) without each having to deregister.
+   * Pending and running tasks are never dropped.
+   */
+  private pruneFinished(): void {
+    let finished = 0;
+    for (const task of this.tasks.values()) {
+      if (isFinished(task)) finished++;
+    }
+    if (finished <= MAX_FINISHED_TASKS) return;
+    // Map iteration is insertion-ordered, so this evicts oldest first.
+    for (const [id, task] of this.tasks) {
+      if (finished <= MAX_FINISHED_TASKS) break;
+      if (!isFinished(task)) continue;
+      // Only the record goes. A cleanup still registered for it stays callable
+      // by id (a late `runCleanup` from a settling promise must still unlisten).
+      this.tasks.delete(id);
+      finished--;
+    }
   }
 
   /**

@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useCommentStore } from '@/stores/comment-store';
 import type { Comment } from '@/stores/comment-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
-import { ensureDocumentId } from '@/lib/frontmatter';
+import { ensureDocumentId, getDocumentId } from '@/lib/frontmatter';
 import { updateDocumentIndex } from '@/lib/document-index';
 import { findTextInDoc } from '@/lib/pm-text-search';
 import { hashPath } from '@/lib/comment-storage';
@@ -17,6 +17,52 @@ import {
   CommentMarkPluginKey,
 } from '@/components/editor/extensions';
 import { t } from '@/lib/i18n';
+
+// Stable empty list for documents without comments (a fresh `[]` per render
+// would look like a change to every consumer).
+const NO_COMMENTS: Comment[] = [];
+
+interface PluginComment {
+  commentId: string;
+  from: number;
+  to: number;
+  status?: string;
+  delegationMode?: string;
+}
+
+interface PluginCommentState {
+  comments: PluginComment[];
+  activeCommentId: string | null;
+}
+
+/**
+ * Whether dispatching `setCommentDecorations(comments, activeCommentId, modes)`
+ * would leave the plugin exactly as it is. The plugin remaps positions through
+ * every document change itself, so after a keystroke the store catches up with
+ * positions the plugin already has — re-sending them is a second transaction
+ * and a full decoration rebuild for nothing.
+ */
+function decorationsUpToDate(
+  plugin: PluginCommentState,
+  comments: Comment[],
+  activeCommentId: string | null,
+  delegationModes: Record<string, string>,
+): boolean {
+  // A null active id leaves the plugin's own untouched (see the plugin's `setComments`).
+  if (activeCommentId !== null && activeCommentId !== plugin.activeCommentId) return false;
+  const wanted = comments.filter((c) => c.from < c.to);
+  if (wanted.length !== plugin.comments.length) return false;
+  return wanted.every((c, i) => {
+    const current = plugin.comments[i];
+    return (
+      current.commentId === c.id &&
+      current.from === c.from &&
+      current.to === c.to &&
+      current.status === c.status &&
+      current.delegationMode === delegationModes[c.id]
+    );
+  });
+}
 
 /**
  * Orchestrates the full comment lifecycle: load, create, edit, delete, save.
@@ -37,9 +83,8 @@ export function useCommentOperations(editor: Editor | null) {
   });
   const updateFrontmatter = useEditorStore((s) => s.updateFrontmatter);
 
+  // Actions are stable; read them without subscribing.
   const {
-    commentsByDocument,
-    activeCommentId,
     loadComments,
     addComment,
     updateComment,
@@ -48,16 +93,25 @@ export function useCommentOperations(editor: Editor | null) {
     saveComments,
     clearDocument,
     updateCommentPositions,
-    delegationModeByComment,
-  } = useCommentStore();
+  } = useCommentStore.getState();
 
   const lastLoadedKeyRef = useRef<string | null>(null);
 
   // Get document ID from current tab's frontmatter (project files only)
-  const documentId = (activeTab?.frontmatter?.id as string) ?? null;
+  const documentId = getDocumentId(activeTab?.frontmatter);
 
   // Comment key: UUID for project files, path hash for non-project files
   const commentKey = isProjectFile ? documentId : (activeTab?.filePath ? hashPath(activeTab.filePath) : null);
+
+  // Atomic selectors: this hook runs inside Editor, so a bare `useCommentStore()`
+  // re-rendered the whole editor on every store write — each streamed
+  // delegation chunk (`partialReplyVersion`), every activity, and comments in
+  // other documents.
+  const documentComments = useCommentStore((s) =>
+    commentKey ? s.commentsByDocument[commentKey] : undefined,
+  );
+  const activeCommentId = useCommentStore((s) => s.activeCommentId);
+  const delegationModeByComment = useCommentStore((s) => s.delegationModeByComment);
 
   // For non-project files, pass the actual file path so the sidecar embeds
   // originalPath for folder-rename reverse-lookup (issue #117).
@@ -82,9 +136,12 @@ export function useCommentOperations(editor: Editor | null) {
       // Verifies that the text at stored from/to matches anchorText; if not, uses
       // findTextInDoc to compute correct ProseMirror positions.
       if (!editor) return;
+      // The tab changed while the sidecar was loading: the editor no longer
+      // shows this document, so its text must not be searched or decorated.
+      if (lastLoadedKeyRef.current !== commentKey) return;
       const comments = useCommentStore.getState().commentsByDocument[commentKey] ?? [];
-      let updated = false;
       const doc = editor.state.doc;
+      const reanchored: Array<{ id: string; from: number; to: number; anchorText: string }> = [];
 
       for (const c of comments) {
         if (!c.anchorText || c.status === 'resolved') continue;
@@ -96,20 +153,20 @@ export function useCommentOperations(editor: Editor | null) {
         // Positions are stale — re-anchor via text search
         const range = findTextInDoc(doc, c.anchorText);
         if (range) {
-          c.from = range.from;
-          c.to = range.to;
-          updated = true;
+          reanchored.push({ id: c.id, from: range.from, to: range.to, anchorText: c.anchorText });
         }
       }
 
-      if (updated) {
+      if (reanchored.length > 0) {
         // Persist corrected positions
-        useCommentStore.getState().updateCommentPositions(
-          commentKey,
-          comments.filter((c) => c.from >= 0 && c.to > c.from).map((c) => ({
-            id: c.id, from: c.from, to: c.to, anchorText: c.anchorText,
-          })),
+        const store = useCommentStore.getState();
+        store.updateCommentPositions(commentKey, reanchored);
+        // The decoration sync below treats positions the plugin already holds
+        // as authoritative, so hand it the corrected ones explicitly.
+        const corrected = (useCommentStore.getState().commentsByDocument[commentKey] ?? []).filter(
+          (c) => c.status !== 'resolved',
         );
+        setCommentDecorations(editor, corrected, store.activeCommentId, store.delegationModeByComment);
         saveComments(commentKey, storageRoot, originalFilePath);
       }
     });
@@ -162,19 +219,21 @@ export function useCommentOperations(editor: Editor | null) {
     };
   }, [editor, commentKey, storageRoot, originalFilePath, updateCommentPositions, saveComments]);
 
-  // Sync decorations when comments change — filter out resolved comments.
-  // Merge with plugin's authoritative remapped positions to prevent overwriting.
+  // Sync decorations when this document's comments change — filter out resolved
+  // comments. Merge with plugin's authoritative remapped positions to prevent
+  // overwriting. Keyed on this document's list only: a write to another
+  // document's comments must not touch this editor.
   useEffect(() => {
     if (!editor || !commentKey) return;
-    const storeComments = (commentsByDocument[commentKey] ?? []).filter(
+    const storeComments = (documentComments ?? NO_COMMENTS).filter(
       (c) => c.status !== 'resolved'
     );
 
     // Use plugin's remapped positions as authoritative when available
-    const pluginState = CommentMarkPluginKey.getState(editor.state);
+    const pluginState = CommentMarkPluginKey.getState(editor.state) as PluginCommentState | undefined;
     const pluginPosMap = new Map<string, { from: number; to: number }>();
     if (pluginState) {
-      for (const c of pluginState.comments as Array<{ commentId: string; from: number; to: number }>) {
+      for (const c of pluginState.comments) {
         pluginPosMap.set(c.commentId, { from: c.from, to: c.to });
       }
     }
@@ -184,8 +243,15 @@ export function useCommentOperations(editor: Editor | null) {
       return pluginPos ? { ...c, from: pluginPos.from, to: pluginPos.to } : c;
     });
 
+    // Typing only moves positions, and the plugin has those already: skip the
+    // dispatch unless something the plugin does not know about changed (a
+    // comment added/removed, a status, a delegation mode, the active comment).
+    if (pluginState && decorationsUpToDate(pluginState, mergedComments, activeCommentId, delegationModeByComment)) {
+      return;
+    }
+
     setCommentDecorations(editor, mergedComments, activeCommentId, delegationModeByComment);
-  }, [editor, commentKey, commentsByDocument, activeCommentId, delegationModeByComment]);
+  }, [editor, commentKey, documentComments, activeCommentId, delegationModeByComment]);
 
   // Listen for comment creation requests and click-to-select from the ProseMirror plugin
   useEffect(() => {
@@ -279,9 +345,9 @@ export function useCommentOperations(editor: Editor | null) {
   /** Get the active comment object. */
   const getActiveComment = useCallback((): Comment | null => {
     if (!activeCommentId || !commentKey) return null;
-    const comments = commentsByDocument[commentKey] ?? [];
+    const comments = documentComments ?? NO_COMMENTS;
     return comments.find((c) => c.id === activeCommentId) ?? null;
-  }, [activeCommentId, commentKey, commentsByDocument]);
+  }, [activeCommentId, commentKey, documentComments]);
 
   /** Get the pending create request (from Cmd+Shift+M or bubble menu click). */
   const consumePendingCreate = useCallback((): { from: number; to: number } | null => {
@@ -294,7 +360,7 @@ export function useCommentOperations(editor: Editor | null) {
     documentId,
     commentKey,
     isProjectFile,
-    comments: commentKey ? (commentsByDocument[commentKey] ?? []) : [],
+    comments: commentKey ? (documentComments ?? NO_COMMENTS) : NO_COMMENTS,
     activeCommentId,
     activeComment: getActiveComment(),
     ensureUUID,

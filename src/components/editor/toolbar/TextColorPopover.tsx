@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const TEXT_COLORS = [
   { label: "Default", value: null },
@@ -18,6 +20,7 @@ const TEXT_COLORS = [
 ] as const;
 
 export function TextColorPopover({ editor }: { editor: Editor }) {
+  useLocale();
   const [open, setOpen] = useState(false);
 
   // Get current text color from editor
@@ -31,6 +34,7 @@ export function TextColorPopover({ editor }: { editor: Editor }) {
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("editor.textColor")}
               className="text-muted-foreground relative"
             >
               <Baseline className="size-4" strokeWidth={1.5} />
@@ -55,6 +59,8 @@ export function TextColorPopover({ editor }: { editor: Editor }) {
             <Tooltip key={label}>
               <TooltipTrigger asChild>
                 <button
+                  aria-label={label}
+                  aria-pressed={(currentColor ?? null) === value}
                   className={cn(
                     "size-5 rounded-full border border-border transition-transform hover:scale-125 focus:outline-none focus:ring-1 focus:ring-ring",
                     !value && "flex items-center justify-center",

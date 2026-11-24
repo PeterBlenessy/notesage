@@ -157,3 +157,83 @@ describe("useChangelog — getChangesBetween (SemVer comparator)", () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Validation of fetched changelogs (audit 2026-11-22 §7)
+// ---------------------------------------------------------------------------
+
+import { parseChangelog } from "../useChangelog";
+
+describe("parseChangelog", () => {
+  const good = {
+    version: "0.62.0",
+    date: "2026-11-22",
+    previousVersion: "0.61.0",
+    sections: { features: ["a"], fixes: ["b"] },
+  };
+
+  it("accepts the documented shape", () => {
+    expect(parseChangelog({ releases: [good] })).toEqual({ releases: [good] });
+    expect(parseChangelog({ releases: [] })).toEqual({ releases: [] });
+  });
+
+  it.each([
+    ["null", null],
+    ["a string", "<html>rate limited</html>"],
+    ["an object with no releases", { message: "Not Found" }],
+    ["releases that is not a list", { releases: { "0.62.0": good } }],
+  ])("rejects %s", (_label, value) => {
+    expect(parseChangelog(value)).toBeNull();
+  });
+
+  it("drops entries of the wrong shape and keeps the rest", () => {
+    const parsed = parseChangelog({
+      releases: [
+        good,
+        null,
+        { version: 62, date: "x", sections: {} },
+        { version: "0.61.0", date: "2026-11-01" }, // no sections
+        { version: "0.60.0", date: "2026-10-01", sections: { features: "one string" } },
+        { version: "0.59.0", date: "2026-09-01", sections: ["a"] },
+      ],
+    });
+    expect(parsed?.releases.map((r) => r.version)).toEqual(["0.62.0"]);
+  });
+
+  it("rejects a document in which no entry is usable (a format this build does not know)", () => {
+    expect(parseChangelog({ releases: [{ tag: "v1", body: "…" }] })).toBeNull();
+  });
+});
+
+describe("useChangelog — a remote copy that fails validation", () => {
+  it("keeps the bundled changelog instead of storing the bad one", async () => {
+    mockChangelog(["0.43.1", "0.43.0"]);
+    // A JSON response of the wrong shape, e.g. a future format.
+    mockTauriFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ schema: 2, entries: [{ tag: "0.44.0" }] }),
+    });
+
+    const { result } = renderHook(() => useChangelog());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.changelog).not.toBeNull());
+
+    expect(result.current.changelog?.releases.map((r) => r.version)).toEqual(["0.43.1", "0.43.0"]);
+    // The consumer that used to throw on `changelog.releases.filter`.
+    expect(() => result.current.getChangesBetween("0.43.0", "0.43.1")).not.toThrow();
+  });
+
+  it("uses a valid remote copy over the bundled one", async () => {
+    mockChangelog(["0.43.0"]);
+    mockTauriFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        releases: [{ version: "0.44.0", date: "2026-06-01", previousVersion: "0.43.0", sections: {} }],
+      }),
+    });
+    const { result } = renderHook(() => useChangelog());
+    await waitFor(() =>
+      expect(result.current.changelog?.releases.map((r) => r.version)).toEqual(["0.44.0"]),
+    );
+  });
+});

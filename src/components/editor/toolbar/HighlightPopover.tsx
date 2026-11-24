@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const HIGHLIGHT_COLORS = [
   { label: "None", name: null, swatch: "var(--color-background)" },
@@ -17,6 +19,7 @@ const HIGHLIGHT_COLORS = [
 ] as const;
 
 export function HighlightPopover({ editor }: { editor: Editor }) {
+  useLocale();
   const [open, setOpen] = useState(false);
 
   const currentHighlight = editor.getAttributes("highlight")?.color as string | undefined;
@@ -29,6 +32,7 @@ export function HighlightPopover({ editor }: { editor: Editor }) {
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("editor.highlight")}
               className={cn(
                 "text-muted-foreground relative",
                 currentHighlight && "text-foreground"
@@ -58,6 +62,8 @@ export function HighlightPopover({ editor }: { editor: Editor }) {
               <Tooltip key={label}>
                 <TooltipTrigger asChild>
                   <button
+                    aria-label={label}
+                    aria-pressed={(currentHighlight ?? null) === name}
                     className={cn(
                       "size-5 rounded border border-border transition-transform hover:scale-125 focus:outline-none focus:ring-1 focus:ring-ring",
                       !name && "flex items-center justify-center",

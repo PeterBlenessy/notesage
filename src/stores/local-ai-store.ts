@@ -12,6 +12,7 @@ import type {
   ModelFitResult,
   GgufCapabilities,
 } from '@/lib/tauri';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type BinaryState = 'unknown' | 'available' | 'not_found';
@@ -489,6 +490,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
     },
     {
       name: 'notesage-local-ai',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-local-ai", error),
       partialize: (state) => ({
         activeModelId: state.activeModelId,
         contextLength: state.contextLength,

@@ -9,7 +9,7 @@ Core technical architecture for Notesage. For feature-specific details, see [doc
 | Desktop shell | Tauri | v2 (latest stable) |
 | Frontend framework | React | 19+ |
 | Language | TypeScript | 5+ |
-| Editor engine | Tiptap | v2 (wraps ProseMirror) |
+| Editor engine | Tiptap | v3 (wraps ProseMirror) |
 | Component library | shadcn/ui | latest (Radix UI + Tailwind) |
 | Styling | Tailwind CSS | v4 |
 | State management | Zustand | latest |
@@ -29,12 +29,26 @@ note-sage/
 │   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads, allowlisted note-editing writes (#586) + share capture (cfg-gated)
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
-│   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
+│   │   │   ├── acp/        # ACP agent management (spawn, auth, sessions, permissions, cleanup) — split from the former acp.rs
+│   │   │   │   ├── mod.rs          # Thin `#[tauri::command]` layer
+│   │   │   │   ├── agent_thread.rs # The agent OS thread: spawns the subprocess, runs `initialize`, drives the `AgentCmd` loop
+│   │   │   │   ├── helpers.rs      # Pure conversions: MCP-server construction (`build_acp_mcp_servers`), model info, session results
+│   │   │   │   ├── state.rs        # Managed state, per-agent handle, agent-thread command protocol, orphan-PID-file discipline
+│   │   │   │   ├── types.rs        # Serializable IPC types
+│   │   │   │   └── tests.rs
 │   │   │   ├── copilot_lsp.rs # Copilot Language Server orchestrator (commands, state)
 │   │   │   ├── copilot_protocol.rs # JSON-RPC transport, reader loop, server→client handlers
 │   │   │   ├── copilot_signin.rs   # Device code auth helpers (field extraction)
 │   │   │   ├── copilot_models.rs   # CopilotModel type, parser, fallback list
-│   │   │   ├── mcp.rs      # MCP client (stdio + Streamable-HTTP transports via McpConn, validate-on-add, env-secret resolution, server lifecycle, tool discovery/call, catalog)
+│   │   │   ├── mcp/        # MCP client — split from the former mcp.rs
+│   │   │   │   ├── mod.rs          # Thin `#[tauri::command]` layer (server lifecycle, tool discovery/call)
+│   │   │   │   ├── transport.rs    # stdio + Streamable-HTTP transports behind `McpConn`
+│   │   │   │   ├── stderr_drain.rs # Drains a long-lived stdio server's stderr so a chatty server cannot block on a full pipe
+│   │   │   │   ├── state.rs        # Registry of live server handles, exit cleanup, liveness
+│   │   │   │   ├── types.rs        # Wire/config types, env-secret resolution
+│   │   │   │   ├── config.rs       # `mcp.json` / Claude Desktop / VS Code config parsing for import
+│   │   │   │   ├── validation.rs   # `validate_mcp_command` launch guard + validate-on-add dry run
+│   │   │   │   └── catalog.rs      # Curated server catalog (`src-tauri/mcp-catalog.json`, embedded)
 │   │   │   ├── mcp_oauth.rs # MCP OAuth 2.1 (PKCE, RFC 9728/8414 discovery, RFC 7591 DCR, loopback callback, token refresh, keychain storage)
 │   │   │   ├── skills.rs   # Skill discovery, bundled skill extraction, commands
 │   │   │   ├── skills_frontmatter.rs # YAML frontmatter parsing, SkillFrontmatter struct
@@ -46,6 +60,7 @@ note-sage/
 │   │   │   ├── git.rs      # Git operations
 │   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
 │   │   │   ├── ai_streaming.rs # AI streaming orchestrators (Anthropic, OpenAI, Ollama, compatible)
+│   │   │   ├── utf8_chunk_decoder.rs # UTF-8 decoding for text arriving in arbitrary byte chunks (multibyte characters split across network chunks)
 │   │   │   ├── tool_execution.rs # Tool call parsing, accumulators (extracted from ai_streaming)
 │   │   │   ├── segment_builder.rs # Thinking tag detection, template extraction (extracted from ai_streaming)
 │   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
@@ -55,12 +70,23 @@ note-sage/
 │   │   │   ├── store.rs    # Key-value store operations
 │   │   │   ├── sync.rs     # iCloud sync settings + `icloud_ensure_downloaded` (evicted-placeholder download trigger)
 │   │   │   ├── shell_path.rs # Shell PATH resolution
+│   │   │   ├── transcription_stub.rs # Mobile stand-in for transcription.rs (recording/Whisper are desktop-only)
+│   │   │   ├── audio_decode.rs # Decode an audio file to interleaved f32 samples for transcription (#803)
 │   │   │   ├── transcription.rs # Mic capture-to-WAV (single stream owner, awaited teardown), whole-file Whisper transcription (transcribe_file → segments), Whisper model management (no live dictation)
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── local_agent.rs # Local Agent preset: OpenCode config generation against the live llama-server (`local_agent_write_config`)
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
+│   │   │   ├── model_fit/         # Hardware-aware local model recommendation
+│   │   │   │   ├── mod.rs         # Commands: `detect_hardware_profile`, `estimate_model_fit`
+│   │   │   │   ├── hardware.rs    # RAM + memory-bandwidth + chip detection
+│   │   │   │   ├── engine.rs      # Pure fit + speed estimation
+│   │   │   │   ├── gguf_header.rs # GGUF capability reader (FIM tokens, tool-call template, thinking)
+│   │   │   │   ├── calibration.rs # Dev/operator calibration measurement (deliberately not a Tauri command)
+│   │   │   │   └── types.rs       # IPC types
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
+│   │   │   ├── net_guard.rs       # Shared SSRF IP blocklist (link previews, web fetch)
+│   │   │   ├── process_guard.rs   # Process identity verification + termination helpers for PIDs we did not just spawn
 │   │   │   ├── credentials.rs  # OS keychain credential storage (keyring crate)
 │   │   │   ├── sandbox.rs       # Seatbelt profile generation (kernel network deny)
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
@@ -79,6 +105,7 @@ note-sage/
 │   │   │   ├── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
 │   │   │   ├── fonts.rs    # System font enumeration (font-kit crate)
 │   │   │   └── theme.rs    # `get_system_accent_color` (macOS NSColor → oklch for accent picker)
+│   │   ├── library_marker.rs # `<library root>/.notesage/library.json` — the marker that makes a synced library self-describing
 │   │   ├── tray.rs         # System tray icon, menu (no global Quick Capture shortcut yet), close-to-tray
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
@@ -87,6 +114,8 @@ note-sage/
 │   │   │   ├── queries.rs  # SQL query builders for all search operations
 │   │   │   ├── links.rs    # Standalone link-graph store (links.db): edges, backlinks/outlinks/broken-links, wikilink resolution (OKF wiki-navigation)
 │   │   │   ├── tasks.rs    # Task toggle via context-based matching
+│   │   │   ├── file_scanner.rs  # Which files get indexed (text extensions, skipped metadata/hidden directories)
+│   │   │   ├── reindex_queue.rs # Watcher-driven reindex queue with a per-file circuit breaker
 │   │   │   └── icloud.rs   # iCloud exclusion (xattr on macOS)
 │   │   └── export/         # Document export engines (PDF, DOCX, PPTX, HTML)
 │   │       ├── mod.rs
@@ -100,6 +129,9 @@ note-sage/
 │   │       ├── typography.rs        # Shared typography helpers (font lookup, fallbacks)
 │   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
 │   │       └── templates.rs        # PDF + PPTX template loading and parameterization
+│   ├── crates/             # Workspace crates: notesage-capture, tauri-plugin-notesage-ios
+│   ├── macos/              # macOS Share Extension sources, entitlements and provisioning profiles
+│   ├── tests/              # Integration tests: sandbox_isolation.rs (Seatbelt, macOS-only, `#[ignore]`), watcher_integration.rs, mock_acp_agent.rs, fixtures/
 │   ├── ios/                # iOS native wiring (staged): LibraryAccess.swift, NotesagePlugin.swift (Tauri bridge), ShareViewController.swift, *.entitlements, ShareExtension-Info.plist, README (integrated by `tauri ios init` on a Mac)
 │   ├── binaries/           # llama-server sidecar (dev: downloaded + dylibs; prod: static) — see docs/llama-server-sidecar.md
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
@@ -129,20 +161,29 @@ note-sage/
 │   │   │   ├── TableHeaderMenu.tsx  # Column type/aggregation context menu
 │   │   │   └── extensions/ # Custom Tiptap extensions incl. slash-command.tsx (see editor-architecture.md)
 │   │   ├── cmd/            # Floating command bar (Quiet Composer)
-│   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx, CommandBarHistory.tsx
+│   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx (CommandBarHistory.tsx still exists but is used only by its test — superseded by chat/ChatHistoryView)
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
 │   │   ├── sidebar/        # FileIcon.tsx (shared file-type icon)
-│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, FoldersSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
+│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, InboxSection.tsx, RecordingsSection.tsx, PinnedSection.tsx, ProjectsSection.tsx (+ ProjectRow.tsx, ChildRow.tsx, useProjectInlineEdit.ts, useProjectRowDrag.ts, project-section-utils.ts), FoldersSection.tsx (+ useFolderDrop.ts), RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── settings/       # ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
-│   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
+│   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels, shown in the nav as Appearance, Writing (`EditorSettings`), AI Providers (`AISettings`), Skills & Agents, Voice, Projects, Automations, System, Labs
 │   │   ├── chat/           # ChatMessage, ChatMessageList, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, ResendProviderDialog, ChatHistoryView, segments/, etc. — all consumed by FloatingCommandBar / CommandBarStream / CommandBarContext (Quiet Composer is the only shell; the input + attachment chips live in cmd/)
 │   │   ├── activity/       # ActivityTaskCard.tsx, AgentOrb.tsx, AgentPanel.tsx
+│   │   ├── actions/        # Actions dashboard — ActionsDialog.tsx, ActionsDashboard.tsx, ActionFilterBar.tsx, ActionItemRow.tsx
+│   │   ├── automations/    # MissedRunsDialog.tsx (the builder lives in settings/v2/automations/)
+│   │   ├── git/            # CommitDialog.tsx, BranchComparePopover.tsx
+│   │   ├── recordings/     # RecordingsView.tsx (the Recordings place)
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, useTranscriptionJob + useRecordingsInbox (the recording → transcript pipeline and the `<library root>/Recordings` scanner for phone bundles — docs/features/ai-workflows.md § Meeting Recording), etc.)
+│   ├── hooks/              # React hooks (useEditor, useEditorAutoSave (the 1 s debounced auto-save, extracted from Editor.tsx), useEditorTabContentLoader, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, useTranscriptionJob + useRecordingsInbox (the recording → transcript pipeline and the `<library root>/Recordings` scanner for phone bundles — docs/features/ai-workflows.md § Meeting Recording), etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
-│   ├── lib/                # Utilities (markdown + markdown-html-converters, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
+│   ├── lib/                # Utilities (markdown + markdown-html-converters, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, pending-serialize (the debounced serialize behind `useEditor`'s `onUpdate`, bound to the document it was scheduled for), library-follow + library-follow-apply + library-marker-state (following a library move another Mac performed; why a marker could not be read), etc.)
+│   ├── shared/             # appCommandManifest.json — the single source of app-level shortcuts
+│   ├── workers/            # Markdown parse worker (markdown-parse.worker.ts, markdown-parse.core.ts, worker-extensions.ts)
+│   ├── generated/          # third-party-licenses.json (`pnpm licenses:generate`)
+│   ├── eval/               # Local-agent eval harness
+│   ├── types/              # Ambient module declarations
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -154,11 +195,14 @@ note-sage/
 │   ├── setup.ts            # jsdom setup for ProseMirror benchmarks
 │   ├── markdown.perf.test.ts    # Parse/serialize benchmarks (1KB–100KB)
 │   ├── decorations.perf.test.ts # Search + tag decoration rebuild benchmarks
-│   └── stores.perf.test.ts      # Store ops + command palette filter benchmarks
+│   ├── stores.perf.test.ts      # Store ops + command palette filter benchmarks
+│   ├── cmdbar.perf.test.ts, orb.perf.test.ts, status-tray.perf.test.ts, sidebar-filter.perf.test.tsx
+│   └── markdown-worker.perf.test.ts # Worker parse benchmarks
 ├── src/test/               # Test infrastructure
 │   ├── tauri-mock.ts       # Vitest Tauri IPC mock (invoke handlers, event listeners, toast)
 │   ├── component-harness.tsx # React testing utilities
-│   ├── mock-data.ts        # Test data generators
+│   ├── mock-data.ts        # Test data generators (currently imported by nothing)
+│   ├── local-storage.ts    # localStorage test helper
 │   └── mock-editor.ts      # Mock editor instance
 ├── tests/fixtures/         # Test fixtures
 │   ├── *.md                # Markdown round-trip test files
@@ -167,7 +211,7 @@ note-sage/
 │   ├── tests/              # Test specs (app-loads, chat, editor, file-operations, navigation)
 │   └── fixtures/           # Sample data + Tauri mock injection
 ├── e2e-real/               # Real E2E tests (WebDriverIO + Tauri WebDriver)
-│   ├── tests/              # Test specs (editor, external-changes, navigation, performance, startup, tabs)
+│   ├── tests/              # Test specs (editor, document-switching, external-changes, command-bar, inbox, library-migration, navigation, performance, sidebar-*, startup, html-viewer-csp, …)
 │   ├── fixtures/           # Real filesystem test project
 │   └── helpers/            # Setup, actions, timing utilities
 ├── bridges/
@@ -177,7 +221,8 @@ note-sage/
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
 │   ├── contrast-audit.ts   # WCAG contrast audit for design-system palette (`pnpm audit:contrast`)
 │   ├── perf-ci-guard.mjs   # Classifies perf-suite failures — fails CI on a benchmark that crashed, tolerates one that merely overran
-│   ├── generate-licenses.mjs # Third-party notice list from the npm + cargo manifests → `src/generated/third-party-licenses.json` (`pnpm licenses:generate`)
+│   ├── generate-licenses.mjs # Third-party notice list from the npm + cargo manifests → `src/generated/third-party-licenses.json` (`pnpm licenses:generate`; run on macOS)
+│   ├── license-npm-closure.mjs # The walk over `pnpm list --json` the generator uses (its own module so it can be tested)
 │   ├── build-macos-share-extension.sh # Compiles the macOS Share Extension + embeds it in a .app (signs inside-out)
 │   ├── macos-release-embed.sh # Release-time embed + rebuild of every derived artifact (dmg, updater tarball, .sig) with verification
 │   ├── spikes/             # De-risking spike harnesses (e.g. pi-seatbelt-spike.sh)
@@ -241,10 +286,10 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 | Store | Purpose | Persistence |
 | --- | --- | --- |
-| `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs | Full |
+| `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs — every remaining "tab" name in this store (`activeTabId`, `closeTab`, `EditorTab`, …) is vestigial naming for "document" | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
-| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`, `notifyAutomationFailure`, `notifyPermissionRequest`, `notifyInboxCaptures` — the last gates the desktop "New in Inbox" notification from `useInboxArrivals`; default on, rehydrated to on for older blobs), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `quietChromeTransparent`, `showTitleBar` (default off — gates the optional document TitleBar), `sidebarPinned`, `sidebarWidth` (resizable sidebar, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`), `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), telemetry consent (`telemetryUsageEnabled`/`telemetryCrashEnabled` tri-state `boolean \| null` — `null` follows the running build via `buildIsAlpha()` (not the update channel); effective values via `selectEffectiveTelemetryUsage`/`selectEffectiveTelemetryCrash`; `telemetryNoticeSeen`), UI language (`locale`: `Locale | null` — `null` follows the OS; written through to `src/lib/i18n.ts` on set and on rehydrate, and read for date/number formatting via `getFormatLocale()` / `useFormatLocale()`), home directory | Full (except `startupReady`) |
+| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`, `notifyAutomationFailure`, `notifyPermissionRequest`, `notifyInboxCaptures` — the last gates the desktop "New in Inbox" notification from `useInboxArrivals`; default on, rehydrated to on for older blobs), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `quietChromeTransparent`, `showTitleBar` (default off — gates the optional document TitleBar), `sidebarPinned`, `sidebarWidth` (resizable sidebar, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`), `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), UI language (`locale`: `Locale | null` — `null` follows the OS; written through to `src/lib/i18n.ts` on set and on rehydrate, and read for date/number formatting via `getFormatLocale()` / `useFormatLocale()`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config — predates `routing-store` / `connections-store`; kept for one-time migration of v1 settings and as a fallback when no routing entry exists. Not deprecated for usage, deprecated for new features | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
@@ -268,7 +313,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
 | `agent-status-store` | ACP agent unresponsive/exited banner state | None |
 | `folder-appearance-store` | Per-folder appearance overrides (custom icon + color) for explorer/external folders in the Folders section; keyed by absolute path. Project folders store appearance in `.notesage/project.json` instead | None (not persisted — external paths are ephemeral) |
-| `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project under notes root) | None |
+| `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project — created in the synced library `icloudNotesagePath` when iCloud is available and readable, otherwise under the local notes root `~/Notesage`; see `useProjectInlineEdit.ts`) | None |
+| `flag-store` | Which Labs flags are switched on (`enabled: FlagId[]`, only enabled ids stored). Deliberately separate from `settings-store` so a corrupted settings blob cannot enable unfinished behaviour; filtered through the flag registry (`src/lib/flags.ts`) on rehydrate | Full |
+| `recordings-store` | The Recordings place: the `<library root>/Recordings` bundle listing with each bundle's manifest/transcript state, for `RecordingsSection` / `RecordingsView` | None (the folder and its manifests are the truth) |
 | `automation-store` | Automation registry — cache of the on-disk YAML automations (the files are authoritative; `useAutomationDiscovery` repopulates on startup) + durable per-automation run history (`runsByAutomation`, capped + TTL-pruned) | Partial (`runsByAutomation` only — definitions re-scanned from disk) |
 | `cmd-bar-summon-store` | Durable "open the command bar" summon intent (prefix / drilldown + nonce), written by the always-mounted `useGlobalShortcuts` dispatcher so a summon survives a command-bar crash/remount | None |
 | `domain-request-store` | Pending network-domain approval requests from the agent network proxy — hoisted out of `ChatMessageList` so approvals work while the command bar is collapsed | None |
@@ -304,9 +351,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-07-04):** 361 unit test files, 20 Playwright E2E specs, 13 real-e2e specs. Re-measure instead of trusting these numbers: `find src -name '*.test.ts' -o -name '*.test.tsx' | wc -l` (unit), `find e2e/tests -name '*.spec.ts' | wc -l` (Playwright), `find e2e-real/tests -name '*.test.ts' | wc -l` (real E2E). Run `pnpm test` for the current case count.
+**Test inventory:** counts are deliberately not recorded here (they drifted every time they were). Measure: `find src -name '*.test.ts' -o -name '*.test.tsx' | wc -l` (unit), `find e2e/tests -name '*.spec.ts' | wc -l` (Playwright), `find e2e-real/tests -name '*.test.ts' | wc -l` (real E2E). Run `pnpm test` for the current case count.
 
-**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
+**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Warning-only (exit 0) on purpose: the comparison has no tolerance (any drop at all is flagged) and the baseline is generated on whatever machine last ran `pnpm coverage:update-baseline` while the check runs on the macOS CI runner, so making it blocking today would turn run-to-run and cross-platform noise into red PRs. The script header lists what has to change first.
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
 
@@ -369,19 +416,19 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:tree]` | `useFileOperations.ts`, `workspace-store.ts` | Per-directory load time, entry count, total tree refresh |
 | `[perf:find]` | `search-highlight.ts` | Query, match count, doc node size, elapsed time |
 | `[perf:typing]` | `tag-highlight.ts`, `search-highlight.ts`, `comment-mark.ts` | Decoration rebuild per keystroke (sampled every 10th keystroke) |
-| `[perf:palette]` | `FloatingCommandBar` mode pickers (`modes/PaletteMode.tsx`, etc.) | Mode, query, result count, IPC timing for index-backed modes |
-| `[perf:doc-load]` | `Editor.tsx` | File type, size, load elapsed time on first read from disk |
+| `[perf:palette]` | — | Intended for the `FloatingCommandBar` mode pickers. **Constant only — not instrumented:** `PERF.palette` exists in `src/lib/logger.ts` but nothing emits it, so a log grep returns nothing. |
+| `[perf:doc-load]` | `useEditorTabContentLoader.ts`, `useEditorTabSwitch.ts` | File type, size, load elapsed time on first read from disk |
 | `[perf:doc-switch]` | `useEditorTabSwitch.ts` | Per-stage timing of a doc activation: preview-ready, parse-cache hit/miss, hydration aborted, editor restored, doc visible. Includes `pipelineMs` (parse-promise dispatch → editor hydrated, the full async pipeline), `workerParse` / `workerPreprocess` (worker-thread JS time, both 0 on cache hit), streaming-hydrate timings (`chunkCount`, `streamMs`), and total click-to-visible (`totalMs`). |
 | `[perf:setContent]` | `markdown.ts` (`loadParsedJsonIntoEditor`, `loadRawMarkdownIntoEditor`) | DOM materialize cost — `setContentMs`, `freshStateMs`, `sideMapsMs`, plus `oldDocSize` and `newDocSize` in ProseMirror coords. Sibling to streaming hydrate's `streamMs`. |
 | `[perf:skills]` | `useSkillOperations.ts` | Skill/agent/instruction discovery timing |
 | `[perf:ai-chat]` | `useDirectApiChat.ts` | First token latency, stream complete (provider, total tokens, elapsed) |
 | `[perf:index]` | `src-tauri/src/index/mod.rs` | Index build (project, files, changed, ms), query timing per type |
-| `[perf:cmdbar]` | `FloatingCommandBar` | Focus, dismiss, prefix morph, attachment chips |
+| `[perf:cmdbar]` | `cmd/picker-actions.ts` | `palette-execute` (which palette command ran). The only emitter — focus, dismiss and prefix morph are not instrumented |
 | `[perf:orb]` | `AgentOrb` | Panel open, pulse cost |
-| `[perf:status]` | `StatusBar`, `StatusTray` | StatusBar render, StatusTray popover open |
+| `[perf:status]` | — | Intended for `StatusBar` / `StatusTray`. **Constant only — not instrumented:** `PERF.status` exists in `src/lib/logger.ts` but nothing emits it, so a log grep returns nothing. |
 | `[perf:peek]` | `FolderPeek` | Hover popover unfurl |
-| `[perf:sidebar]` | `Sidebar` | Sidebar render, type-to-filter |
-| `[perf:focus]` | Focus mode | Focus mode enter/exit transition timing |
+| `[perf:sidebar]` | — | Intended for the sidebar (render, type-to-filter). **Constant only — not instrumented:** `PERF.sidebar` exists in `src/lib/logger.ts` but nothing emits it, so a log grep returns nothing. |
+| `[perf:focus]` | — | Intended for focus-mode enter/exit. **Constant only — not instrumented:** `PERF.focus` exists in `src/lib/logger.ts` but nothing emits it, so a log grep returns nothing. (`PERF.treeOverlay` / `perf:tree-overlay` is likewise a leftover constant for the deleted TreeOverlay.) |
 | `[perf:context]` | `useDirectApiChat.ts` | Sliding-window message trim for `local_bundled` (dropped count, surviving message count, budget, estimated tokens) |
 
 Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.cmdbar`, `PERF.orb`, etc.) — call sites should reference the constant rather than the raw `'perf:foo'` string literal so typos surface at typecheck time.
@@ -422,7 +469,7 @@ Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.
 | System-prompt "Currently editing" | `isUriInScope` on active tab path | `src/hooks/useAIContext.ts` |
 | System-prompt file tree | `isUriInScope` per entry + 200-file / 4-level cap | `src/lib/ai/context.ts`, `useAIContext.ts` |
 | Skills / agents / MCP injection | `{ global, byProject }` registries merged by `selectedProjectPaths` | `src/stores/skill-store.ts`, `mcp-store.ts`, `useSkillOperations.ts` |
-| MCP-via-agent (ACP `session/new`) | `getActiveServers(selectedProjectPaths)` + agent `McpCapabilities` gate; stdio env secrets + http OAuth resolved keychain-side at session build | `src/lib/ai/acp-mcp.ts`, `src-tauri/src/commands/acp.rs` (`build_acp_mcp_servers`) |
+| MCP-via-agent (ACP `session/new`) | `getActiveServers(selectedProjectPaths)` + agent `McpCapabilities` gate; stdio env secrets + http OAuth resolved keychain-side at session build | `src/lib/ai/acp-mcp.ts`, `src-tauri/src/commands/acp/helpers.rs` (`build_acp_mcp_servers`) |
 | Approvals persistence | `ScopedApproval` triples with migration from legacy flat strings | `src/stores/permission-store.ts` |
 | `aiLock` enforcement | `ProjectLockViolation` at every send path | `src/lib/ai/project-lock.ts`, `useAIOperations.ts`, `useAgentTaskOperations.ts`, `CommandBarContext.tsx` |
 | Resend/edit provider mismatch | `ResendProviderDialog` on `ChatMessage.connectionId` mismatch | `src/components/cmd/FloatingCommandBar.tsx`, `ResendProviderDialog.tsx` |
@@ -433,9 +480,9 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 
 **Tauri capability surface (hardened 2026-04-19, task #21 in project-data-isolation):**
 
-- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, `autostart:default`, and `deep-link:default` (the `notesage://` scheme for one-click MCP install). No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
+- `src-tauri/capabilities/default.json` grants exactly: `core:default`, `core:window:allow-start-dragging` (the custom title-bar drag region), `opener:default`, `dialog:default`, `updater:default`, `process:allow-restart` (only the relaunch after an update — not the whole `process:default` set), a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoints (`github.com/PeterBlenessy/notesage/**`, `release-assets.githubusercontent.com/**`), `notification:default` + `allow-is-permission-granted` / `allow-request-permission` / `allow-notify`, `autostart:default`, `deep-link:default` (the `notesage://` scheme for one-click MCP install), and `clipboard-manager:allow-read-text` (so `⌘⇧V` paste-as-plain-text in `paste-handler.ts` can read the clipboard natively instead of through `navigator.clipboard.readText()`; read-only — no clipboard write permission is granted). No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
 - `tauri.conf.json`'s `assetProtocol.scope.allow` is a finite list of the app's OWN Tauri path variables (`$APPDATA`, `$APPLOCALDATA`, `$APPCACHE`, `$RESOURCE`, `$TEMP`) instead of `**` — note it does NOT include `$HOME`. User-content roots (the Notesage library, opened projects, explorer folders) are granted at runtime as they open via the `allow_asset_dir` command (guarded by `validate_asset_dir`). The asset protocol (used by `convertFileSrc` for images, drawing SVGs, and the PDF/EPUB/DOCX/PPTX viewers) thus can't serve arbitrary home-dir files (`.ssh`, `.aws`, `.env`, sibling projects), closing the silent-exfil path where agent-authored markdown could point an `<img>` at `~/.ssh/id_rsa`, `/etc/hosts`, etc.
-- **Content-Security-Policy (audit 2026-06-09):** the live window ships a CSP (`app.security.csp` in `tauri.conf.json`) — `default-src 'self'`, a strict `script-src 'self'` (no `unsafe-inline`/`unsafe-eval`; Vite's inline modulepreload polyfill is disabled in `vite.config.ts` so this holds), `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`. This is defense-in-depth behind the already-hardened HTML sinks. `img-src`/`connect-src` stay permissive (the app renders remote document images and several viewers fetch resources); the link-preview beacon is closed separately at the component (see below), not via CSP.
+- **Content-Security-Policy (audit 2026-06-09):** the live window ships a CSP (`app.security.csp` in `tauri.conf.json`) — `default-src 'self'`; `script-src 'self' 'wasm-unsafe-eval'` (no `unsafe-inline`/`unsafe-eval` — `'wasm-unsafe-eval'` permits compiling WebAssembly only, which bundled libraries that ship WASM need, and does not enable JS `eval`; Vite's inline modulepreload polyfill is disabled in `vite.config.ts` so the no-inline-script rule holds); `style-src 'self' 'unsafe-inline'` (inline styles ARE allowed — the editor and UI libraries set them); `worker-src 'self' blob:`; `frame-src 'self' blob: data: htmlpreview: http://htmlpreview.localhost` (the HTML viewer's sandboxed iframe); `font-src 'self' data:`; `media-src 'self' blob: data: asset: http://asset.localhost`; `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`. `tauri.conf.json` is the authoritative list. This is defense-in-depth behind the already-hardened HTML sinks. `img-src`/`connect-src` stay permissive (`https: http:`, plus `asset:` / `htmlpreview:` / `ipc:` and, for `connect-src`, `ws: wss:` — the app renders remote document images and several viewers fetch resources); the link-preview beacon is closed separately at the component (see below), not via CSP.
 - **Link-preview image gating (audit 2026-06-09):** link-preview cards no longer auto-load the remote preview image / favicon (which come from the attacker-controllable target page) as live `<img>` beacons. Gated behind `settings.linkPreviewRemoteImages` (default OFF — privacy by default); card title/description/site text still render. Metadata fetching itself remains SSRF-hardened in `link_preview.rs`.
 - Regression lock: `src/lib/__tests__/tauri-capability-surface.test.ts` asserts the narrowed asset scope, the absence of `fs:allow-*` permissions, the unchanged `http:default` allowlist, AND the presence of the hardened CSP; future config tweaks that re-open a hole fail this test.
 

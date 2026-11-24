@@ -303,6 +303,70 @@ describe('tauri-storage failed reads', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
+  describe('a file that reads fine but is not JSON', () => {
+    const GARBAGE = '{"state":{"conversations":[{"id":"c1"';
+
+    function serveGarbageFor(...corruptKeys: string[]) {
+      const read = (key: string) =>
+        corruptKeys.includes(key) ? GARBAGE : key.startsWith('present') ? envelope({ saved: key }) : null;
+      setMockInvokeHandler('store_read_batch', (args) => {
+        const keys = (args?.keys as string[]) ?? [];
+        return Object.fromEntries(
+          keys.map((k) => [k, read(k)] as const).filter(([, v]) => v !== null),
+        );
+      });
+      setMockInvokeHandler('store_read', (args) => read(String(args?.key)));
+    }
+
+    it('keeps the raw content as <key>.corrupt before the store can overwrite it', async () => {
+      serveGarbageFor('corrupt-chat');
+      const storage = await freshStorage<Record<string, unknown>>();
+
+      // Hydrates defaults instead of throwing out of zustand's JSON.parse.
+      expect(await storage.getItem('corrupt-chat')).toBeNull();
+      expect(writes).toEqual([{ key: 'corrupt-chat.corrupt', value: GARBAGE }]);
+
+      // With the copy safe, the store persists again.
+      storage.setItem('corrupt-chat', { state: { fresh: true }, version: 0 });
+      await vi.advanceTimersByTimeAsync(THROTTLE_MS + 100);
+      expect(writes.map((w) => w.key)).toEqual(['corrupt-chat.corrupt', 'corrupt-chat']);
+    });
+
+    it('blocks writes when the copy cannot be made', async () => {
+      serveGarbageFor('corrupt-chat');
+      setMockInvokeHandler('store_write', (args) => {
+        if (String(args?.key).endsWith('.corrupt')) throw new Error('disk full');
+        writes.push({ key: String(args?.key), value: String(args?.value) });
+        return null;
+      });
+      const storage = await freshStorage<Record<string, unknown>>();
+
+      expect(await storage.getItem('corrupt-chat')).toBeNull();
+      storage.setItem('corrupt-chat', { state: { fresh: true }, version: 0 });
+      storage.removeItem('corrupt-chat');
+      await vi.advanceTimersByTimeAsync(THROTTLE_MS + 100);
+
+      expect(writes).toEqual([]);
+      expect(deletes).toEqual([]);
+    });
+
+    it('tells the user once, and leaves healthy stores alone', async () => {
+      serveGarbageFor('corrupt-a', 'corrupt-b');
+      const storage = await freshStorage<Record<string, unknown>>();
+      const [, , ok] = await Promise.all([
+        storage.getItem('corrupt-a'),
+        storage.getItem('corrupt-b'),
+        storage.getItem('present-ok'),
+      ]);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(ok?.state).toEqual({ saved: 'present-ok' });
+      expect(writes.map((w) => w.key).sort()).toEqual(['corrupt-a.corrupt', 'corrupt-b.corrupt']);
+      expect(toastError).toHaveBeenCalledTimes(1);
+      expect(String(toastError.mock.calls[0][0])).toMatch(/damaged/i);
+    });
+  });
+
   it('keeps the localStorage copy when the migration check cannot read the file', async () => {
     failReadsFor('broken-legacy');
     localStorage.setItem('broken-legacy', envelope({ legacy: true }));

@@ -32,7 +32,7 @@ function InlineActivityLog({ activities }: { activities: DelegationActivity[] })
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5">
           {activities.map((a, i) => (
-            <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 pl-1 py-0.5 text-xs ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
+            <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 pl-1 py-0.5 text-xs ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground'}`}>
               <span className="mt-px shrink-0">
                 {a.status === 'running' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />

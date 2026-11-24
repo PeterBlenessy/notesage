@@ -45,6 +45,58 @@ import {
 } from "@/lib/markdown-html-converters";
 
 // ---------------------------------------------------------------------------
+// The parse preprocessor chain — ONE definition
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn stored markdown into the HTML-fragmented markdown Tiptap / markdown-it
+ * can parse: every custom block (callouts, charts, drawings, mermaid, link
+ * previews, page breaks, TOC, sized and data-URI images) becomes the HTML
+ * element its node's `parseHTML` rule matches, after ghost/empty task items
+ * are normalised and image paths with spaces are encoded.
+ *
+ * This is the ONLY place the order is written down. It used to be copied four
+ * times (three here, once in the worker's `prepareMarkdownForParse`) and a
+ * fifth, shorter and different, in the round-trip test — so a converter added
+ * to one copy was silently missing from the others. Every load path and the
+ * round-trip gate now call this.
+ *
+ * Input is markdown with the side-channel comments already stripped (node
+ * ids, table column metadata and, where the caller handles them, `{emoji}`
+ * annotations); those steps return maps the caller re-applies after
+ * `setContent`, so they stay at the call sites.
+ *
+ * Pure string → string and worker-safe. Innermost runs first.
+ */
+export function preprocessForParse(markdown: string): string {
+  return convertDataUriImagesToHtml(
+    convertImagesWithMetaToHtml(
+      encodeImagePathSpaces(
+        convertInlineChartsToHtml(
+          convertInlineDrawingsToHtml(
+            convertChartsToHtml(
+              convertDrawingsToHtml(
+                convertLinkPreviewsToHtml(
+                  convertTocToHtml(
+                    convertPageBreaksToHtml(
+                      convertCalloutsToHtml(
+                        convertMermaidToHtml(
+                          normalizeEmptyTaskItems(stripGhostTaskItems(markdown)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Editor ↔ Markdown helpers
 // ---------------------------------------------------------------------------
 
@@ -88,7 +140,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(markdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
-  const encoded = convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))));
+  const encoded = preprocessForParse(noMeta);
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -128,7 +180,7 @@ export function loadRawMarkdownIntoEditor(
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
-  const encoded = convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))));
+  const encoded = preprocessForParse(noMeta);
 
   // [perf:setContent] instrumentation — measures main-thread cost of the
   // DOM teardown + rebuild. The "old" doc size is what we're throwing away;
@@ -418,7 +470,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   return {
-    content: convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))))),
+    content: preprocessForParse(noMeta),
     annotations,
     tableMetadata: metadata,
     nodeIds,

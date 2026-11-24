@@ -9,6 +9,7 @@
 //! JSON/SSE body parsing — see the module note on `parse_jsonrpc_http_response`.
 
 use serde_json::Value;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -36,9 +37,10 @@ pub(crate) fn spawn_mcp_transport(
 ) -> JsonRpcTransport {
     let transport = JsonRpcTransport::new(stdin);
     let reader_pending = transport.pending.clone();
+    let reader_closed = transport.closed_flag();
 
     tokio::spawn(async move {
-        if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, Some(&app)).await {
+        if let Err(e) = mcp_reader_loop(stdout, reader_pending, reader_closed, child_pid, &server_id, Some(&app)).await {
             log::error!(target: "notesage::mcp", "Reader loop exited for server {}: {}", server_id, e);
             let _ = app.emit(
                 "mcp-server-status",
@@ -60,7 +62,39 @@ pub(crate) fn spawn_mcp_transport(
 
 const MCP_READER_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long `initialize` may take. A binary that never speaks MCP (it waits on
+/// stdin, or prints a prompt) used to leave the start command, and the
+/// "starting" status, hanging forever.
+pub(crate) const MCP_INIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long `tools/list` may take.
+pub(crate) const MCP_LIST_TOOLS_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default limit for one `tools/call`. Generous, because real tools (a build,
+/// a crawl, a long query) legitimately run for minutes; the point is that one
+/// hung tool cannot stall the AI tool loop indefinitely. Callers override it
+/// per call, see [`resolve_tool_call_timeout`].
+pub(crate) const MCP_TOOL_CALL_DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Ceiling for a caller-supplied `tools/call` limit.
+pub(crate) const MCP_TOOL_CALL_MAX_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// The limit for one `tools/call`: the caller's `timeout_ms` clamped to
+/// 1 s ..= [`MCP_TOOL_CALL_MAX_TIMEOUT`], or the default when none is given.
+pub(crate) fn resolve_tool_call_timeout(timeout_ms: Option<u64>) -> Duration {
+    match timeout_ms {
+        Some(ms) => Duration::from_millis(ms)
+            .clamp(Duration::from_secs(1), MCP_TOOL_CALL_MAX_TIMEOUT),
+        None => MCP_TOOL_CALL_DEFAULT_TIMEOUT,
+    }
+}
+
 /// Pump a server's stdout into the pending-request table until it dies.
+///
+/// On the way out it fails every request still in flight and marks the
+/// transport closed (`closed` is the transport's own flag). The transport in
+/// `McpServerHandle` holds another `Arc` to `pending`, so without that the
+/// waiters of a crashed server would never be woken.
 ///
 /// `app` is optional so the loop can be driven without a Tauri application —
 /// it is used in exactly one place, a best-effort status emit on fatal error,
@@ -71,6 +105,7 @@ const MCP_READER_TIMEOUT: Duration = Duration::from_secs(30);
 async fn mcp_reader_loop<R: tokio::io::AsyncRead + Unpin>(
     stdout: R,
     pending: PendingRequests,
+    closed: Arc<AtomicBool>,
     child_pid: Option<u32>,
     server_id: &str,
     app: Option<&AppHandle>,
@@ -90,6 +125,15 @@ async fn mcp_reader_loop<R: tokio::io::AsyncRead + Unpin>(
             }
             ReadMessageResult::Fatal(e) => {
                 log::error!(target: "notesage::mcp", "MCP server {} reader fatal: {}", server_id, e);
+                let failed = json_rpc::close_pending(
+                    &pending,
+                    &closed,
+                    &format!("Server process exited: {}", e),
+                )
+                .await;
+                if failed > 0 {
+                    log::warn!(target: "notesage::mcp", "Failed {} in-flight request(s) of server {}", failed, server_id);
+                }
                 if let Some(app) = app {
                     let _ = app.emit(
                         "mcp-server-status",
@@ -312,10 +356,26 @@ pub(crate) enum McpConn {
 }
 
 impl McpConn {
-    async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
+    /// Send a request and wait at most `limit` for the reply. Every MCP
+    /// request is bounded: a server that stops answering must not hang its
+    /// caller.
+    async fn send_request(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        limit: Duration,
+    ) -> Result<Value, String> {
         match self {
-            McpConn::Stdio(t) => t.send_request(method, params).await,
-            McpConn::Http(c) => c.send_request(method, params).await,
+            McpConn::Stdio(t) => t.send_request_with_timeout(method, params, Some(limit)).await,
+            McpConn::Http(c) => tokio::time::timeout(limit, c.send_request(method, params))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(format!(
+                        "Request '{}' timed out after {}s",
+                        method,
+                        limit.as_secs_f32()
+                    ))
+                }),
         }
     }
 
@@ -349,7 +409,7 @@ pub(crate) async fn mcp_initialize(transport: &McpConn) -> Result<Value, String>
     });
 
     let result = transport
-        .send_request("initialize", Some(init_params))
+        .send_request("initialize", Some(init_params), MCP_INIT_TIMEOUT)
         .await?;
 
     // Send initialized notification
@@ -365,7 +425,7 @@ pub(crate) async fn mcp_list_tools_from_server(
     server_id: &str,
 ) -> Result<Vec<McpToolInfo>, String> {
     let result = transport
-        .send_request("tools/list", Some(serde_json::json!({})))
+        .send_request("tools/list", Some(serde_json::json!({})), MCP_LIST_TOOLS_TIMEOUT)
         .await?;
 
     let tools_arr = result
@@ -407,13 +467,16 @@ pub(crate) async fn mcp_call_tool_on_server(
     transport: &McpConn,
     tool_name: &str,
     arguments: Value,
+    limit: Duration,
 ) -> Result<McpToolResult, String> {
     let params = serde_json::json!({
         "name": tool_name,
         "arguments": arguments,
     });
 
-    let result = transport.send_request("tools/call", Some(params)).await?;
+    let result = transport
+        .send_request("tools/call", Some(params), limit)
+        .await?;
 
     let is_error = result
         .get("isError")
@@ -481,6 +544,37 @@ mod tests {
     fn parse_http_response_empty_stream_is_error() {
         let err = parse_jsonrpc_http_response("text/event-stream", "", 7).unwrap_err();
         assert!(err.contains("No matching"));
+    }
+
+    #[test]
+    fn tool_call_timeout_defaults_and_clamps() {
+        assert_eq!(resolve_tool_call_timeout(None), MCP_TOOL_CALL_DEFAULT_TIMEOUT);
+        assert_eq!(resolve_tool_call_timeout(Some(45_000)), Duration::from_secs(45));
+        // Zero would fail every call before the server could answer.
+        assert_eq!(resolve_tool_call_timeout(Some(0)), Duration::from_secs(1));
+        assert_eq!(resolve_tool_call_timeout(Some(u64::MAX)), MCP_TOOL_CALL_MAX_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn reader_exit_fails_requests_in_flight_and_closes_the_transport() {
+        // A request is waiting when the server's stdout hits EOF (it crashed).
+        // The map is shared with the transport in managed state, so unless the
+        // loop drains it the waiter is never woken.
+        let pending = json_rpc::new_pending_requests();
+        let closed = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        pending.lock().await.insert(41, tx);
+
+        let outcome = mcp_reader_loop(&b""[..], pending.clone(), closed.clone(), None, "srv", None).await;
+
+        assert!(outcome.is_err());
+        let reply = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .expect("the waiter is woken when the reader exits")
+            .expect("with an error, not a dropped channel");
+        assert!(reply.unwrap_err().message.contains("Server process exited"));
+        assert!(pending.lock().await.is_empty());
+        assert!(closed.load(std::sync::atomic::Ordering::SeqCst));
     }
 }
 

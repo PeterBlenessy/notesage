@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useId } from 'react';
 import { ArrowRight, Check, Cloud, FolderOpen, Loader2, Lock, Unlock, X } from 'lucide-react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { LockProjectDialog } from './LockProjectDialog';
@@ -51,6 +51,7 @@ interface ProjectSettingsProps {
 }
 
 export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }: ProjectSettingsProps) {
+  const fieldId = useId();
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { updateMetadata, updateAI, clearAiLock } = useProjectMetadataStore();
   const connections = useConnectionsStore((s) => s.connections);
@@ -306,7 +307,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-sm font-medium">{t("project.provider")}</Label>
+              <Label htmlFor={`${fieldId}-provider`} className="text-sm font-medium">{t("project.provider")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {t("proj.overrideProvider")}
               </p>
@@ -332,7 +333,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                   updateAI(projectPath, { provider: value === '_global' ? null : value })
                 }
               >
-                <SelectTrigger className="ml-auto w-56 text-left">
+                <SelectTrigger id={`${fieldId}-provider`} className="ml-auto w-56 text-left">
                   <SelectValue>
                     {metadata.ai.provider === null ? (
                       <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
@@ -368,7 +369,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-sm font-medium">{t("project.agent")}</Label>
+              <Label htmlFor={`${fieldId}-1`} className="text-sm font-medium">{t("project.agent")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {t("proj.overrideAgent")}
               </p>
@@ -379,7 +380,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                 updateAI(projectPath, { agentName: value === '_global' ? null : value })
               }
             >
-              <SelectTrigger className="ml-auto w-56 text-left">
+              <SelectTrigger id={`${fieldId}-1`} className="ml-auto w-56 text-left">
                 <SelectValue>
                   {metadata.ai.agentName == null ? (
                     <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>

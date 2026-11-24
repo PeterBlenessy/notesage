@@ -1,6 +1,8 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -443,8 +445,42 @@ export function ProjectsSection({ onAdd, onAddExisting, filter }: ProjectsSectio
     [expandedPaths, rows, focusRow, toggleExpanded, openProject, showHiddenFiles],
   );
 
+  // Child rows are memoized (`ProjectChildItem`), so everything handed to them
+  // must keep its identity across section renders. The handlers below read the
+  // current row order / expansion / rename callback through this ref instead of
+  // closing over them, which would give every row a new prop on each change.
+  const latestRef = useRef({ rows, expandedChildPaths, commitRename });
+  useLayoutEffect(() => {
+    latestRef.current = { rows, expandedChildPaths, commitRename };
+  });
+
+  const registerRowRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    rowRefs.current.set(id, el);
+  }, []);
+
+  const handleChildActivate = useCallback((entry: FileEntry) => {
+    if (entry.is_directory) {
+      setExpandedChildPaths((prev) => {
+        const next = new Set(prev);
+        if (prev.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        return next;
+      });
+      return;
+    }
+    void openFileEntry(entry);
+  }, []);
+
+  const handleChildCommitRename = useCallback(
+    (oldPath: string, newBasename: string, isDirectory?: boolean) => {
+      void latestRef.current.commitRename(oldPath, newBasename, isDirectory);
+    },
+    [],
+  );
+
   const handleChildKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: RowDescriptor) => {
+      const { rows, expandedChildPaths } = latestRef.current;
       if (isContextMenuKey(event)) {
         event.preventDefault();
         event.stopPropagation();
@@ -505,7 +541,7 @@ export function ProjectsSection({ onAdd, onAddExisting, filter }: ProjectsSectio
         void openFileEntry(row.entry);
       }
     },
-    [rows, focusRow, expandedChildPaths],
+    [focusRow],
   );
 
   // Recursive child renderer — each expanded folder renders its children in a
@@ -531,65 +567,25 @@ export function ProjectsSection({ onAdd, onAddExisting, filter }: ProjectsSectio
           const id = `${project.path}::${entry.path}`;
           const isChildExpanded =
             entry.is_directory && expandedChildPaths.has(entry.path);
-          const row: RowDescriptor = {
-            id,
-            kind: "child",
-            project,
-            entry,
-            depth: level,
-          };
-          const childRow = (
-            <ChildRow
-              row={row}
-              level={level}
-              isActive={entry.path === activeTabPath}
-              isFocused={focusedRowId === id}
-              hasFocusWithin={focusedRowId !== null}
-              isRenaming={renamingPath === entry.path}
-              isExpanded={entry.is_directory ? isChildExpanded : undefined}
-              onActivate={() => {
-                if (entry.is_directory) {
-                  setExpandedChildPaths((prev) => {
-                    const next = new Set(prev);
-                    if (prev.has(entry.path)) next.delete(entry.path);
-                    else next.add(entry.path);
-                    return next;
-                  });
-                  return;
-                }
-                void openFileEntry(entry);
-              }}
-              onKeyDown={(e) => handleChildKeyDown(e, row)}
-              onFocus={() => setFocusedRowId(id)}
-              onStartRename={startRename}
-              onCommitRename={commitRename}
-              onCancelRename={cancelRename}
-              registerRef={(el) => rowRefs.current.set(id, el)}
-            />
-          );
-          const ctx = (
-            <SidebarContextMenu
-              filePath={entry.path}
-              kind={entry.is_directory ? "folder" : "file"}
-            >
-              <div>{childRow}</div>
-            </SidebarContextMenu>
-          );
-          let inner: ReactNode;
-          if (entry.is_directory) {
-            inner = (
-              <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
-                {ctx}
-              </FolderPeek>
-            );
-          } else if (isPreviewable(entry.path)) {
-            inner = <FilePreview filePath={entry.path}>{ctx}</FilePreview>;
-          } else {
-            inner = <div>{ctx}</div>;
-          }
           return (
             <li key={id} className="m-0 p-0">
-              {inner}
+              <ProjectChildItem
+                project={project}
+                entry={entry}
+                level={level}
+                isActive={entry.path === activeTabPath}
+                isFocused={focusedRowId === id}
+                hasFocusWithin={focusedRowId !== null}
+                isRenaming={renamingPath === entry.path}
+                isExpanded={entry.is_directory ? isChildExpanded : undefined}
+                onActivateEntry={handleChildActivate}
+                onRowKeyDown={handleChildKeyDown}
+                onRowFocus={setFocusedRowId}
+                onStartRename={startRename}
+                onCommitRename={handleChildCommitRename}
+                onCancelRename={cancelRename}
+                registerRowRef={registerRowRef}
+              />
               {isChildExpanded &&
                 renderChildLevel(project, entry.children ?? [], level + 1)}
             </li>
@@ -774,6 +770,108 @@ export function ProjectsSection({ onAdd, onAddExisting, filter }: ProjectsSectio
  * First-focusable child row ID for a given project. Returns the first
  * folder, falling back to the first file.
  */
+// ---------------------------------------------------------------------------
+// ProjectChildItem
+// ---------------------------------------------------------------------------
+
+interface ProjectChildItemProps {
+  project: WorkspaceProject;
+  entry: FileEntry;
+  level: number;
+  isActive: boolean;
+  isFocused: boolean;
+  hasFocusWithin: boolean;
+  isRenaming: boolean;
+  isExpanded: boolean | undefined;
+  /** Stable, entry/row/id-taking handlers — bound per row inside. */
+  onActivateEntry: (entry: FileEntry) => void;
+  onRowKeyDown: (event: KeyboardEvent<HTMLDivElement>, row: RowDescriptor) => void;
+  onRowFocus: (id: string) => void;
+  onStartRename: (path: string) => void;
+  onCommitRename: (oldPath: string, newBasename: string, isDirectory?: boolean) => void;
+  onCancelRename: () => void;
+  registerRowRef: (id: string, el: HTMLDivElement | null) => void;
+}
+
+/**
+ * One child row of the project tree plus its context-menu / peek / preview
+ * wrappers. Memoized: the section re-renders on every active-tab change,
+ * focus move and tree refresh, and without this boundary each of those
+ * re-rendered every visible row (and re-ran every row's ref callback, since
+ * an inline `registerRef` is a new function each time). With stable props a
+ * row now re-renders only when something about THAT row changed.
+ */
+const ProjectChildItem = memo(function ProjectChildItem({
+  project,
+  entry,
+  level,
+  isActive,
+  isFocused,
+  hasFocusWithin,
+  isRenaming,
+  isExpanded,
+  onActivateEntry,
+  onRowKeyDown,
+  onRowFocus,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  registerRowRef,
+}: ProjectChildItemProps) {
+  const id = `${project.path}::${entry.path}`;
+  const row = useMemo<RowDescriptor>(
+    () => ({ id, kind: "child", project, entry, depth: level }),
+    [id, project, entry, level],
+  );
+  const onActivate = useCallback(() => onActivateEntry(entry), [onActivateEntry, entry]);
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => onRowKeyDown(event, row),
+    [onRowKeyDown, row],
+  );
+  const onFocus = useCallback(() => onRowFocus(id), [onRowFocus, id]);
+  const registerRef = useCallback(
+    (el: HTMLDivElement | null) => registerRowRef(id, el),
+    [registerRowRef, id],
+  );
+
+  const ctx = (
+    <SidebarContextMenu
+      filePath={entry.path}
+      kind={entry.is_directory ? "folder" : "file"}
+    >
+      <div>
+        <ChildRow
+          row={row}
+          level={level}
+          isActive={isActive}
+          isFocused={isFocused}
+          hasFocusWithin={hasFocusWithin}
+          isRenaming={isRenaming}
+          isExpanded={isExpanded}
+          onActivate={onActivate}
+          onKeyDown={onKeyDown}
+          onFocus={onFocus}
+          onStartRename={onStartRename}
+          onCommitRename={onCommitRename}
+          onCancelRename={onCancelRename}
+          registerRef={registerRef}
+        />
+      </div>
+    </SidebarContextMenu>
+  );
+  if (entry.is_directory) {
+    return (
+      <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
+        {ctx}
+      </FolderPeek>
+    );
+  }
+  if (isPreviewable(entry.path)) {
+    return <FilePreview filePath={entry.path}>{ctx}</FilePreview>;
+  }
+  return <div>{ctx}</div>;
+});
+
 function firstChildRowId(
   projectPath: string,
   children: PeekChildren,

@@ -49,7 +49,7 @@ Streaming AI responses.
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
 - Image attachments: paste, drag-drop, or file picker to attach up to 5 images per message. Images compressed client-side (1568px max, PNG→JPEG, 5MB cap). Vision capability auto-detected per provider. Right-click "Add to chat" on editor images/drawings or sidebar image files. See [Image Attachments & Vision](ai-providers.md#image-attachments--vision) for full details.
-- **ACP session modes**: Permission-level mode picker (Shield icon) in command bar. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
+- **ACP session modes**: Permission-level mode picker (Shield icon) in command bar. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > AI Providers. Full Access triggers a conflict dialog when sandbox restrictions are active.
 - **ACP config options**: Dynamic config dropdowns (e.g., thinking effort with Brain icon) populated from agent session response. Values set via `session/set_config_option`.
 - **ACP usage tracking**: Live token count displayed in command bar during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
 - **ACP plan display**: Agent execution plans rendered as collapsible `PlanSegment` cards with step status icons (pending/in_progress/completed) and priority indicators.
@@ -70,8 +70,8 @@ Streaming AI responses.
 - `alwaysAllowed`, `toolCallAlways`, and `skillScriptAlways` are persisted as `ScopedApproval[]` triples: `{ toolName, connectionId, projectRoot, grantedAt }`. Lookup is keyed by the active send context, so an "always allow write_file" granted in Project A under Claude does NOT auto-approve in Project B under Ollama.
 - `domainAlwaysAllowed` is scoped similarly: `Record<connectionId, Record<projectRoot | 'global', string[]>>`.
 - Legacy flat approvals (from pre-v38 persisted state) migrate into a `(connectionId: null, projectRoot: null)` bucket with a one-time toast inviting the user to review.
-- Settings > Privacy > Approvals panel lists every persisted approval with per-row revoke and bulk-revoke (all legacy, all for a connection, all for a project).
-- "Require confirmation for all tool calls" global toggle in Settings > Advanced (default off) disables auto-allow entirely; every tool call gets a permission card.
+- Settings > AI Providers > Approvals panel lists every persisted approval with per-row revoke and bulk-revoke (all legacy, all for a connection, all for a project).
+- "Require confirmation for all tool calls" global toggle in Settings > AI Providers (default off) disables auto-allow entirely; every tool call gets a permission card.
 
 **Activity panel visibility:**
 
@@ -99,7 +99,7 @@ File-based agent system for user-created and provider-native agents.
 - Agent picker dropdown in command bar; `@agent-name` addressing in chat input for per-message scoping
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
 - Agents section in Settings > Skills & Agents for viewing, enabling/disabling
-- Skill & agent management: delete and move (global ↔ project) for custom items, gated behind Settings > Advanced toggle
+- Skill & agent management: delete and move (global ↔ project) for custom items, gated behind a Settings > Skills & Agents toggle
 - 5 bundled custom prompts (Academic Tone, Creative Rewrite, Proofread, Marketing Copy, Technical Edit) seeded on first launch for quick AI actions via the bubble menu
 
 ## Skills & Agents Platform
@@ -118,7 +118,7 @@ Extensible AI capability system based on open standards.
 
 **MCP Client Integration:**
 
-- MCP (Model Context Protocol) client in the Rust backend (`commands/mcp.rs`) with two transports behind the `McpConn` enum:
+- MCP (Model Context Protocol) client in the Rust backend (`commands/mcp/`) with two transports behind the `McpConn` enum:
   - **stdio** — JSON-RPC 2.0 over a spawned child process's stdin/stdout (cleanup on app exit)
   - **http (Streamable HTTP)** — JSON-RPC POSTed to a single endpoint; responses parsed from `application/json` or `text/event-stream` (SSE), with `Mcp-Session-Id` persisted across requests. No child process; the protocol helpers (`mcp_initialize`, `mcp_list_tools_from_server`, `mcp_call_tool_on_server`) are transport-agnostic.
 - **Curated catalog** (`mcp-catalog.json`, `mcp_catalog_list`) — a "Browse catalog" picker of opt-in server templates, seeded with the official MCP reference servers (Filesystem, Fetch, Memory, Git, Sequential Thinking, Time, Everything), badged "Official" with provenance links. Selecting one pre-fills the Add dialog; nothing runs until the user confirms.
@@ -336,7 +336,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/stores/recording-store.ts` | Meeting-recording state, transcription model + recording language defaults, Whisper model catalog |
 | `src-tauri/src/commands/transcription.rs` | Mic capture-to-WAV (`start_recording`/`stop_recording`), whole-file `transcribe_file`, Whisper model management |
 | `src-tauri/src/commands/skills.rs` | Skill/agent discovery, script execution |
-| `src-tauri/src/commands/mcp.rs` | MCP client |
+| `src-tauri/src/commands/mcp/` | MCP client (`mod.rs` commands, `transport.rs`, `state.rs`, `validation.rs`, `config.rs`, `catalog.rs`, `stderr_drain.rs`) |
 
 ## Future Enhancements
 

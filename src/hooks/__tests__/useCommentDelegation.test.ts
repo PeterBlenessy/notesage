@@ -8,7 +8,7 @@ import { useChatStore } from '@/stores/chat-store';
 import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useCommentDelegation } from '@/hooks/useCommentDelegation';
+import { useCommentDelegation, resetCommentDelegationRuns } from '@/hooks/useCommentDelegation';
 
 // ---------------------------------------------------------------------------
 // Patch sonner mock — the tauri-mock provides toast as a plain object with
@@ -123,9 +123,15 @@ function getStartTaskMeta() {
 // Tests
 // ---------------------------------------------------------------------------
 
+/** The store with its real actions, captured before any test swaps in spies. */
+const REAL_COMMENT_STORE = useCommentStore.getState();
+
 describe('useCommentDelegation', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    // In-flight delegation records are module-level; tests that never settle
+    // their task would otherwise leak a record into the next test.
+    resetCommentDelegationRuns();
 
     // Patch sonner's toast export to be a callable function (tauri-mock creates
     // it as a plain object). We do this every beforeEach since clearAllMocks
@@ -981,6 +987,176 @@ describe('useCommentDelegation', () => {
         (c: unknown[]) => (c[1] as { label: string }).label.includes('no active task')
       );
       expect(noTaskActivity).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // Cancel during the spawn window (audit 2026-11-22 §2)
+  //
+  // `startTask` resolves only once the agent is up, and the task id reaches
+  // the comment only after that. A Cancel in between used to find no task: the
+  // task kept running and its `onComplete` later undid the cancel.
+  // =========================================================================
+
+  describe('cancel while the agent is still starting', () => {
+    let resolveStart: (taskId: string) => void = () => {};
+    let rejectStart: (error: unknown) => void = () => {};
+
+    const storedComment = () =>
+      useCommentStore.getState().commentsByDocument[DOC_ID]?.find((c) => c.id === 'comment-1');
+
+    beforeEach(() => {
+      // Earlier tests in this file replace store actions with spies; these
+      // tests assert on real store state.
+      useCommentStore.setState(REAL_COMMENT_STORE, true);
+      resetStores();
+      useCommentStore.setState({ saveComments: vi.fn().mockResolvedValue(undefined) });
+      mockStartTask.mockImplementation(
+        () => new Promise<string>((resolve, reject) => { resolveStart = resolve; rejectStart = reject; }),
+      );
+    });
+
+    async function delegateAndCancelDuringSpawn(reply = false) {
+      const comment = makeComment(
+        reply
+          ? { status: 'done', replies: [{ id: 'r1', body: 'Earlier answer', author: 'Claude Code', timestamp: 1 }] }
+          : {},
+      );
+      useCommentStore.setState({ commentsByDocument: { [DOC_ID]: [comment] } });
+      const { result } = renderHook(() => useCommentDelegation());
+
+      let delegation: Promise<void> = Promise.resolve();
+      await act(async () => {
+        delegation = reply
+          ? result.current.delegateReply(comment, 'And now?', DOC_ID, PROJECT_ROOT)
+          : result.current.delegateComment(comment, DOC_ID, PROJECT_ROOT);
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(mockStartTask).toHaveBeenCalledTimes(1);
+      expect(storedComment()?.status).toBe('delegated');
+      expect(storedComment()?.taskId).toBeUndefined();
+
+      // Cancel with the render snapshot the UI holds — it has no taskId.
+      await act(async () => {
+        await result.current.cancelDelegation(comment, DOC_ID, PROJECT_ROOT);
+      });
+      return { delegation };
+    }
+
+    it('cancels the task as soon as it exists', async () => {
+      const { delegation } = await delegateAndCancelDuringSpawn();
+      expect(mockCancelTask).not.toHaveBeenCalled();
+      expect(storedComment()?.status).toBe('open');
+
+      await act(async () => {
+        resolveStart('task-late');
+        await delegation;
+      });
+
+      expect(mockCancelTask).toHaveBeenCalledExactlyOnceWith('task-late');
+      expect(storedComment()?.status).toBe('open');
+    });
+
+    it('a task that completes anyway does not overwrite the cancel', async () => {
+      const { delegation } = await delegateAndCancelDuringSpawn();
+      const callbacks = getStartTaskCallbacks();
+
+      await act(async () => {
+        resolveStart('task-late');
+        await delegation;
+      });
+      // The agent finishes despite the cancel (cancel raced its last chunk).
+      act(() => {
+        callbacks.onChunk('late text');
+        callbacks.onActivity({ event: 'tool_call', label: 'Read file' });
+        callbacks.onComplete('Here is my answer');
+      });
+
+      expect(storedComment()?.status).toBe('open');
+      expect(storedComment()?.replies ?? []).toHaveLength(0);
+      expect(mockToastFn.success).not.toHaveBeenCalled();
+      const labels = (useCommentStore.getState().activitiesByComment['comment-1'] ?? []).map((a) => a.label);
+      expect(labels).not.toContain('Read file');
+      expect(labels.some((l) => l.startsWith('Cancelled'))).toBe(true);
+    });
+
+    it('a late error from the cancelled task is not reported', async () => {
+      const { delegation } = await delegateAndCancelDuringSpawn();
+      const callbacks = getStartTaskCallbacks();
+
+      await act(async () => {
+        resolveStart('task-late');
+        await delegation;
+      });
+      act(() => { callbacks.onError('session cancelled'); });
+
+      expect(mockToastFn.error).not.toHaveBeenCalled();
+      expect(storedComment()?.status).toBe('open');
+    });
+
+    it('a spawn that fails after the cancel is not reported either', async () => {
+      const { delegation } = await delegateAndCancelDuringSpawn();
+
+      await act(async () => {
+        rejectStart(new Error('spawn failed'));
+        await delegation;
+      });
+
+      expect(mockToastFn.error).not.toHaveBeenCalled();
+      expect(mockCancelTask).not.toHaveBeenCalled();
+      expect(storedComment()?.status).toBe('open');
+    });
+
+    it('covers a reply delegation too, and keeps the thread answerable', async () => {
+      const { delegation } = await delegateAndCancelDuringSpawn(true);
+      const callbacks = getStartTaskCallbacks();
+      // Replies exist, so a cancelled reply returns to `done` (reply input shown).
+      expect(storedComment()?.status).toBe('done');
+      const repliesAfterCancel = storedComment()?.replies?.length;
+
+      await act(async () => {
+        resolveStart('task-reply');
+        await delegation;
+      });
+      act(() => { callbacks.onComplete('late reply'); });
+
+      expect(mockCancelTask).toHaveBeenCalledExactlyOnceWith('task-reply');
+      expect(storedComment()?.replies?.length).toBe(repliesAfterCancel);
+    });
+
+    it('reads the task id from the store when the passed comment is a stale snapshot', async () => {
+      mockStartTask.mockResolvedValue('task-123');
+      const staleSnapshot = makeComment();
+      useCommentStore.setState({ commentsByDocument: { [DOC_ID]: [staleSnapshot] } });
+      const { result } = renderHook(() => useCommentDelegation());
+
+      await act(async () => {
+        await result.current.delegateComment(staleSnapshot, DOC_ID, PROJECT_ROOT);
+      });
+      expect(storedComment()?.taskId).toBe('task-123');
+
+      // The UI still holds the pre-delegation object, which has no taskId.
+      await act(async () => {
+        await result.current.cancelDelegation(staleSnapshot, DOC_ID, PROJECT_ROOT);
+      });
+
+      expect(mockCancelTask).toHaveBeenCalledExactlyOnceWith('task-123');
+    });
+
+    it('a normal completion is unaffected', async () => {
+      mockStartTask.mockResolvedValue('task-123');
+      const comment = makeComment();
+      useCommentStore.setState({ commentsByDocument: { [DOC_ID]: [comment] } });
+      const { result } = renderHook(() => useCommentDelegation());
+
+      await act(async () => {
+        await result.current.delegateComment(comment, DOC_ID, PROJECT_ROOT);
+      });
+      act(() => { getStartTaskCallbacks().onComplete('All fixed'); });
+
+      expect(storedComment()?.status).toBe('done');
+      expect((storedComment()?.replies ?? []).slice(-1)[0]?.body).toBe('All fixed');
+      expect(mockCancelTask).not.toHaveBeenCalled();
     });
   });
 

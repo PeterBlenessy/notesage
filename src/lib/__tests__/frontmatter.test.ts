@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, ensureDocumentId, updateFrontmatterKey } from '../frontmatter';
+import { parseFrontmatter, serializeFrontmatter, ensureDocumentId, getDocumentId, updateFrontmatterKey } from '../frontmatter';
 import { parsePageSettings, serializePageSettings, type DocumentPageSettings } from '../page-settings';
 
 describe('parseFrontmatter', () => {
@@ -352,6 +352,59 @@ describe('ensureDocumentId', () => {
     const b = ensureDocumentId(null);
 
     expect(a.id).not.toBe(b.id);
+  });
+});
+
+describe('getDocumentId', () => {
+  it('returns a UUID or slug id unchanged', () => {
+    expect(getDocumentId({ id: '3f2b6c1e-8a57-4d0e-9b1a-0c5d2e7f4a61' })).toBe('3f2b6c1e-8a57-4d0e-9b1a-0c5d2e7f4a61');
+    expect(getDocumentId({ id: 'my_note-2' })).toBe('my_note-2');
+    expect(getDocumentId({ id: 'v1.2-draft' })).toBe('v1.2-draft');
+  });
+
+  it('returns null when there is no frontmatter or no id', () => {
+    expect(getDocumentId(null)).toBeNull();
+    expect(getDocumentId(undefined)).toBeNull();
+    expect(getDocumentId({ title: 'x' })).toBeNull();
+    expect(getDocumentId({ id: '' })).toBeNull();
+  });
+
+  it('keeps a whole-number id as its decimal string', () => {
+    // YAML `id: 42` parses to a number; its comments were already stored under "42".
+    expect(getDocumentId(parseFrontmatter('---\nid: 42\n---\nBody').frontmatter)).toBe('42');
+  });
+
+  it.each([
+    ['a path that climbs out', '../../x'],
+    ['a path with a separator', 'a/b'],
+    ['a backslash path', 'a\\b'],
+    ['a dot-dot', '..'],
+    ['a hidden-file name', '.hidden'],
+    ['a string with a space', 'my doc'],
+    ['a NUL byte', 'a\0b'],
+    ['an over-long string', 'a'.repeat(200)],
+    ['an object', { nested: true }],
+    ['a list', ['a']],
+    ['a fraction', 1.5],
+    ['a negative number', -1],
+    ['a boolean', true],
+  ])('returns null for %s', (_label, id) => {
+    expect(getDocumentId({ id })).toBeNull();
+  });
+
+  it('agrees with ensureDocumentId, which replaces an unusable id', () => {
+    const kept = ensureDocumentId({ id: 'doc-1', title: 't' });
+    expect(kept.id).toBe('doc-1');
+    expect(kept.frontmatter.id).toBe('doc-1');
+
+    const numeric = ensureDocumentId({ id: 42 });
+    expect(numeric.id).toBe('42');
+    expect(numeric.frontmatter.id).toBe(42);
+
+    const replaced = ensureDocumentId({ id: '../../x', title: 't' });
+    expect(replaced.id).not.toBe('../../x');
+    expect(getDocumentId(replaced.frontmatter)).toBe(replaced.id);
+    expect(replaced.frontmatter.title).toBe('t');
   });
 });
 

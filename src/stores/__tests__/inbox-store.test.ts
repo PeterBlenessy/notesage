@@ -326,3 +326,133 @@ describe("inbox-store", () => {
     expect(useInboxStore.getState().visible().map((i) => i.path)).toEqual([a]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Failed reads are not "empty" (audit 2026-11-22 §10)
+// ---------------------------------------------------------------------------
+
+describe("inbox-store — a read that fails is not an empty Inbox", () => {
+  const SIDECAR = `${INBOX}/.notesage/reading-progress.json`;
+  let written: Record<string, string>;
+  let listing: ReturnType<typeof entry>[];
+  /** What the OTHER device wrote: an item this Mac has never opened. */
+  const PHONE = JSON.stringify({
+    version: 1,
+    items: { "UBS-AI.pdf": { fraction: 0.9, openedAt: 1, updatedAt: 2 } },
+  });
+
+  beforeEach(() => {
+    resetInboxCaches();
+    written = {};
+    listing = [entry("Riksbanken.html", 1_756_900_000), entry("UBS-AI.pdf", 1_756_800_000)];
+    useInboxStore.setState({
+      open: false, dir: null, items: [], loading: false, error: null,
+      progress: { version: 1, items: {} }, meta: {}, filter: "", selection: [], cursor: null, anchor: null,
+      lastDestination: null, activeItem: null,
+    });
+    useSettingsStore.setState({ notesRootPath: "~/Notesage", homeDir: "/Users/peter" });
+    setMockInvokeHandler("list_files_shallow", () => listing);
+    setMockInvokeHandler("write_file", (args) => {
+      const a = args as { path: string; content: string };
+      written[a.path] = a.content;
+    });
+    setMockInvokeHandler("create_directory", () => undefined);
+    setMockInvokeHandler("mark_self_write", () => undefined);
+    setMockInvokeHandler("inbox_card_meta", () => null);
+    setMockInvokeHandler("icloud_ensure_downloaded", () => "downloading");
+    vi.useFakeTimers();
+  });
+
+  it("does not write over a progress file that exists but could not be read", async () => {
+    // There, and unreadable: a permission error, an I/O error.
+    setMockInvokeHandler("read_file", () => {
+      throw new Error("Operation not permitted");
+    });
+    setMockInvokeHandler("path_exists", (args) => (args as { path: string }).path === SIDECAR);
+
+    await useInboxStore.getState().load();
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.5);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    // Merging with "empty" and writing would have dropped the phone's entry.
+    expect(written[SIDECAR]).toBeUndefined();
+    // This device's progress is kept in memory for the next attempt.
+    expect(useInboxStore.getState().entryFor(`${INBOX}/Riksbanken.html`)?.fraction).toBe(0.5);
+  });
+
+  it("does not write over a progress file iCloud has not downloaded yet", async () => {
+    setMockInvokeHandler("read_file", () => {
+      throw new Error("No such file or directory");
+    });
+    // `pathExists` is false for the evicted file itself; only the
+    // `.name.icloud` placeholder says it exists.
+    setMockInvokeHandler(
+      "path_exists",
+      (args) => (args as { path: string }).path === `${INBOX}/.notesage/.reading-progress.json.icloud`,
+    );
+
+    await useInboxStore.getState().load();
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.5);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(written[SIDECAR]).toBeUndefined();
+  });
+
+  it("merges and writes once the file reads again, keeping the other device's entry", async () => {
+    let readable = false;
+    setMockInvokeHandler("read_file", () => {
+      if (!readable) throw new Error("Operation not permitted");
+      return PHONE;
+    });
+    setMockInvokeHandler("path_exists", (args) => (args as { path: string }).path === SIDECAR);
+
+    await useInboxStore.getState().load();
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.5);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(written[SIDECAR]).toBeUndefined();
+
+    readable = true;
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.6);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const merged = parseReadingProgress(written[SIDECAR]);
+    expect(merged.items["Riksbanken.html"].fraction).toBe(0.6);
+    expect(merged.items["UBS-AI.pdf"].fraction).toBe(0.9);
+  });
+
+  it("still starts a fresh progress file when there is none", async () => {
+    setMockInvokeHandler("read_file", () => {
+      throw new Error("No such file or directory");
+    });
+    setMockInvokeHandler("path_exists", () => false);
+
+    await useInboxStore.getState().load();
+    useInboxStore.getState().recordProgress(`${INBOX}/Riksbanken.html`, 0.5);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(parseReadingProgress(written[SIDECAR]).items["Riksbanken.html"].fraction).toBe(0.5);
+  });
+
+  it("keeps the rows shown and reports it when the Inbox folder cannot be listed", async () => {
+    const toastError = vi.mocked((await import("sonner")).toast.error);
+    toastError.mockClear();
+    setMockInvokeHandler("read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("path_exists", () => false);
+    await useInboxStore.getState().load();
+    expect(useInboxStore.getState().items).toHaveLength(2);
+
+    // The folder is there; listing it fails.
+    setMockInvokeHandler("list_files_shallow", () => {
+      throw new Error("Operation timed out");
+    });
+    setMockInvokeHandler("path_exists", (args) => (args as { path: string }).path === INBOX);
+    await useInboxStore.getState().load();
+
+    expect(useInboxStore.getState().items).toHaveLength(2);
+    expect(useInboxStore.getState().error).toContain("Operation timed out");
+    expect(useInboxStore.getState().loading).toBe(false);
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
+});

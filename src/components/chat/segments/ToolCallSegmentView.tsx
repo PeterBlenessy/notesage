@@ -88,7 +88,7 @@ export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }
             return (
               <button
                 key={i}
-                className="block text-[10px] text-muted-foreground/60 hover:text-foreground hover:underline underline-offset-2 transition-colors truncate max-w-full cursor-pointer"
+                className="block text-[10px] text-muted-foreground hover:text-foreground hover:underline underline-offset-2 transition-colors truncate max-w-full cursor-pointer"
                 title={loc.path}
                 onClick={async (e) => {
                   e.stopPropagation();
@@ -130,7 +130,7 @@ export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }
             return (
               <div
                 key={`terminal-${i}`}
-                className="px-1 text-[11px] text-muted-foreground/50 italic"
+                className="px-1 text-[11px] text-muted-foreground italic"
               >
                 Terminal output (not yet supported)
               </div>

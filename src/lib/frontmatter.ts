@@ -382,14 +382,42 @@ interface ParseResult {
 }
 
 /**
- * Ensure a document has a UUID in its frontmatter.
- * If the frontmatter already has an `id`, it's returned unchanged.
- * Otherwise a new UUID is generated via `crypto.randomUUID()`.
+ * A document id is used as a store key AND as a file name
+ * (`.notesage/comments/<id>.json`), so it must not be able to leave that
+ * folder: letters, digits, `_`, `-` and inner dots only — no separators, no
+ * leading dot.
+ */
+const SAFE_DOCUMENT_ID = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
+
+/** Whether `id` is safe to use as a comment key / sidecar file name. */
+export function isSafeDocumentId(id: unknown): id is string {
+  return typeof id === 'string' && SAFE_DOCUMENT_ID.test(id);
+}
+
+/**
+ * The document id from frontmatter, or null when there is none or it is not
+ * usable. Frontmatter is user-controlled YAML: `id` may be a number, a list,
+ * an object or a path-like string. A whole number keeps working (as its
+ * decimal string, which is what it was already stored under); anything else
+ * that is not a safe id is treated as "no id".
+ */
+export function getDocumentId(frontmatter: Frontmatter | null | undefined): string | null {
+  const raw: unknown = frontmatter?.id;
+  if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return String(raw);
+  return isSafeDocumentId(raw) ? raw : null;
+}
+
+/**
+ * Ensure a document has a usable id in its frontmatter.
+ * If the frontmatter already has one (see `getDocumentId`), it's returned unchanged.
+ * Otherwise a new UUID is generated via `crypto.randomUUID()` — this replaces
+ * an `id` that cannot be used as a comment key.
  * If frontmatter is null, a new object with just `{ id }` is created.
  */
 export function ensureDocumentId(frontmatter: Frontmatter | null): { frontmatter: Frontmatter; id: string } {
-  if (frontmatter?.id && typeof frontmatter.id === 'string') {
-    return { frontmatter, id: frontmatter.id };
+  const existing = getDocumentId(frontmatter);
+  if (frontmatter && existing) {
+    return { frontmatter, id: existing };
   }
 
   const id = crypto.randomUUID();

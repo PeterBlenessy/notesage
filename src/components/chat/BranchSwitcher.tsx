@@ -147,6 +147,7 @@ export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitc
                     }}
                     className="shrink-0 mt-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                     title={t("chat.deleteBranch")}
+                    aria-label={t("chat.deleteBranch")}
                   >
                     <Trash2 className="h-3 w-3" strokeWidth={1.5} />
                   </button>

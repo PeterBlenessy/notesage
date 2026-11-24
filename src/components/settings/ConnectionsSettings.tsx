@@ -786,7 +786,8 @@ function ConfigureForm({
                 size="icon"
                 className="absolute right-0 top-0 h-full w-9 text-muted-foreground hover:text-foreground"
                 onClick={onToggleShow}
-                tabIndex={-1}
+                aria-label={showKey ? t("custagent.hideValue") : t("custagent.showValue")}
+                aria-pressed={showKey}
               >
                 {showKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
               </Button>

@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
+import { t } from "@/lib/i18n";
+import { log } from "@/lib/logger";
 import {
   DEFAULT_PRESETS,
   TYPOGRAPHY_VERSION,
@@ -85,12 +88,45 @@ export const EDITOR_STYLES_DEFAULTS: EditorStyles = {
 const LEGACY_SETTINGS_FILE = "editor-styles.json";
 const TYPOGRAPHY_FILE = "typography.json";
 
+type SettingsRead =
+  | { kind: "ok"; content: string }
+  /** Confirmed absent: no file and no iCloud placeholder for it. */
+  | { kind: "missing" }
+  /** There, or possibly there, and not readable right now. */
+  | { kind: "failed"; error: unknown };
+
+/**
+ * Read a settings file, keeping "there is no file" apart from "the file could
+ * not be read". Only the first may fall back to defaults that are later
+ * saved; `pathExists` alone cannot tell them apart, because it is also false
+ * for a file iCloud has evicted to a `.name.icloud` placeholder.
+ */
+async function readSettingsFile(dir: string, name: string): Promise<SettingsRead> {
+  try {
+    return { kind: "ok", content: await tauriApi.readFile(`${dir}/${name}`) };
+  } catch (error) {
+    try {
+      if (await tauriApi.pathExists(`${dir}/${name}`)) return { kind: "failed", error };
+      if (await tauriApi.pathExists(`${dir}/.${name}.icloud`)) return { kind: "failed", error };
+      return { kind: "missing" };
+    } catch {
+      return { kind: "failed", error };
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Store interface
 // ---------------------------------------------------------------------------
 
 interface EditorStylesStore extends EditorStyles {
   loaded: boolean;
+  /**
+   * True when `typography.json` exists (or may exist) but could not be
+   * loaded. The presets in memory are defaults the user did not choose, so
+   * `saveTypography` refuses to write them over the file.
+   */
+  typographyLoadFailed: boolean;
   systemFonts: SystemFont[];
   presets: TypographyPresets;
   /** Per-document typography overrides from `style:` frontmatter. Merged over global presets. */
@@ -130,6 +166,7 @@ function flatFromPresets(presets: TypographyPresets): EditorStyles {
 export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   ...EDITOR_STYLES_DEFAULTS,
   loaded: false,
+  typographyLoadFailed: false,
   systemFonts: [],
   presets: { ...DEFAULT_PRESETS },
   documentPresets: null,
@@ -141,44 +178,86 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   loadTypography: async (notesagePath: string) => {
     const basePath = `${notesagePath}/.notesage`;
 
+    // Defaults, shown but NOT saveable: the real file is still on disk.
+    const failLoad = (error: unknown) => {
+      log.warn("typography", `Could not load ${basePath}/${TYPOGRAPHY_FILE}; using defaults and leaving the file untouched`, error);
+      set({
+        presets: { ...DEFAULT_PRESETS },
+        ...EDITOR_STYLES_DEFAULTS,
+        loaded: true,
+        typographyLoadFailed: true,
+      });
+      toast.warning(t("toast.typographyLoadFailed"), { id: "typography-load-failed" });
+    };
+
     // Try typography.json first
-    try {
-      const content = await tauriApi.readFile(`${basePath}/${TYPOGRAPHY_FILE}`);
-      const file = JSON.parse(content) as TypographyFile;
-      if (file.version === TYPOGRAPHY_VERSION && file.presets) {
+    const typography = await readSettingsFile(basePath, TYPOGRAPHY_FILE);
+    if (typography.kind === "failed") {
+      failLoad(typography.error);
+      return;
+    }
+    if (typography.kind === "ok") {
+      let file: TypographyFile | null = null;
+      try {
+        file = JSON.parse(typography.content) as TypographyFile;
+      } catch {
+        file = null;
+      }
+      if (file && file.version === TYPOGRAPHY_VERSION && file.presets) {
         const presets = mergePresets(file.presets as unknown as Record<string, Partial<BlockTypeStyle>>, DEFAULT_PRESETS);
-        set({ presets, ...flatFromPresets(presets), loaded: true });
+        set({ presets, ...flatFromPresets(presets), loaded: true, typographyLoadFailed: false });
         return;
       }
-    } catch {
-      // typography.json doesn't exist — try legacy migration
+      // Readable but not usable (damaged, or a format this build does not
+      // know). Everything below may write typography.json, so keep a copy of
+      // what is there first; without the copy, do not write at all.
+      try {
+        await tauriApi.writeFile(`${basePath}/${TYPOGRAPHY_FILE}.corrupt`, typography.content);
+        log.warn("typography", `${TYPOGRAPHY_FILE} is not usable; kept a copy as ${TYPOGRAPHY_FILE}.corrupt`);
+      } catch (error) {
+        failLoad(error);
+        return;
+      }
     }
 
     // Try legacy editor-styles.json — migrate to typography.json
-    try {
-      const content = await tauriApi.readFile(`${basePath}/${LEGACY_SETTINGS_FILE}`);
-      const legacy = JSON.parse(content) as Partial<EditorStyles>;
-      const presets = migrateFromLegacy(legacy);
-      set({ presets, ...flatFromPresets(presets), loaded: true });
-      // Write new format so subsequent loads use typography.json directly
-      const file: TypographyFile = { version: TYPOGRAPHY_VERSION, presets };
-      tauriApi.writeFile(`${basePath}/${TYPOGRAPHY_FILE}`, JSON.stringify(file, null, 2)).catch(() => {});
-      return;
-    } catch {
-      // No settings files — use defaults
+    const legacyRead = await readSettingsFile(basePath, LEGACY_SETTINGS_FILE);
+    if (legacyRead.kind === "ok") {
+      try {
+        const legacy = JSON.parse(legacyRead.content) as Partial<EditorStyles>;
+        const presets = migrateFromLegacy(legacy);
+        set({ presets, ...flatFromPresets(presets), loaded: true, typographyLoadFailed: false });
+        // Write new format so subsequent loads use typography.json directly
+        const file: TypographyFile = { version: TYPOGRAPHY_VERSION, presets };
+        tauriApi.writeFile(`${basePath}/${TYPOGRAPHY_FILE}`, JSON.stringify(file, null, 2)).catch((err: unknown) => {
+          log.warn("typography", "Could not write migrated typography.json", err);
+        });
+        return;
+      } catch {
+        // Legacy file is not JSON — use defaults
+      }
+    } else if (legacyRead.kind === "failed") {
+      log.warn("typography", `Could not read ${LEGACY_SETTINGS_FILE}; skipping its migration`, legacyRead.error);
     }
 
-    set({ presets: { ...DEFAULT_PRESETS }, ...EDITOR_STYLES_DEFAULTS, loaded: true });
+    set({ presets: { ...DEFAULT_PRESETS }, ...EDITOR_STYLES_DEFAULTS, loaded: true, typographyLoadFailed: false });
   },
 
   saveTypography: async (notesagePath: string) => {
+    if (get().typographyLoadFailed) {
+      // What is in memory is defaults, not the user's saved presets.
+      log.warn("typography", "Refusing to save typography: the saved presets could not be loaded");
+      toast.error(t("toast.typographySaveBlocked"), { id: "typography-save-blocked" });
+      return;
+    }
     try {
       const { presets } = get();
       const file: TypographyFile = { version: TYPOGRAPHY_VERSION, presets };
       const filePath = `${notesagePath}/.notesage/${TYPOGRAPHY_FILE}`;
       await tauriApi.writeFile(filePath, JSON.stringify(file, null, 2));
     } catch (err) {
-      console.error("Failed to save typography presets:", err);
+      log.error("typography", "Failed to save typography presets", err);
+      toast.error(t("toast.typographySaveFailed", { error: String(err) }), { id: "typography-save-failed" });
     }
   },
 

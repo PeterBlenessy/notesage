@@ -112,6 +112,24 @@ describe('runAgentTask setup', () => {
     expect(useActivityStore.getState().tasks).toHaveLength(0);
   });
 
+  it('gives two tasks started in the same millisecond distinct ids', async () => {
+    // The id used to be `task-${Date.now()}`: an automation and a delegation
+    // starting together shared one and overwrote each other's record and
+    // cleanup (audit 2026-11-22 §2).
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const first = await runAgentTask(baseCtx({ prompt: 'first' }), captureStrategy().strategy);
+      const second = await runAgentTask(baseCtx({ prompt: 'second' }), captureStrategy().strategy);
+
+      expect(first).not.toBe(second);
+      expect(agentTaskRegistry.getTask(first)?.prompt).toBe('first');
+      expect(agentTaskRegistry.getTask(second)?.prompt).toBe('second');
+      expect(useActivityStore.getState().tasks).toHaveLength(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('reuses an existing activity-store task via existingTaskId (continuation)', async () => {
     useActivityStore.getState().addTask({
       id: 'existing-1',

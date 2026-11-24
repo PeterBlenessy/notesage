@@ -61,7 +61,7 @@ export function RecordingCard({ task }: { task: AgentTask }) {
           <p className="text-xs text-muted-foreground">
             {isPaused ? t("activity.paused") : t("activity.recording")}
             {task.recordingStartedAt && (
-              <span className="text-muted-foreground/70"> · started {formatClock(task.recordingStartedAt)}</span>
+              <span className="text-muted-foreground"> · started {formatClock(task.recordingStartedAt)}</span>
             )}
           </p>
         </div>
@@ -105,7 +105,7 @@ export function RecordingCard({ task }: { task: AgentTask }) {
       {/* Per-recording language override (#698) — defaults to the Settings
           value, made overridable right here at record time. */}
       <div className="pl-5 mt-1.5 flex items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground/80">{t("activity.language")}</span>
+        <span className="text-[11px] text-muted-foreground">{t("activity.language")}</span>
         <Select
           value={effectiveLanguage}
           onValueChange={(value) => setRecordingLanguage(task.id, value)}

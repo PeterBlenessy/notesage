@@ -3,9 +3,11 @@
 //
 // Composes the extracted ACP runtime modules (`src/hooks/acp/*`) into the
 // chat-facing operations: prompt send, crash retry with session restore, and
-// cancel. The per-conversation stream-cleanup map is owned here (one per
-// mounted hook); module-level runtime state lives in its own owners:
-//   - unresponsive timer + recovery callbacks → `acp/unresponsive-monitor`
+// cancel. Per-conversation send state is owned here, one set per mounted hook:
+// the stream-cleanup map, the last prompt (for retry), the in-flight send's
+// cancel token, and the cancel-escalation handles. Module-level runtime state
+// lives in its own owners:
+//   - unresponsive timer + owner registry      → `acp/unresponsive-monitor`
 //   - eager session creation + promise lock   → `acp/useEagerAcpSession`
 //   - workspace respawn / agent-exit guards   → `acp/useAcpAgentGuards`
 //   - inline single-turn generation           → `acp/inline-generate`
@@ -36,6 +38,7 @@ import {
   startUnresponsiveTimer,
   clearUnresponsiveTimer,
   UNRESPONSIVE_TIMEOUT_MS,
+  type UnresponsiveOwner,
 } from '@/hooks/acp/unresponsive-monitor';
 import { cleanupKeyFor, runConvCleanup, runAllConvCleanups, registerConvCleanup, type CleanupMap } from '@/hooks/acp/conv-cleanup';
 import { cacheAgentModels, applyFreshSessionConfig } from '@/hooks/acp/session-config';
@@ -45,20 +48,6 @@ import { acpGenerateTextOnce } from '@/hooks/acp/inline-generate';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { runStarted, runAttachInstance, runError, runIdle } from '@/lib/ai/session-run';
-
-/**
- * The ACP agent bound to the foreground (active) conversation, if any.
- *
- * After the singleton → per-conversation registry migration (PRD
- * `2026-06-14-command-bar-session-multitasking`, task #2), "the current agent"
- * is the registry entry keyed by the active conversation. Module-level concerns
- * that operate on whatever the user is watching (the unresponsive check, cancel)
- * resolve through this; concurrent background agents are reached via their own
- * conversation ids.
- */
-function foregroundAgent() {
-  return getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
-}
 
 /**
  * Total size ceiling for the injected conversation history, in characters.
@@ -234,6 +223,55 @@ interface AttachTurnListenersArgs {
   setActiveTool: (tool: string | null) => void;
   finalizeSegments: ChatListenerDeps['finalizeSegments'];
   setMessageInterrupted: (messageId: number, convId?: string | null) => void;
+  /** Whether the send was stopped while the listeners were being set up. */
+  isCancelled: () => boolean;
+}
+
+/** Handle on a turn's attached listeners. */
+interface AttachedTurn {
+  /** Write the listeners' buffered stream text to the chat store now. */
+  flush: () => void;
+}
+
+/**
+ * Per-send cancel token. `acpCancelChat` can only reach the backend once a
+ * prompt is in flight; before that (agent cold-spawn, session creation,
+ * listener setup) the only way to stop a send is to tell it, so it abandons
+ * itself at its next await instead of prompting and streaming into a message
+ * the user stopped.
+ */
+interface SendToken {
+  cancelled: boolean;
+  /** Set right before `acp_session_prompt` — from then on Stop cancels the session. */
+  promptSent: boolean;
+  assistantMessageId: number;
+}
+
+/** Context of a conversation's last prompt, kept for `retryWithRestore`. */
+interface PromptContext {
+  content: string;
+  assistantMessageId: number;
+  /** Timestamp of the user message in the (re)sent pair — excluded from replayed history. */
+  userTimestamp: number;
+  /** Registry key of the conversation that owns this send (task #2). */
+  conversationId?: string;
+  attachedFilePaths?: string[];
+  sandboxPaths?: string[];
+  attachments?: ImageAttachment[];
+  pathFilterRoots: string[];
+  homeDir: string;
+}
+
+/**
+ * How many conversations' last prompts are kept for retry. Each entry can hold
+ * image attachments, so the map is bounded; the oldest is dropped first.
+ */
+const MAX_RETRY_PROMPTS = 8;
+
+/** Handles of one conversation's cancel escalation (see `acpCancelChat`). */
+interface CancelEscalation {
+  /** Clear this escalation's own timer and listener. Idempotent. */
+  settle: () => void;
 }
 
 /**
@@ -241,10 +279,19 @@ interface AttachTurnListenersArgs {
  * per-conversation map. If a stale cleanup for the same conversation ran as a
  * side effect of registration (it clears the loading flag and the run entry),
  * re-assert what THIS turn established.
+ *
+ * Returns `null` when the send was stopped while the listeners were being set
+ * up: they are dropped again and nothing is registered, so a stopped send can
+ * neither stream nor disturb a newer send's registration.
  */
-async function attachTurnListeners(args: AttachTurnListenersArgs): Promise<void> {
+async function attachTurnListeners(args: AttachTurnListenersArgs): Promise<AttachedTurn | null> {
   const { cleanupMap, instanceId, sessionId, assistantMessageId, conversationId } = args;
   const listeners = await setupAcpChatListeners({ ...args.listenerDeps, instanceId, sessionId });
+  if (args.isCancelled()) {
+    listeners.unlisten();
+    listeners.unlistenPermission();
+    return null;
+  }
   const hadStale = registerConvCleanup(
     cleanupMap,
     conversationId,
@@ -266,6 +313,7 @@ async function attachTurnListeners(args: AttachTurnListenersArgs): Promise<void>
     args.setLoading(true);
     runStarted(args.resolveRunKey(), 'acp', { instanceId });
   }
+  return { flush: () => listeners.flush() };
 }
 
 // ---------------------------------------------------------------------------
@@ -330,14 +378,17 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   // Unresponsive agent detection — check if alive, then show banner
   // ---------------------------------------------------------------------------
 
-  const checkAgentAndNotify = useCallback(async () => {
-    const agent = foregroundAgent();
+  const checkAgentAndNotify = useCallback(async (timedConversationId?: string | null) => {
+    // The conversation whose turn the timer was watching — the one that
+    // started it, which need not be the one on screen. Absent an id, the
+    // foreground conversation.
+    const conversationId = timedConversationId ?? useChatStore.getState().activeConversationId ?? undefined;
+    const agent = getAcpAgent(conversationId);
     if (!agent) return;
 
-    // Clean up listeners from the stuck prompt (the foreground conversation —
-    // the unresponsive timer tracks the active turn).
+    // Clean up listeners from the stuck prompt.
     clearUnresponsiveTimer();
-    runConvCleanup(cleanupRefs.current, useChatStore.getState().activeConversationId);
+    runConvCleanup(cleanupRefs.current, conversationId);
 
     try {
       const alive = await invoke<boolean>('acp_is_agent_alive', {
@@ -359,35 +410,60 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     }
   }, []);
 
-  // Recovery callback ref for the unresponsive timer
-  const recoveryCallbackRef = useRef<(() => void) | null>(null);
-  recoveryCallbackRef.current = checkAgentAndNotify;
+  // Last prompt per conversation, for retryWithRestore (populated at the start
+  // of acpSendChatMessage). Keyed by `cleanupKeyFor(conversationId)`: a single
+  // slot was overwritten by every send, so with two conversations in flight a
+  // connection error in A replayed B's prompt (audit 2026-11-22 §2).
+  const lastPromptsRef = useRef<Map<string, PromptContext>>(new Map());
 
-  // Register the unresponsive callback so the timer can trigger recovery
-  useEffect(() => {
-    acpUnresponsiveMonitor.setOnUnresponsive(() => {
-      log.warn('ai', `ACP agent unresponsive for ${UNRESPONSIVE_TIMEOUT_MS / 1000}s, checking status`);
-      recoveryCallbackRef.current?.();
-    });
-    return () => {
-      acpUnresponsiveMonitor.setOnUnresponsive(null);
-      clearUnresponsiveTimer();
+  // Cancel token of each conversation's in-flight send (see `SendToken`).
+  const sendTokensRef = useRef<Map<string, SendToken>>(new Map());
+
+  // This instance's identity towards the unresponsive monitor. Several
+  // `useAcpLifecycle` instances are mounted at once (one per `useAIOperations`
+  // caller) and each holds its own cleanups and retry prompts, so each
+  // registers itself rather than overwriting one shared set of callbacks. The
+  // object is stable; it delegates through refs to the current callbacks.
+  const monitorCallbacksRef = useRef<{
+    check: (conversationId?: string | null) => void;
+    retry: (conversationId?: string | null) => Promise<void>;
+    keepWaiting: () => void;
+  } | null>(null);
+  const monitorOwnerRef = useRef<UnresponsiveOwner | null>(null);
+  if (!monitorOwnerRef.current) {
+    monitorOwnerRef.current = {
+      onUnresponsive: (conversationId) => {
+        log.warn('ai', `ACP agent unresponsive for ${UNRESPONSIVE_TIMEOUT_MS / 1000}s, checking status`);
+        monitorCallbacksRef.current?.check(conversationId);
+      },
+      canRetry: (conversationId) =>
+        lastPromptsRef.current.has(
+          cleanupKeyFor(conversationId ?? useChatStore.getState().activeConversationId),
+        ),
+      retry: (conversationId) => monitorCallbacksRef.current?.retry(conversationId) ?? Promise.resolve(),
+      keepWaiting: () => monitorCallbacksRef.current?.keepWaiting(),
     };
-  }, []);
+  }
+  const monitorOwner = monitorOwnerRef.current;
 
-  // Stop button escalation timer: 5s after cancel, if no response → SIGKILL + recovery
-  const cancelEscalationRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelEscalationListenerRef = useRef<(() => void) | null>(null);
+  // Register with the monitor for as long as this instance is mounted. The
+  // unregister is a compare-and-clear: it removes only this instance, and
+  // clears the timer only if this instance started it.
+  useEffect(() => acpUnresponsiveMonitor.register(monitorOwner), [monitorOwner]);
 
-  // Clean up cancel escalation timer and listener on unmount (Bug #2)
+  // Stop button escalation: 5s after cancel, if no response → unresponsive
+  // banner. One entry per cancelled conversation; each closes over its own
+  // timer and listener. Two shared refs let a second cancel within 5s
+  // overwrite the first's handles — the first's confirmation then cleared the
+  // SECOND's timer while its own orphaned timer still fired a spurious banner.
+  const cancelEscalationsRef = useRef<Map<string, CancelEscalation>>(new Map());
+
+  // Clean up cancel escalation timers and listeners on unmount (Bug #2)
   useEffect(() => {
+    const escalations = cancelEscalationsRef.current;
     return () => {
-      if (cancelEscalationRef.current) {
-        clearTimeout(cancelEscalationRef.current);
-        cancelEscalationRef.current = null;
-      }
-      cancelEscalationListenerRef.current?.();
-      cancelEscalationListenerRef.current = null;
+      for (const escalation of [...escalations.values()]) escalation.settle();
+      escalations.clear();
     };
   }, []);
 
@@ -408,21 +484,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     startUnresponsiveTimer();
     log.info('ai', 'User chose to keep waiting for agent');
   }, []);
-
-  // Store last prompt context for retry (populated at the start of acpSendChatMessage)
-  const lastPromptRef = useRef<{
-    content: string;
-    assistantMessageId: number;
-    /** Timestamp of the user message in the (re)sent pair — excluded from replayed history. */
-    userTimestamp: number;
-    /** Registry key of the conversation that owns this send (task #2). */
-    conversationId?: string;
-    attachedFilePaths?: string[];
-    sandboxPaths?: string[];
-    attachments?: ImageAttachment[];
-    pathFilterRoots: string[];
-    homeDir: string;
-  } | null>(null);
 
   /**
    * Generate text via ACP agent (single-turn, auto-approve permissions).
@@ -483,6 +544,23 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // target the right entry.
       runConvCleanup(cleanupRefs.current, conversationId);
 
+      // This send's cancel token. Registered before the first await so a Stop
+      // in ANY of the windows below (home-dir lookup, agent cold-spawn, session
+      // creation, listener setup) is seen: each await is followed by a check,
+      // and a stopped send returns without prompting the agent.
+      const sendKey = cleanupKeyFor(conversationId);
+      const token: SendToken = { cancelled: false, promptSent: false, assistantMessageId: userTimestamp + 1 };
+      sendTokensRef.current.set(sendKey, token);
+      const releaseToken = () => {
+        if (sendTokensRef.current.get(sendKey) === token) sendTokensRef.current.delete(sendKey);
+      };
+      /** True when this send was stopped — `acpCancelChat` already reset the UI state. */
+      const stopped = (): boolean => {
+        if (!token.cancelled) return false;
+        releaseToken();
+        return true;
+      };
+
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
       // byte attachments are visible as thumbnails already (intentionally not
@@ -541,6 +619,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       );
       const pathFilterRoots = sandboxScope;
       const homeDir = await getHomeDir();
+      if (stopped()) return;
       // Active project for scoped auto-allow lookup (#6b). Use the first selected
       // project — multi-select edge cases (where the tool acts on a file in one of
       // several roots) are an open question; first-selected is a reasonable default.
@@ -568,8 +647,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         finalizeSegments,
       };
 
-      // Save context for retryWithRestore
-      lastPromptRef.current = {
+      // Save context for retryWithRestore — under THIS conversation's key.
+      // Re-inserting moves it to the end, so the oldest entry is evicted first.
+      lastPromptsRef.current.delete(sendKey);
+      if (lastPromptsRef.current.size >= MAX_RETRY_PROMPTS) {
+        const oldest = lastPromptsRef.current.keys().next().value;
+        if (oldest !== undefined) lastPromptsRef.current.delete(oldest);
+      }
+      lastPromptsRef.current.set(sendKey, {
         content,
         assistantMessageId,
         userTimestamp,
@@ -579,12 +664,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         attachments: opts?.attachments,
         pathFilterRoots,
         homeDir,
-      };
+      });
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
         log.info('ai', `[send-chat] selectedProjectPaths=[${selectedProjectPaths.join('|')}] sandboxScope=[${sandboxScope.join('|')}] optsSandboxPaths=${opts?.sandboxPaths ? `[${opts.sandboxPaths.join('|')}]` : 'undef'}`);
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'send-chat', { conversationId });
+        // Stopped during the spawn (seconds on a cold start). The agent stays
+        // up for the next message; this one is not sent.
+        if (stopped()) return;
         // The registry entry this send owns — non-null right after a successful ensure.
         const agent = getAcpAgent(conversationId)!;
 
@@ -627,11 +715,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             instanceId, cwd, agent, effectiveConnection, selectedProjectPaths, conversationId,
           );
           isNewSession = true;
+          // The session exists and is recorded on the segment, so the next
+          // message reuses it — but a stopped send goes no further.
+          if (stopped()) return;
 
           // Store session modes and config options for UI rendering
           log.info('ai', `ACP session modes: ${JSON.stringify(session.modes)}`);
           log.info('ai', `ACP session config_options: ${JSON.stringify(session.config_options)}`);
           await applyFreshSessionConfig(instanceId, session, effectiveConnection ?? null);
+          if (stopped()) return;
         }
 
         // Full chat listeners now take over — stop the eager listener
@@ -641,7 +733,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         // swap on the shared agent instance (or an overlapping send) can't
         // bleed another session's chunks into this message (finding #4a).
         const promptSessionId = resolveActiveSessionId(agent.chatSessionId, conversationId);
-        await attachTurnListeners({
+        const turn = await attachTurnListeners({
           cleanupMap: cleanupRefs.current,
           instanceId,
           sessionId: promptSessionId,
@@ -653,7 +745,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           setActiveTool,
           finalizeSegments,
           setMessageInterrupted,
+          isCancelled: () => token.cancelled,
         });
+        // Stopped during listener setup — the listeners were dropped again.
+        if (!turn || stopped()) {
+          releaseToken();
+          return;
+        }
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -675,8 +773,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           } else {
             promptContent = content;
           }
-          // Start unresponsiveness detection timer before prompt
-          startUnresponsiveTimer();
+          // Start unresponsiveness detection timer before prompt — as this
+          // instance, for this conversation, so a hang is recovered by the
+          // instance that holds the turn's listeners.
+          startUnresponsiveTimer(monitorOwner, conversationId ?? null);
+          // From here on a Stop cancels the session on the agent.
+          token.promptSent = true;
           const acpImages = opts?.attachments?.length
             ? opts.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
             : null;
@@ -700,13 +802,23 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const notice = formatStopReasonNotice(stopReason);
           if (notice) {
             log.warn('ai', 'ACP turn ended early', { stopReason, conversationId });
+            // The notice extends the content read back from the store, so the
+            // batched stream text must be written there first.
+            turn.flush();
             appendTurnNotice(assistantMessageId, notice, conversationId);
           }
         } finally {
+          releaseToken();
           clearUnresponsiveTimer();
           runConvCleanup(cleanupRefs.current, conversationId);
         }
       } catch (error) {
+        releaseToken();
+        // A step failed AFTER the user stopped this send and before it
+        // prompted (e.g. the spawn it was waiting on errored). Stop already
+        // settled the message and the run; reporting the error — or
+        // auto-retrying, which would send the stopped prompt — would undo it.
+        if (token.cancelled && !token.promptSent) return;
         clearUnresponsiveTimer();
         runConvCleanup(cleanupRefs.current, conversationId);
 
@@ -716,7 +828,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         if (isAcpConnectionError(error)) {
           log.warn('ai', `ACP connection error, retrying with session restore: ${String(error)}`);
           try {
-            await retryWithRestore();
+            // Retry THIS conversation's prompt — not whichever was sent last.
+            await retryWithRestore(conversationId);
             return;
           } catch (retryError) {
             log.error('ai', 'ACP retry with restore also failed', retryError);
@@ -794,11 +907,16 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   );
 
   /**
-   * Retry the last prompt by reconnecting the agent (session/load) and resending.
-   * Reuses the existing assistant message — no branching.
+   * Retry a conversation's last prompt by reconnecting the agent (session/load)
+   * and resending. Reuses the existing assistant message — no branching.
+   *
+   * `targetConversationId` names the conversation whose send failed; the
+   * auto-retry passes it explicitly. Absent (the banner's Retry button), it is
+   * the foreground conversation.
    */
-  const retryWithRestore = useCallback(async () => {
-    const prompt = lastPromptRef.current;
+  const retryWithRestore = useCallback(async (targetConversationId?: string | null) => {
+    const retryKey = cleanupKeyFor(targetConversationId ?? useChatStore.getState().activeConversationId);
+    const prompt = lastPromptsRef.current.get(retryKey);
     if (!prompt) {
       log.warn('ai', 'No prompt context available for retry');
       return;
@@ -807,6 +925,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     const conversationId = prompt.conversationId;
     const agent = getAcpAgent(conversationId);
     if (!agent || !effectiveConnection) return;
+
+    // Same cancel token as a first send: a Stop while the agent reconnects or
+    // respawns must keep the retry from prompting.
+    const token: SendToken = { cancelled: false, promptSent: false, assistantMessageId: prompt.assistantMessageId };
+    sendTokensRef.current.set(retryKey, token);
+    const releaseToken = () => {
+      if (sendTokensRef.current.get(retryKey) === token) sendTokensRef.current.delete(retryKey);
+    };
+    const stopped = (): boolean => {
+      if (!token.cancelled) return false;
+      releaseToken();
+      return true;
+    };
 
     // Clear the banner
     useAgentStatusStore.getState().clearStatus();
@@ -868,6 +999,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         isNewSession = true;
       }
 
+      // Stopped while the agent reconnected / respawned.
+      if (stopped()) return;
+
       // Re-fetch the live registry entry — a fresh-session fallback above replaced
       // the old one, so `agent` may be stale; reconnect keeps the same object.
       const liveAgent = getAcpAgent(conversationId)!;
@@ -904,14 +1038,17 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           instanceId, cwd, liveAgent, effectiveConnection, selectedProjectPaths, conversationId,
         );
         await applyFreshSessionConfig(instanceId, session, effectiveConnection ?? null);
+        if (stopped()) return;
       }
 
       // Full chat listeners now take over — stop the eager listener
       stopEagerListener();
 
       // Session this retry prompts on — the listeners gate on it (finding #4a).
-      const retrySessionId = resolveActiveSessionId(liveAgent.chatSessionId);
-      await attachTurnListeners({
+      // Resolved for the FAILED conversation: without the id this read the
+      // conversation on screen and could prompt another chat's branch session.
+      const retrySessionId = resolveActiveSessionId(liveAgent.chatSessionId, conversationId);
+      const turn = await attachTurnListeners({
         cleanupMap: cleanupRefs.current,
         instanceId,
         sessionId: retrySessionId,
@@ -923,7 +1060,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setActiveTool,
         finalizeSegments,
         setMessageInterrupted,
+        isCancelled: () => token.cancelled,
       });
+      if (!turn || stopped()) {
+        releaseToken();
+        return;
+      }
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -932,13 +1074,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // On a fresh-session fallback, replay prior conversation history so the
       // agent keeps context (otherwise a crash-retry "breaks" the conversation).
       // Exclude the retried pair (assistant message + its user message) by their
-      // actual timestamps captured at send time.
+      // actual timestamps captured at send time. The history is the FAILED
+      // conversation's: a background or cap-deferred conversation retries
+      // while the user reads another chat, and reading the active one here
+      // replayed that chat's history into this session (a cross-conversation,
+      // possibly cross-project, leak).
       const promptContent = isNewSession
-        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.userTimestamp])}\n\n${prompt.content}`
+        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.userTimestamp], undefined, conversationId)}\n\n${prompt.content}`
         : prompt.content;
 
       try {
-        startUnresponsiveTimer();
+        startUnresponsiveTimer(monitorOwner, conversationId ?? null);
+        token.promptSent = true;
         const retryImages = prompt.attachments?.length
           ? prompt.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
           : null;
@@ -956,13 +1103,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const notice = formatStopReasonNotice(stopReason);
         if (notice) {
           log.warn('ai', 'ACP turn ended early after retry', { stopReason, conversationId });
+          turn.flush();
           appendTurnNotice(prompt.assistantMessageId, notice, conversationId);
         }
       } finally {
+        releaseToken();
         clearUnresponsiveTimer();
         runConvCleanup(cleanupRefs.current, conversationId);
       }
     } catch (error) {
+      releaseToken();
+      // Stopped before the retry prompted — see the same guard in the send path.
+      if (token.cancelled && !token.promptSent) return;
       clearUnresponsiveTimer();
       runConvCleanup(cleanupRefs.current, conversationId);
       stopAcpAgent(conversationId);
@@ -983,17 +1135,36 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     // could only ever target the foreground turn (and could tear down a
     // background stream via the shared ref).
     const conversationId = targetConversationId ?? useChatStore.getState().activeConversationId ?? undefined;
+    const convKey = cleanupKeyFor(conversationId);
+
+    // Flag the in-flight send FIRST, before anything else can yield. A send
+    // that is still spawning the agent, creating its session or attaching
+    // listeners has nothing on the backend to cancel yet; the flag is what
+    // makes it stop at its next await instead of prompting and streaming into
+    // a message whose run state was just cleared.
+    const token = sendTokensRef.current.get(convKey);
+    if (token) token.cancelled = true;
+    const promptPending = token !== undefined && !token.promptSent;
 
     // Clear unresponsiveness timer
     clearUnresponsiveTimer();
 
     // Clean up THIS conversation's listeners, finalize segments, and mark its
     // message interrupted.
+    const hadCleanup = cleanupRefs.current.has(convKey);
     runConvCleanup(cleanupRefs.current, conversationId, true);
+    if (promptPending && !hadCleanup) {
+      // No listeners yet, so no cleanup marked the message — do it here so
+      // the stopped (empty) reply reads as interrupted, not as still pending.
+      setMessageInterrupted(token.assistantMessageId, conversationId ?? null);
+    }
 
-    // Cancel ACP session if active — the cancelled conversation's agent.
+    // Cancel ACP session if active — the cancelled conversation's agent. Not
+    // while the prompt is still pending: nothing was sent, so there is no turn
+    // to cancel (and no confirmation would ever arrive to stop the escalation
+    // below), and the agent's session stays usable for the next message.
     const agent = getAcpAgent(conversationId);
-    if (agent?.chatSessionId && agent?.instanceId) {
+    if (!promptPending && agent?.chatSessionId && agent?.instanceId) {
       // Deny any pending permission requests before cancelling
       const pendingRequests = usePermissionStore.getState().requests.filter(
         (r) => r.instanceId === agent.instanceId
@@ -1016,10 +1187,30 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Start 5-second escalation timer: if agent doesn't respond to cancel, treat as hung
       const CANCEL_ESCALATION_MS = 5_000;
 
-      // Track whether the escalation is still active. If the timeout fires before
-      // the listen() promise resolves, the .then() callback must call unlisten()
-      // immediately to avoid leaking the listener.
-      let cancelMounted = true;
+      // This conversation's escalation. The timer and the listener live in
+      // this closure and `settle` clears only them, so cancelling another
+      // conversation within the 5s cannot touch them. A repeat cancel of the
+      // SAME conversation replaces (and settles) its previous escalation.
+      const escalations = cancelEscalationsRef.current;
+      escalations.get(convKey)?.settle();
+
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let unlistenConfirmation: (() => void) | null = null;
+      const escalation: CancelEscalation = {
+        settle: () => {
+          if (settled) return;
+          settled = true;
+          if (timer !== null) {
+            clearTimeout(timer);
+            timer = null;
+          }
+          unlistenConfirmation?.();
+          unlistenConfirmation = null;
+          if (escalations.get(convKey) === escalation) escalations.delete(convKey);
+        },
+      };
+      escalations.set(convKey, escalation);
 
       // Listen for successful cancel confirmation
       listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
@@ -1030,29 +1221,22 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           (update.sessionUpdate === 'agent_message_chunk' && update.stopReason === 'cancelled')
         ) {
           // Cancel succeeded — clear escalation
-          cancelMounted = false;
-          if (cancelEscalationRef.current) {
-            clearTimeout(cancelEscalationRef.current);
-            cancelEscalationRef.current = null;
-          }
-          cancelEscalationListenerRef.current?.();
-          cancelEscalationListenerRef.current = null;
+          escalation.settle();
         }
       }).then((unlisten) => {
-        if (!cancelMounted) {
-          // Escalation already resolved (timeout fired or cancel confirmed) —
-          // clean up the listener immediately to prevent a leak.
+        if (settled) {
+          // Escalation already resolved (timeout fired or cancel confirmed)
+          // before the listen() promise did — clean up the listener
+          // immediately to prevent a leak.
           unlisten();
           return;
         }
-        cancelEscalationListenerRef.current = unlisten;
+        unlistenConfirmation = unlisten;
       });
 
-      cancelEscalationRef.current = setTimeout(() => {
-        cancelEscalationRef.current = null;
-        cancelMounted = false;
-        cancelEscalationListenerRef.current?.();
-        cancelEscalationListenerRef.current = null;
+      timer = setTimeout(() => {
+        timer = null;
+        escalation.settle();
         log.warn('ai', 'ACP cancel escalation: agent did not respond within 5s');
         // Don't auto-recover — show banner so user can retry or restart manually
         useAgentStatusStore.getState().setStatus('unresponsive');
@@ -1068,12 +1252,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     runIdle(conversationId);
     setLoading(false);
     setActiveTool(null);
-  }, [setLoading, setActiveTool]);
+  }, [setLoading, setActiveTool, setMessageInterrupted]);
 
-  // Expose callbacks on the monitor so UI components can call them without
-  // prop drilling (ChatMessageList's AgentStatusBanner wiring).
-  acpUnresponsiveMonitor.setRetryCallback(retryWithRestore);
-  acpUnresponsiveMonitor.setKeepWaitingCallback(keepWaiting);
+  // Current callbacks behind this instance's monitor registration. UI
+  // components reach them through the monitor without prop drilling
+  // (ChatMessageList's AgentStatusBanner wiring). Only a ref is written here —
+  // the monitor itself is registered in an effect, so rendering one instance
+  // can no longer replace another instance's Retry.
+  monitorCallbacksRef.current = { check: checkAgentAndNotify, retry: retryWithRestore, keepWaiting };
 
   return { acpGenerateText, acpSendChatMessage, acpCancelChat, keepWaiting, retryWithRestore };
 }

@@ -5,7 +5,7 @@
  * loadSystemFonts, loadTypography, saveTypography, per-block-type presets,
  * updatePreset, getEffectiveStyle, legacy API compatibility, resetToDefaults.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { setMockInvokeHandler } from '@/test/tauri-mock';
 import { useEditorStylesStore, fontFamilyCSS, EDITOR_STYLES_DEFAULTS, FONT_PRESETS } from '../editor-styles-store';
 import { DEFAULT_PRESETS, TYPOGRAPHY_VERSION } from '@/lib/typography-presets';
@@ -16,7 +16,10 @@ beforeEach(() => {
     loaded: false,
     systemFonts: [],
     presets: { ...DEFAULT_PRESETS },
+    typographyLoadFailed: false,
   });
+  // A read that throws is only "no file" once the file is confirmed absent.
+  setMockInvokeHandler('path_exists', () => false);
 });
 
 describe('fontFamilyCSS', () => {
@@ -377,5 +380,100 @@ describe('resetToDefaults', () => {
     expect(state.paragraphSpacing).toBe(EDITOR_STYLES_DEFAULTS.paragraphSpacing);
     expect(state.presets.paragraph).toEqual(DEFAULT_PRESETS.paragraph);
     expect(state.presets.heading1).toEqual(DEFAULT_PRESETS.heading1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Failed loads and failed saves (audit 2026-11-22 §10)
+// ---------------------------------------------------------------------------
+
+describe('typography — a load that fails is not "no settings"', () => {
+  const FILE = '/home/.notesage/typography.json';
+  let writes: Array<{ path: string; content: string }>;
+  let toastMock: typeof import('sonner').toast;
+
+  beforeEach(async () => {
+    writes = [];
+    toastMock = (await import('sonner')).toast;
+    vi.mocked(toastMock.error).mockClear();
+    vi.mocked(toastMock.warning).mockClear();
+    setMockInvokeHandler('write_file', (args) => {
+      const a = args as { path: string; content: string };
+      writes.push({ path: a.path, content: a.content });
+    });
+  });
+
+  it('does not save defaults over a typography.json that exists but could not be read', async () => {
+    setMockInvokeHandler('read_file', () => {
+      throw new Error('Operation not permitted');
+    });
+    setMockInvokeHandler('path_exists', (args) => (args as { path: string }).path === FILE);
+
+    await useEditorStylesStore.getState().loadTypography('/home');
+
+    const state = useEditorStylesStore.getState();
+    expect(state.loaded).toBe(true);
+    expect(state.typographyLoadFailed).toBe(true);
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
+
+    // The user nudges a setting; the save must be refused, and say so.
+    state.updatePreset('paragraph', { fontSize: 20 });
+    await useEditorStylesStore.getState().saveTypography('/home');
+    expect(writes).toEqual([]);
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run the legacy migration over a typography.json that is only not downloaded', async () => {
+    const legacy = JSON.stringify({ fontFamily: 'georgia', fontSize: 18 });
+    setMockInvokeHandler('read_file', (args) => {
+      if ((args as { path: string }).path.endsWith('editor-styles.json')) return legacy;
+      throw new Error('No such file or directory');
+    });
+    // Evicted by iCloud: only the `.name.icloud` placeholder exists.
+    setMockInvokeHandler(
+      'path_exists',
+      (args) => (args as { path: string }).path === '/home/.notesage/.typography.json.icloud',
+    );
+
+    await useEditorStylesStore.getState().loadTypography('/home');
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(useEditorStylesStore.getState().typographyLoadFailed).toBe(true);
+    // The migration would have written a fresh typography.json over it.
+    expect(writes).toEqual([]);
+  });
+
+  it('keeps a copy of a typography.json that is not valid JSON before anything can replace it', async () => {
+    const damaged = '{"version":1,"presets":{"paragraph":{"fontSize":';
+    setMockInvokeHandler('read_file', (args) => {
+      if ((args as { path: string }).path === FILE) return damaged;
+      throw new Error('No such file or directory');
+    });
+
+    await useEditorStylesStore.getState().loadTypography('/home');
+
+    expect(writes).toEqual([{ path: `${FILE}.corrupt`, content: damaged }]);
+    // With the copy safe, defaults may be saved again.
+    expect(useEditorStylesStore.getState().typographyLoadFailed).toBe(false);
+  });
+
+  it('a later successful load lifts the block', async () => {
+    useEditorStylesStore.setState({ typographyLoadFailed: true });
+    setMockInvokeHandler('read_file', () =>
+      JSON.stringify({ version: TYPOGRAPHY_VERSION, presets: { paragraph: { fontSize: 19 } } }),
+    );
+    await useEditorStylesStore.getState().loadTypography('/home');
+    expect(useEditorStylesStore.getState().typographyLoadFailed).toBe(false);
+    await useEditorStylesStore.getState().saveTypography('/home');
+    expect(writes.map((w) => w.path)).toEqual([FILE]);
+  });
+
+  it('tells the user when saving fails', async () => {
+    setMockInvokeHandler('write_file', () => {
+      throw new Error('disk full');
+    });
+    await useEditorStylesStore.getState().saveTypography('/home');
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(toastMock.error).mock.calls[0][0])).toContain('disk full');
   });
 });
