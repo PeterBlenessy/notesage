@@ -21,6 +21,7 @@
           "Large saved web pages open faster, and going back to a page you just read is instant."
         ],
         "fixes": [
+          "When you typed past the bottom of the window, the line you were writing slipped behind the command bar. It now stays above it, whether you type, paste or move down with the arrow keys.",
           "The Settings button at the bottom of the sidebar could not be clicked when translucent chrome was switched on, because the word count was drawn on top of it.",
           "MCP servers started with `npx`, `uvx`, `node`, `python` or `docker` never connected.",
           "Some ordinary server commands, such as one ending in `-p 8080`, were refused as unsafe.",

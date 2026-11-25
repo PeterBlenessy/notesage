@@ -5,8 +5,8 @@
 
 MCP servers work. Until now a server you added could not be reached by any
 chat, and most could not be added at all. This release also makes the Settings
-button in the sidebar clickable again and shows when your library is being
-indexed.
+button in the sidebar clickable again, keeps the line you are writing above the
+command bar, and shows when your library is being indexed.
 
 ## Changes
 
@@ -45,6 +45,9 @@ indexed.
 
 ### Fixes
 
+- When you typed past the bottom of the window, the line you were writing
+  slipped behind the command bar. It now stays above it, whether you type,
+  paste or move down with the arrow keys.
 - The Settings button at the bottom of the sidebar could not be clicked when
   translucent chrome was switched on, because the word count was drawn on top
   of it.
