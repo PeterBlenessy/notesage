@@ -8,5 +8,7 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Notesage records meetings and voice notes you start yourself. Recordings stay in your library.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Notesage records the sound your Mac is playing when you start a recording that includes system audio, so the other side of a meeting is captured. Recordings stay in your library.</string>
 </dict>
 </plist>

@@ -51,13 +51,64 @@ pub fn classify_icloud_item(file_exists: bool, placeholder_exists: bool) -> Down
     }
 }
 
+/// `SF_DATALESS` from `<sys/stat.h>`: the file is there, at its full size, but
+/// its content is in iCloud. Current macOS evicts files this way instead of
+/// swapping in a `.name.icloud` placeholder. (Same constant as the indexer's
+/// `fs_access`; the `libc` in the lockfile does not export it.)
+#[cfg(target_os = "macos")]
+const SF_DATALESS: u32 = 0x4000_0000;
+
+/// True when the file's content is not on this machine. Reading such a file
+/// blocks until iCloud has downloaded it. Always false off macOS.
+#[cfg(target_os = "macos")]
+pub fn is_dataless(meta: &std::fs::Metadata) -> bool {
+    use std::os::macos::fs::MetadataExt;
+    meta.st_flags() & SF_DATALESS != 0
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_dataless(_meta: &std::fs::Metadata) -> bool {
+    false
+}
+
+/// [`classify_icloud_item`] with the dataless case: a file that exists but
+/// whose content is evicted is not ready, it can be downloaded.
+pub fn classify_evicted_item(
+    file_exists: bool,
+    dataless: bool,
+    placeholder_exists: bool,
+) -> DownloadState {
+    if file_exists && dataless {
+        DownloadState::Downloading
+    } else {
+        classify_icloud_item(file_exists, placeholder_exists)
+    }
+}
+
+/// Ask iCloud to download `item` (a dataless file or one with a placeholder).
+/// Returns once the request is made, not when the file has arrived. Blocking
+/// (Foundation): call it off the async workers.
+pub fn request_icloud_download(item: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        start_ubiquitous_download(item)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = item;
+        Err("iCloud is not available on this platform".into())
+    }
+}
+
 /// Make sure an iCloud Drive file is materialized on disk.
 ///
 /// The recordings scanner (PRD `2026-09-05-ios-recordings`) meets evicted
 /// audio: iCloud keeps `.audio.m4a.icloud` and no `audio.m4a`, and a
 /// `file_size` on the real name fails. This asks iCloud to download the
 /// item and reports `downloading`; the scanner then waits for the watcher
-/// event the arriving file produces rather than polling. `ready` when the
+/// event the arriving file produces rather than polling. The same goes for a
+/// dataless file (present at full size, content evicted): it is requested
+/// and reported as `downloading`, not `ready`. `ready` when the
 /// file is already there, `failed` when there is no placeholder to download
 /// from or the download request itself is refused.
 ///
@@ -70,7 +121,10 @@ pub async fn icloud_ensure_downloaded(path: String) -> Result<DownloadState, Str
     let placeholder_exists = icloud_placeholder_path(&item)
         .map(|p| p.exists())
         .unwrap_or(false);
-    let state = classify_icloud_item(item.exists(), placeholder_exists);
+    // `metadata` never reads content, so this cannot start a download itself.
+    let meta = std::fs::metadata(&item).ok();
+    let dataless = meta.as_ref().map(is_dataless).unwrap_or(false);
+    let state = classify_evicted_item(meta.is_some(), dataless, placeholder_exists);
     if state != DownloadState::Downloading {
         return Ok(state);
     }
@@ -718,6 +772,27 @@ mod tests {
         assert_eq!(classify_icloud_item(true, false), DownloadState::Ready);
         assert_eq!(classify_icloud_item(false, true), DownloadState::Downloading);
         assert_eq!(classify_icloud_item(false, false), DownloadState::Failed);
+    }
+
+    /// The eviction current macOS performs: the file stays, at full size,
+    /// without content. It used to classify as ready, and the decoder then
+    /// blocked on it.
+    #[test]
+    fn a_dataless_file_is_downloadable_not_ready() {
+        assert_eq!(classify_evicted_item(true, true, false), DownloadState::Downloading);
+        assert_eq!(classify_evicted_item(true, true, true), DownloadState::Downloading);
+        // Everything else is as before.
+        assert_eq!(classify_evicted_item(true, false, false), DownloadState::Ready);
+        assert_eq!(classify_evicted_item(false, false, true), DownloadState::Downloading);
+        assert_eq!(classify_evicted_item(false, false, false), DownloadState::Failed);
+    }
+
+    #[test]
+    fn an_ordinary_file_is_not_dataless() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("audio.m4a");
+        std::fs::write(&file, b"aac").unwrap();
+        assert!(!is_dataless(&std::fs::metadata(&file).unwrap()));
     }
 
     #[tokio::test]

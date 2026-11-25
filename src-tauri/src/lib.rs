@@ -140,6 +140,7 @@ pub fn run() {
         .manage(CopilotLspState::new())
         .manage(McpState::new())
         .manage(TranscriptionState::new())
+        .manage(RecordingState::new())
         .manage(LocalInferenceState::new())
         .manage(AiStreamState::new())
         .manage(AgentManagerState::new())
@@ -280,6 +281,7 @@ pub fn run() {
             trash_paths,
             path_exists,
             file_size,
+            audio_file_status,
             allow_asset_dir,
             ios_pick_library_folder,
             ios_get_library_grant,
@@ -520,11 +522,18 @@ pub fn run() {
             ping,
             health_check,
             // Voice transcription
+            recording_preflight,
             start_recording,
             pause_recording,
             resume_recording,
             stop_recording,
+            discard_recording,
+            finalize_recording_bundle,
+            recover_orphan_recordings,
+            get_recording_state,
             transcribe_file,
+            cancel_transcription,
+            import_media,
             list_whisper_models,
             download_whisper_model,
             cancel_model_download,
@@ -621,6 +630,14 @@ pub fn run() {
             match event {
                 RunEvent::Exit => {
                     log::info!(target: "notesage::lifecycle", "App exiting — stopping child processes");
+                    // Stop a live recording first, so its WAV is valid on disk
+                    // before anything else can hold the exit up. Bounded: a
+                    // stuck audio driver cannot block the quit. The bundle is
+                    // recovered from staging on the next launch.
+                    #[cfg(desktop)]
+                    app_handle
+                        .state::<RecordingState>()
+                        .stop_for_exit(commands::recording::EXIT_STOP_TIMEOUT);
                     // Stop all ACP agent subprocesses
                     app_handle.state::<AcpState>().stop_all_sync();
                     // Stop all network proxies (after ACP agents so connections close first)

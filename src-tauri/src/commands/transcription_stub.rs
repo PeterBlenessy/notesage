@@ -29,6 +29,8 @@ pub struct TranscriptSegment {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
     pub speaker_id: Option<String>,
     pub speaker_name: Option<String>,
 }
@@ -53,14 +55,87 @@ pub struct ModelInfo {
     pub hf_repo_id: Option<String>,
 }
 
+// --- Recording (mirrors `recording/types.rs`; desktop-only at runtime) ---
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TrackRef {
+    pub role: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct TrackPeaks {
+    pub mic: Option<f32>,
+    pub system: Option<f32>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RecordingResult {
-    pub path: String,
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub tracks: Vec<TrackRef>,
     pub duration_secs: f64,
+    pub peak: f32,
     pub sample_rate: u32,
+    pub dropped_frames: u64,
+    pub warnings: Vec<String>,
+    pub path: String,
     pub source: String,
     pub rms: f32,
-    pub peak: f32,
+    pub track_peaks: TrackPeaks,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FinalizedBundle {
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub tracks: Vec<TrackRef>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OrphanRecording {
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub tracks: Vec<TrackRef>,
+    pub duration_secs: f64,
+    pub started_at: Option<String>,
+    pub source: Option<String>,
+    pub has_manifest: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RecordingPreflight {
+    pub microphone: String,
+    pub system_audio: String,
+    pub input_device: Option<String>,
+    pub output_device: Option<String>,
+    pub free_bytes: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct RecordingStateInfo {
+    pub recording: bool,
+    pub paused: bool,
+    pub source: Option<String>,
+    pub started_at_ms: Option<u64>,
+    pub elapsed_recorded_ms: u64,
+    pub fatal: bool,
+}
+
+/// Managed state placeholder for the recorder (`recording::RecordingState` on
+/// desktop). The phone records through its own Swift plugin.
+pub struct RecordingState;
+
+impl RecordingState {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for RecordingState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Diagnostics shape mirrored for `logging.rs`, which folds Whisper state into
@@ -105,40 +180,114 @@ impl Default for TranscriptionState {
 }
 
 #[tauri::command]
+pub async fn recording_preflight(
+    _state: State<'_, RecordingState>,
+    _source: String,
+) -> Result<RecordingPreflight, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
 pub async fn start_recording(
     _app: AppHandle,
-    _state: State<'_, TranscriptionState>,
+    _state: State<'_, RecordingState>,
     _source: String,
 ) -> Result<(), String> {
     Err(UNAVAILABLE.into())
 }
 
 #[tauri::command]
-pub async fn pause_recording(_state: State<'_, TranscriptionState>) -> Result<(), String> {
+pub async fn pause_recording(_state: State<'_, RecordingState>) -> Result<(), String> {
     Err(UNAVAILABLE.into())
 }
 
 #[tauri::command]
-pub async fn resume_recording(_state: State<'_, TranscriptionState>) -> Result<(), String> {
+pub async fn resume_recording(_state: State<'_, RecordingState>) -> Result<(), String> {
     Err(UNAVAILABLE.into())
 }
 
 #[tauri::command]
-pub async fn stop_recording(
-    _state: State<'_, TranscriptionState>,
-) -> Result<RecordingResult, String> {
+pub async fn stop_recording(_state: State<'_, RecordingState>) -> Result<RecordingResult, String> {
     Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn discard_recording(
+    _state: State<'_, RecordingState>,
+    _bundle_dir: Option<String>,
+) -> Result<(), String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn finalize_recording_bundle(
+    _state: State<'_, RecordingState>,
+    _staging_dir: String,
+    _dest_recordings_dir: String,
+) -> Result<FinalizedBundle, String> {
+    Err(UNAVAILABLE.into())
+}
+
+/// Mirrors the desktop `TranscribeTrack` argument.
+#[derive(Deserialize, Clone, Debug)]
+pub struct TranscribeTrack {
+    pub role: String,
+    pub path: String,
+}
+
+/// Mirrors the desktop `import_media` result.
+#[derive(Serialize, Clone, Debug)]
+pub struct ImportResult {
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub duration_secs: f64,
+    pub original_name: String,
+}
+
+#[tauri::command]
+pub async fn recover_orphan_recordings(
+    _state: State<'_, RecordingState>,
+) -> Result<Vec<OrphanRecording>, String> {
+    // Empty rather than an error: a startup sweep that finds nothing is the
+    // truth here, and an error would surface as a spurious failure.
+    Ok(Vec::new())
+}
+
+#[tauri::command]
+pub async fn get_recording_state(
+    _state: State<'_, RecordingState>,
+) -> Result<RecordingStateInfo, String> {
+    Ok(RecordingStateInfo::default())
 }
 
 #[tauri::command]
 pub async fn transcribe_file(
     _app: AppHandle,
     _state: State<'_, TranscriptionState>,
-    _job_id: String,
+    _job_id: Option<String>,
     _path: String,
     _model: String,
     _language: Option<String>,
+    _tracks: Option<Vec<TranscribeTrack>>,
 ) -> Result<TranscriptionResult, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn cancel_transcription(
+    _job_id: Option<String>,
+    _audio_path: Option<String>,
+) -> Result<bool, String> {
+    // Nothing can be running here, so there is nothing to cancel.
+    Ok(false)
+}
+
+#[tauri::command]
+pub async fn import_media(
+    _app: AppHandle,
+    _source_path: String,
+    _dest_recordings_dir: String,
+) -> Result<ImportResult, String> {
     Err(UNAVAILABLE.into())
 }
 

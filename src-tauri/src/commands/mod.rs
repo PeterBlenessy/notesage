@@ -37,11 +37,21 @@ pub mod transcription;
 #[path = "transcription_stub.rs"]
 pub mod transcription;
 
+/// Meeting recording: capture, staging, finalize, recovery. Desktop only
+/// (`cpal`); the mobile build gets the same command names from
+/// `transcription_stub`.
+#[cfg(desktop)]
+pub mod recording;
+
 /// Audio decoding for transcription (#803). Desktop only, for the same reason
 /// `transcription` is: the mobile reader neither records nor transcribes, so a
 /// decoder stack is dead weight in it.
 #[cfg(desktop)]
 pub mod audio_decode;
+/// Transcription pipeline, media import and model download (desktop only,
+/// like `transcription`, whose commands are thin wrappers around this).
+#[cfg(desktop)]
+pub mod transcribe;
 pub mod local_inference;
 pub mod model_management;
 pub mod model_providers;
@@ -87,6 +97,8 @@ pub use logging::*;
 pub use store::*;
 pub use health::*;
 pub use transcription::*;
+#[cfg(desktop)]
+pub use recording::*;
 pub use local_inference::*;
 pub use model_management::*;
 pub use model_metadata::*;
