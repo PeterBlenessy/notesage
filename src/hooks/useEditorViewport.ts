@@ -1,7 +1,6 @@
 import type { MutableRefObject, RefObject } from "react";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
-import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
 
 interface EditorViewportOptions {
   scrollAreaRef: RefObject<HTMLDivElement | null>;
@@ -20,10 +19,9 @@ interface EditorViewportReturn {
 /**
  * Viewport controller for the editor scroll surface.
  *
- * Groups the three scroll/resize hooks that must run together (in this order)
+ * Groups the two scroll/resize hooks that must run together (in this order)
  * before the editor instance exists:
  *  - `useScrollPersistence` — save/restore scroll ratio across tab switches
- *  - `useCursorScrollGuard`  — keep the caret clear of the floating cmd bar
  *  - `useEditorResize`       — ResizeObserver-driven width + scroll restore
  *
  * The shared `isResizing` ref stays internal; the values consumed downstream
@@ -50,8 +48,6 @@ export function useEditorViewport({
     activeTabId,
     activeTabFilePath,
   });
-
-  useCursorScrollGuard(scrollAreaRef);
 
   useEditorResize({
     contentRef,

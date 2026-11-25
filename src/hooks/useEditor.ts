@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import UniqueID from "@tiptap/extension-unique-id";
 import { LocalImage } from "@/components/editor/extensions/local-image";
+import { CommandBarClearance } from "@/components/editor/extensions/command-bar-clearance";
 import { Table } from "@tiptap/extension-table";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 import { TableRow } from "@tiptap/extension-table-row";
@@ -289,6 +290,9 @@ export function useEditor({ content, onUpdate, getDocumentId, editable = true, d
         className: 'has-focus',
         mode: 'all',
       }),
+      // Keeps the caret row above the floating command bar whenever
+      // ProseMirror scrolls the selection into view.
+      CommandBarClearance,
     ],
     content,
     editable,

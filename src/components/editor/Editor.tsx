@@ -186,7 +186,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Typewriter scrolling (Settings > Writing) — keeps the caret vertically
   // centered in the scroll viewport while typing. No-op unless the setting
-  // is on; while on, useCursorScrollGuard stands down (see that hook).
+  // is on. Keeping the caret above the floating command bar is separate and
+  // always on: see the `CommandBarClearance` editor extension.
   useTypewriterScroll(editor, scrollAreaRef);
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
