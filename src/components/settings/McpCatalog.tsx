@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { Search, Globe, TerminalSquare, ExternalLink, Plus, Boxes, ShieldCheck, KeyRound } from 'lucide-react';
+import { Search, Globe, TerminalSquare, ExternalLink, Plus, Boxes, ShieldCheck, KeyRound, FolderOpen } from 'lucide-react';
+import { isArgRequired, requiredArgsFor } from './mcp/catalog-requirements';
 import {
   Dialog,
   DialogContent,
@@ -91,6 +92,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("mcp.searchServersPlaceholder")}
+            aria-label={t("mcp.searchServersPlaceholder")}
             className="pl-8 text-sm"
             disabled={items.length === 0}
           />
@@ -163,6 +165,14 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.description}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1">
+          {requiredArgsFor(item)
+            .filter(isArgRequired)
+            .map((arg) => (
+              <Badge key={arg.key} variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
+                <FolderOpen className="h-2.5 w-2.5" strokeWidth={1.5} />
+                {arg.label}
+              </Badge>
+            ))}
           {noKey ? (
             <Badge variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
               {t("cat.noApiKey")}

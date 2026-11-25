@@ -11,14 +11,17 @@
  * surfaces (TreeOverlay search, contenteditable cells) typeable.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  act,
   fireEvent,
   renderWithProviders,
   screen,
   within,
 } from '@/test/component-harness';
 import { QuietSidebar } from '../QuietSidebar';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { setLocale } from '@/lib/i18n';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -450,5 +453,58 @@ describe('QuietSidebar — sidebar composition (slider visibility control)', () 
       'Folders',
       'Recent',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Footer — the indexing progress bar along its top border
+// ---------------------------------------------------------------------------
+
+describe('QuietSidebar — footer indexing indicator', () => {
+  afterEach(() => {
+    showIndexingForTests(null);
+    setLocale(null);
+  });
+
+  it('shows no progress bar and no title when nothing is being indexed', () => {
+    const { container } = renderWithProviders(<QuietSidebar />);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(container.querySelector('[data-sidebar-status-slot]')?.hasAttribute('title')).toBe(false);
+  });
+
+  it('shows a determinate bar with the overall count while indexing, inside the footer', () => {
+    setLocale('en');
+    showIndexingForTests({ filesDone: 1200, filesTotal: 3000, fraction: 0.4 });
+    const { container } = renderWithProviders(<QuietSidebar />);
+
+    const label = 'Indexing your library, 1,200 of 3,000 files';
+    const bar = screen.getByRole('progressbar', { name: label });
+    expect(bar.getAttribute('aria-valuenow')).toBe('40');
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('100');
+
+    // It hangs off the footer row (which anchors it) beside the Settings
+    // button and the status slot: a sibling, never an ancestor or a cover.
+    const footer = bar.parentElement as HTMLElement;
+    expect(footer.className).toContain('relative');
+    const settings = screen.getByRole('button', { name: 'Settings' });
+    const slot = container.querySelector('[data-sidebar-status-slot]') as HTMLElement;
+    expect(settings.parentElement).toBe(footer);
+    expect(slot.parentElement).toBe(footer);
+    expect(bar.contains(settings)).toBe(false);
+    expect(bar.className).toContain('pointer-events-none');
+    // The same sentence as a native tooltip, on an element that can be hovered.
+    expect(slot.getAttribute('title')).toBe(label);
+  });
+
+  it('is indeterminate until a total is known, and goes away when indexing ends', () => {
+    setLocale('en');
+    showIndexingForTests({});
+    renderWithProviders(<QuietSidebar />);
+    const bar = screen.getByRole('progressbar', { name: 'Indexing your library…' });
+    expect(bar.hasAttribute('aria-valuenow')).toBe(false);
+
+    act(() => showIndexingForTests(null));
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 });

@@ -37,6 +37,45 @@ export function mcpSecretService(serverId: string, key: string): string {
   return `notesage:mcp:${serverId}:${key}`;
 }
 
+/** Keychain service name for a remote MCP server's secret header value. */
+export function mcpHeaderSecretService(serverId: string, header: string): string {
+  return mcpSecretService(serverId, header);
+}
+
+/** Keychain service name of a remote MCP server's OAuth token blob. */
+export function mcpOAuthService(serverId: string): string {
+  return `notesage:mcp:${serverId}:oauth`;
+}
+
+/**
+ * A short, stable key for a project root (FNV-1a, 8 hex digits). Part of the
+ * id of a project-scoped server, so two projects that both define a server
+ * called `db` do not share an id, an enable override or keychain secrets.
+ */
+export function mcpProjectKey(projectRoot: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < projectRoot.length; i++) {
+    hash ^= projectRoot.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/** Id of a server defined in `~/.notesage/mcp.json`. */
+export function mcpGlobalServerId(name: string): string {
+  return `global:${name}`;
+}
+
+/** The id every project's server of this name shared before ids carried the project. */
+export function mcpLegacyProjectServerId(name: string): string {
+  return `project:${name}`;
+}
+
+/** Id of a server defined in `<projectRoot>/.notesage/mcp.json`. */
+export function mcpProjectServerId(projectRoot: string, name: string): string {
+  return `project:${mcpProjectKey(projectRoot)}:${name}`;
+}
+
 /** A required env var / secret a catalog server needs (rendered in the Add form). */
 export interface McpCatalogRequiredEnv {
   key: string;
@@ -63,6 +102,35 @@ export interface McpCatalogItem {
   command?: string | null;
   args: string[];
   required_env: McpCatalogRequiredEnv[];
+  /** Arguments the Add form asks for before the server can start. */
+  required_args?: McpCatalogRequiredArg[];
+}
+
+/**
+ * An argument a catalog server needs that only the user can supply (a folder
+ * to serve, a repository). The Add form asks for it and appends the answer to
+ * the arguments, after `flag` when there is one.
+ */
+export interface McpCatalogRequiredArg {
+  key: string;
+  label: string;
+  /** `path` gets a folder picker next to the field. */
+  kind: 'path' | 'text';
+  /** Flag the value follows, e.g. `--repository`. Absent: a bare argument. */
+  flag?: string | null;
+  /** When false the field may be left empty and nothing is appended. */
+  required?: boolean;
+}
+
+/** An entry of an `mcp.json` the backend could not load. */
+export interface McpConfigProblem {
+  /** The entry's key in `mcpServers`; the file's path when the whole file is the problem. */
+  name: string;
+  /** Which kind of file it is in: `notesage_global` or `notesage_project`. */
+  source: string;
+  reason: string;
+  /** The file itself, when it could be worked out. */
+  file?: string | null;
 }
 
 export interface McpToolInfo {
@@ -87,6 +155,13 @@ export interface McpServerEntry {
   transport?: McpTransport;
   /** Endpoint URL for `http` (remote) servers. Absent for stdio. */
   url?: string | null;
+  /**
+   * Static HTTP headers sent to a remote server (an API key, a tenant id).
+   * Same value shape as `env`: plaintext, or a keychain reference.
+   */
+  headers?: Record<string, McpEnvValue>;
+  /** Working directory a stdio server is started in. Absent: the home directory. */
+  cwd?: string | null;
   /**
    * Project root this server was discovered under. `null` (or missing) means
    * the server is global — either from `~/.notesage/mcp.json` or imported from
@@ -113,12 +188,26 @@ interface McpStore {
   /** Counter bumped to trigger a rescan from external events. */
   rescanCounter: number;
 
+  /** Config entries the backend could not load, from the last discovery pass. */
+  configProblems: McpConfigProblem[];
+
   // --- Actions ---
 
   setServers(servers: McpServerEntry[]): void;
   setServerStatus(id: string, status: McpServerStatus, error?: string): void;
   setServerTools(id: string, tools: McpToolInfo[]): void;
   toggleServer(id: string): void;
+  /** Set a server's enabled state explicitly (records a user override). */
+  setServerEnabled(id: string, enabled: boolean): void;
+  /**
+   * Record that the user wants `id` on, for a server the next discovery pass
+   * will find (one just written to `mcp.json`). The override survives passes
+   * that do not list the server yet.
+   */
+  enableOnNextDiscovery(id: string): void;
+  /** Carry a renamed server's enable override over to its new id. */
+  moveEnabledOverride(fromId: string, toId: string): void;
+  setConfigProblems(problems: McpConfigProblem[]): void;
   addServer(server: McpServerEntry): void;
   removeServer(id: string): void;
   updateServer(id: string, updates: Partial<McpServerEntry>): void;
@@ -171,19 +260,36 @@ function filterByScope(
   });
 }
 
+/**
+ * Ids whose override must survive a discovery pass that does not list them:
+ * a server the dialog has just saved may be missing from a pass that read the
+ * file a moment earlier. An id leaves the set the first time a pass lists it.
+ */
+const awaitedOverrideIds = new Set<string>();
+
 export const useMcpStore = create<McpStore>()(
   persist(
     (set, get) => ({
       servers: [],
       enabledOverrides: {},
       rescanCounter: 0,
+      configProblems: [],
 
       setServers(servers: McpServerEntry[]) {
-        const overrides = get().enabledOverrides;
+        const overrides = { ...get().enabledOverrides };
+        // A project-scoped server used to be `project:<name>` in every
+        // project. Carry that override over to the per-project id of each
+        // loaded project that has such a server, the first time it is seen.
+        for (const s of servers) {
+          if (s.projectRoot == null || overrides[s.id] !== undefined) continue;
+          const legacy = overrides[mcpLegacyProjectServerId(s.name)];
+          if (legacy !== undefined) overrides[s.id] = legacy;
+        }
         // Apply persisted overrides and prune stale ones
         const activeIds = new Set(servers.map((s) => s.id));
+        for (const id of activeIds) awaitedOverrideIds.delete(id);
         const prunedOverrides = Object.fromEntries(
-          Object.entries(overrides).filter(([id]) => activeIds.has(id))
+          Object.entries(overrides).filter(([id]) => activeIds.has(id) || awaitedOverrideIds.has(id))
         );
         const merged = servers.map((s) => ({
           ...s,
@@ -223,6 +329,30 @@ export const useMcpStore = create<McpStore>()(
             },
           };
         });
+      },
+
+      setServerEnabled(id: string, enabled: boolean) {
+        set((state) => ({
+          servers: state.servers.map((s) => (s.id === id ? { ...s, enabled } : s)),
+          enabledOverrides: { ...state.enabledOverrides, [id]: enabled },
+        }));
+      },
+
+      enableOnNextDiscovery(id: string) {
+        awaitedOverrideIds.add(id);
+        get().setServerEnabled(id, true);
+      },
+
+      moveEnabledOverride(fromId: string, toId: string) {
+        if (fromId === toId) return;
+        const { [fromId]: previous, ...rest } = get().enabledOverrides;
+        if (previous === undefined) return;
+        awaitedOverrideIds.add(toId);
+        set({ enabledOverrides: { ...rest, [toId]: previous } });
+      },
+
+      setConfigProblems(problems: McpConfigProblem[]) {
+        set({ configProblems: problems });
       },
 
       addServer(server: McpServerEntry) {

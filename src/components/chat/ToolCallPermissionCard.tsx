@@ -5,6 +5,8 @@ import { useIsRequestForeground } from '@/hooks/useSessionManager';
 import { resolveDirectPermission, type ApprovalTier } from '@/lib/ai/permission-resolve';
 import { TieredApprovalButtons } from '@/components/chat/TieredApprovalButtons';
 import { formatToolArgsPreview } from '@/lib/ai/tool-args';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 interface ToolCallPermissionCardProps {
   request: PendingToolPermission;
@@ -30,12 +32,21 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
   // session is the one being watched. A backgrounded request never auto-denies
   // — the desktop notification (task #15) is its time-sensitive signal.
   const isForeground = useIsRequestForeground(request.conversationId);
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
+
+  // An MCP tool is named by its server and its own name, not by the
+  // model-facing `mcp__…` identifier: the user is deciding whether a
+  // third-party server may act.
+  const displayName = request.mcp
+    ? `${request.mcp.serverName}: ${request.mcp.toolName}`
+    : request.name;
 
   const TIER_LABEL: Record<ApprovalTier, string> = {
-    allow: `Allowed "${request.name}" once`,
-    session: `Allowed "${request.name}" for session`,
-    always: `Allowed "${request.name}" always`,
-    deny: `Denied "${request.name}"`,
+    allow: `Allowed "${displayName}" once`,
+    session: `Allowed "${displayName}" for session`,
+    always: `Allowed "${displayName}" always`,
+    deny: `Denied "${displayName}"`,
   };
 
   const decide = (tier: ApprovalTier) => {
@@ -58,7 +69,7 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
           if (!resolvedRef.current) {
             resolvedRef.current = true;
             resolveDirectPermission(request, 'deny');
-            setResolved(`Tool call "${request.name}" timed out — denied.`);
+            setResolved(`Tool call "${displayName}" timed out — denied.`);
             setTimeout(() => onResolvedRef.current?.(request.id), 1500);
           }
           return 0;
@@ -86,7 +97,18 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
       <div className="flex items-start gap-2.5">
         <Wrench className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-foreground">Tool call: {request.name}</p>
+          {request.mcp ? (
+            <>
+              <p className="text-xs font-medium text-foreground" data-testid="mcp-tool-name">
+                {t('chat.mcpToolCall', { tool: request.mcp.toolName })}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground break-all" data-testid="mcp-server-name">
+                {t('chat.mcpToolServer', { server: request.mcp.serverName })}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs font-medium text-foreground">Tool call: {request.name}</p>
+          )}
           {formattedArgs && (
             <pre className="mt-1 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-1 overflow-x-auto whitespace-pre-wrap break-all font-mono">
               {formattedArgs}

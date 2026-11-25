@@ -24,7 +24,12 @@ const presetConn: Connection = {
   createdAt: 0,
 };
 
-const stdioCaps: AcpAgentCapabilities = { mcp: { stdio: {} }, loadSession: true };
+// The ACP v1 `agentCapabilities` shape the Rust side forwards: stdio MCP
+// servers are always accepted and have no field; http / sse are booleans.
+const stdioCaps: AcpAgentCapabilities = {
+  loadSession: true,
+  mcpCapabilities: { http: false, sse: false },
+};
 
 function mcpServer(overrides: Partial<McpServerEntry> = {}): McpServerEntry {
   return {

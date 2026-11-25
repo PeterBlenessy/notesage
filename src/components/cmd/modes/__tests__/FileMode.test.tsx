@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderWithProviders, screen } from '@/test/component-harness';
 import type { RecentFile } from '@/stores/editor-store';
 
@@ -101,5 +102,62 @@ describe('FileMode', () => {
 
     expect(await screen.findByText(/No files matching/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// While the library is being indexed, a search may miss files: say so.
+// ---------------------------------------------------------------------------
+
+describe('FileMode while the library is being indexed', () => {
+  const NOTE = 'Still indexing: results may be incomplete';
+
+  beforeEach(() => {
+    mockRecentFiles = [];
+    vi.mocked(tauriApi.indexSearchFilenames).mockReset();
+    vi.mocked(tauriApi.indexSearchFilenames).mockResolvedValue([]);
+    showIndexingForTests({});
+  });
+
+  afterEach(() => showIndexingForTests(null));
+
+  it('adds the note under "No files matching"', async () => {
+    renderWithProviders(<FileMode filter="notes" />);
+    expect(await screen.findByText(/No files matching/)).toBeTruthy();
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it('adds the note after the results it has found so far, outside the listbox', async () => {
+    vi.mocked(tauriApi.indexSearchFilenames).mockResolvedValue([
+      { path: '/Users/me/Notesage/notes.md', file_name: 'notes.md', parent_dir: '/Users/me/Notesage', project_root: null },
+    ] as Awaited<ReturnType<typeof tauriApi.indexSearchFilenames>>);
+    renderWithProviders(<FileMode filter="notes" />);
+
+    expect(await screen.findByText('notes.md')).toBeTruthy();
+    const note = screen.getByText(NOTE);
+    expect(screen.getByRole('listbox').contains(note)).toBe(false);
+  });
+
+  it('shows only "index unavailable" when the query fails', async () => {
+    vi.mocked(tauriApi.indexSearchFilenames).mockRejectedValue(new Error('database is locked'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWithProviders(<FileMode filter="notes" />);
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Search index unavailable');
+    expect(screen.queryByText(NOTE)).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('does not put the note on the recent-files list, which is not read from the index', () => {
+    mockRecentFiles = [{ path: '/Users/me/Notesage/a.md', name: 'a.md' } as RecentFile];
+    renderWithProviders(<FileMode filter="" />);
+    expect(screen.queryByText(NOTE)).toBeNull();
+  });
+
+  it('shows no note when the library is not being indexed', async () => {
+    showIndexingForTests(null);
+    renderWithProviders(<FileMode filter="notes" />);
+    expect(await screen.findByText(/No files matching/)).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

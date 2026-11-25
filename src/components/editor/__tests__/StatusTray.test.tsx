@@ -32,7 +32,9 @@ if (typeof Element !== 'undefined') {
 
 import '@/test/tauri-mock';
 import React, { useRef } from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { setLocale } from '@/lib/i18n';
 import { createMockEditor } from '@/test/mock-editor';
 import type { Editor } from '@tiptap/react';
 import {
@@ -1060,5 +1062,72 @@ describe('StatusTray — task #53', () => {
       expect(trigger?.textContent).toContain('Off');
       expect(trigger?.textContent).not.toContain('Ollama');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Background activity line (indexing, model downloads) in the Session group
+// ---------------------------------------------------------------------------
+
+describe('StatusTray — background activity line', () => {
+  beforeEach(() => {
+    registerDefaultHandlers();
+    resetStores();
+    Element.prototype.scrollIntoView = vi.fn();
+    setLocale('en');
+    showIndexingForTests(null);
+    useRecordingStore.setState({ activeDownloads: {} });
+  });
+
+  afterEach(() => {
+    showIndexingForTests(null);
+    useRecordingStore.setState({ activeDownloads: {} });
+    setLocale(null);
+  });
+
+  it('shows nothing when no background work is running', () => {
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    expect(document.querySelector('[data-background-activity]')).toBeNull();
+  });
+
+  it('shows the indexing sentence and which scopes are being indexed, without a Local AI connection', () => {
+    showIndexingForTests({
+      filesDone: 1200,
+      filesTotal: 3000,
+      fraction: null,
+      pendingScopes: 2,
+      currentScopes: ['', '/Users/me/Notesage/Work'],
+    });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+
+    const line = document.querySelector('[data-background-activity="indexing"]') as HTMLElement;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toContain('Indexing your library, 1,200 of 3,000 files');
+    expect(line.textContent).toContain('Now: Library, Work · 2 projects still to start');
+    // Local AI is not set up: its section stays away.
+    expect(document.querySelector('section[aria-label="Local AI"]')).toBeNull();
+  });
+
+  it('sits in the Local AI section when there is one, and stops naming scopes after two', () => {
+    addConnection({ id: 'c-local', provider: 'local_ai', authMethod: 'local_bundled', label: 'Local AI' });
+    showIndexingForTests({
+      filesDone: 1,
+      filesTotal: 9,
+      fraction: 1 / 9,
+      currentScopes: ['/p/A', '/p/B', '/p/C'],
+    });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+
+    const section = document.querySelector('section[aria-label="Local AI"]') as HTMLElement;
+    const line = section.querySelector('[data-background-activity="indexing"]') as HTMLElement;
+    expect(line.textContent).toContain('Now: A, B +1');
+    expect(line.textContent).not.toContain('still to start');
+  });
+
+  it('shows a model download when nothing is being indexed', () => {
+    useRecordingStore.setState({ activeDownloads: { base: { progress: 40 } } });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    const line = document.querySelector('[data-background-activity="download"]') as HTMLElement;
+    expect(line.textContent).toBe('Downloading model 40%');
   });
 });

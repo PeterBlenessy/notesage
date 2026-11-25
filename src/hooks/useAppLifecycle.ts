@@ -21,6 +21,7 @@ import { scanICloudForProjects, forgetReservedLibraryFolders } from "@/lib/scan-
 import { resolveNotesRoot } from "@/lib/notes-root";
 import { log, setLogLevel, PERF } from "@/lib/logger";
 import { countFiles } from "@/lib/file-utils";
+import { beginStartupIndexPass, ensureProjectIndex, initIndexWithRecovery } from "@/lib/project-index-sync";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
@@ -154,8 +155,10 @@ export function useAppLifecycle() {
 
         const deadAcp = health.acp_agents.some((a) => !a.alive);
         const deadCopilot = health.copilot_lsp != null && !health.copilot_lsp.alive;
-        const deadMcp = health.mcp_servers.some((s) => !s.alive);
-        if (deadAcp || deadCopilot || deadMcp) {
+        // MCP servers are deliberately not part of this: nothing respawns
+        // them "on next use". A server that exited is reported, and retried,
+        // by `useMcpOperations` (status event → card, toast, backoff).
+        if (deadAcp || deadCopilot) {
           log.info("lifecycle", "Some AI processes died — they will be lazily respawned on next use");
           toast.info(t("toast.reconnectedAi"));
         }
@@ -530,12 +533,15 @@ function announceIndexReady(): void {
 async function runStartupIndexPass(t0: number): Promise<void> {
   const tIndex0 = performance.now();
   let ok = true;
+  beginStartupIndexPass();
   try {
     await initIndexWithRecovery();
     const projectsForIndex = useWorkspaceStore.getState().projects;
     await Promise.all(projectsForIndex.map(async (project) => {
       const tProjectIndex0 = performance.now();
-      await initIndexWithRecovery(project.path);
+      // Shared with `useProjectIndexSync`: a project that was added while the
+      // global pass ran is already indexed (or being indexed) by it.
+      await ensureProjectIndex(project.path);
       const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
       const fileCount = countFiles(projectTree?.fileTree);
       log.perf(PERF.startup, 'index init', {
@@ -960,37 +966,3 @@ async function loadDocumentContent(id: string, filePath: string, fileName: strin
     }
   }
 }
-
-/**
- * Initialize the index for a scope, with auto-recovery on failure.
- * If init fails (corrupted DB), deletes the DB files and retries once.
- * Shows a toast during recovery so the user knows tags/mentions may be
- * temporarily unavailable.
- */
-async function initIndexWithRecovery(projectPath?: string): Promise<void> {
-  try {
-    await tauriApi.indexInit(projectPath);
-  } catch (firstError) {
-    const scope = projectPath ?? "global";
-    log.warn("lifecycle", `Index init failed for ${scope}, attempting recovery`, firstError);
-
-    // Delete corrupted DB and retry
-    toast.info(t("toast.rebuildingIndex"), {
-      id: `index-recovery-${scope}`,
-    });
-    try {
-      await tauriApi.indexReset(projectPath);
-      await tauriApi.indexInit(projectPath);
-      toast.dismiss(`index-recovery-${scope}`);
-    } catch (retryError) {
-      log.error("lifecycle", `Index recovery failed for ${scope}`, retryError);
-      toast.error(
-        "An unexpected error occurred while rebuilding the search index. " +
-        "Tag and mention suggestions will be unavailable until the app is restarted. " +
-        "If this persists, please share the app logs and report the issue on GitHub.",
-        { id: `index-recovery-${scope}`, duration: 15000 },
-      );
-    }
-  }
-}
-

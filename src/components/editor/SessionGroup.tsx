@@ -16,6 +16,7 @@ import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
+import { BackgroundActivityLine } from "./BackgroundActivityLine";
 
 // `SessionGroup` is kept as the export name to avoid touching the
 // `StatusTrayGroup = "session"` deep-link key in StatusBar.
@@ -30,7 +31,9 @@ export function SessionGroup() {
   const hasConnection = connections.some(
     (c) => c.provider === "local_ai" && c.authMethod === "local_bundled",
   );
-  if (!hasConnection) return null;
+  // Background activity (indexing, model downloads) is reported here whether
+  // or not Local AI is set up; the line renders nothing when idle.
+  if (!hasConnection) return <BackgroundActivityLine />;
 
   // Shared helper keeps this dot and the quiet status strip's dot in sync.
   const dot = localAiDotClass(serverStatus, reducedMotion);
@@ -40,6 +43,7 @@ export function SessionGroup() {
 
   return (
     <section className="space-y-2" aria-label="Local AI">
+      <BackgroundActivityLine />
       <div className="flex items-center gap-2">
         <Cpu className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
         <span className="text-xs font-medium">Local AI</span>

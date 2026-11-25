@@ -10,6 +10,8 @@ import type {
 import type { ToolDefinition } from '@/lib/ai/types';
 import { log } from '@/lib/logger';
 import { handleRehydrateResult } from "@/lib/persist-rehydrate";
+import { getMcpToolDefinitions } from '@/lib/mcp/chat-tools';
+import { isMcpToolName } from '@/lib/mcp/tool-naming';
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
@@ -24,6 +26,16 @@ export type { ToolDefinition } from '@/lib/ai/types';
 export type SkillEntry = TauriSkillEntry & { projectRoot?: string | null };
 export type AgentEntry = TauriAgentEntry & { projectRoot?: string | null };
 export type AgentInstruction = TauriAgentInstruction & { projectRoot?: string | null };
+
+/** Options for `getToolDefinitions`. */
+export interface ToolDefinitionOptions {
+  /**
+   * Project scope of the conversation the tools are for. When given, tools of
+   * enabled, running MCP servers that are global or belong to one of these
+   * projects are appended (as `mcp__<server>__<tool>`). Omitted: no MCP tools.
+   */
+  mcpProjectPaths?: string[];
+}
 
 // --- Skill-token parser (Phase 1, task #22) ---
 //
@@ -344,7 +356,7 @@ interface SkillStore {
   getSkillToolByName: (toolName: string) => SkillToolEntry | undefined;
 
   /** Get tool definitions for local AI tool calling, optionally filtered by allowed tool names. */
-  getToolDefinitions: (allowedTools?: string[]) => ToolDefinition[];
+  getToolDefinitions: (allowedTools?: string[], options?: ToolDefinitionOptions) => ToolDefinition[];
 }
 
 /** Known skill source labels. Must match Rust `determine_source` / `determine_agent_source` in commands/skills.rs. */
@@ -627,7 +639,7 @@ export const useSkillStore = create<SkillStore>()(
         return get().skillTools.find((t) => t.tool_name === toolName);
       },
 
-      getToolDefinitions: (allowedTools?: string[]) => {
+      getToolDefinitions: (allowedTools?: string[], options?: ToolDefinitionOptions) => {
         // Convert skill tools to ToolDefinition format
         const skillToolDefs: ToolDefinition[] = get().skillTools.map((st) => ({
           name: st.tool_name,
@@ -635,18 +647,26 @@ export const useSkillStore = create<SkillStore>()(
           input_schema: st.parameters as Record<string, unknown>,
         }));
 
-        const allTools = [...BUILT_IN_TOOLS, ...skillToolDefs];
+        // MCP tools join the list only for a caller that names the
+        // conversation's project scope: without one there is no way to tell
+        // which project servers the conversation may use.
+        const mcpToolDefs = options?.mcpProjectPaths
+          ? getMcpToolDefinitions(options.mcpProjectPaths)
+          : [];
+
+        const allTools = [...BUILT_IN_TOOLS, ...skillToolDefs, ...mcpToolDefs];
 
         if (!allowedTools) return allTools;
 
         return allTools.filter((tool) => {
           // Match on exact tool name
           if (allowedTools.includes(tool.name)) return true;
-          // For skill tools, also match on the skill name prefix (e.g., "skill__download_webpage")
-          if (tool.name.startsWith('skill__')) {
+          // For skill and MCP tools, also match on the owner prefix
+          // (e.g., "skill__download_webpage", "mcp__github").
+          if (tool.name.startsWith('skill__') || isMcpToolName(tool.name)) {
             const parts = tool.name.split('__');
-            const skillPrefix = parts.length >= 2 ? `skill__${parts[1]}` : '';
-            return allowedTools.includes(skillPrefix);
+            const ownerPrefix = parts.length >= 2 ? `${parts[0]}__${parts[1]}` : '';
+            return allowedTools.includes(ownerPrefix);
           }
           return false;
         });

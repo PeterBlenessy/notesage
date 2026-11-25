@@ -9,6 +9,7 @@ import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
+import { IndexingNote } from "@/components/index/IndexingNote";
 
 /**
  * ResearchMode — picker for the `?research` prefix mode (PRD
@@ -211,73 +212,79 @@ function ResearchMode({
             <span className="block mt-1 text-[11px] opacity-70">{searchError}</span>
           </>
         ) : (
-          t("cmd.noResearchMatches")
+          <>
+            {t("cmd.noResearchMatches")}
+            <IndexingNote className="mt-1" />
+          </>
         )}
       </div>
     );
   }
 
   return (
-    <div
-      id={listboxId}
-      role="listbox"
-      aria-label={t("cmd.researchResults")}
-      className="flex flex-col py-1"
-    >
-      {rows.map(({ result, displaySource }, index) => {
-        const isActive = index === highlightedIndex;
-        return (
-          <button
-            type="button"
-            id={`${listboxId}-opt-${index}`}
-            role="option"
-            aria-selected={isActive}
-            key={`${result.file}-${index}`}
-            data-index={index}
-            onMouseEnter={() => setHighlightedIndex(index)}
-            onClick={() => selectIndex(index)}
-            className={cn(
-              // Density (live-test 2026-04-26).
-              "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
-              "transition-colors text-[13px]",
-              isActive
-                ? "bg-muted/80 text-foreground"
-                : "text-foreground hover:bg-muted/60",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            )}
-          >
-            <div className="flex w-full items-center gap-2">
-              <BookOpen
-                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-              <span className="flex-1 truncate font-medium">
-                {result.title}
-              </span>
-              {result.date_saved && (
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {result.date_saved}
-                </span>
+    <>
+      <div
+        id={listboxId}
+        role="listbox"
+        aria-label={t("cmd.researchResults")}
+        className="flex flex-col py-1"
+      >
+        {rows.map(({ result, displaySource }, index) => {
+          const isActive = index === highlightedIndex;
+          return (
+            <button
+              type="button"
+              id={`${listboxId}-opt-${index}`}
+              role="option"
+              aria-selected={isActive}
+              key={`${result.file}-${index}`}
+              data-index={index}
+              onMouseEnter={() => setHighlightedIndex(index)}
+              onClick={() => selectIndex(index)}
+              className={cn(
+                // Density (live-test 2026-04-26).
+                "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
+                "transition-colors text-[13px]",
+                isActive
+                  ? "bg-muted/80 text-foreground"
+                  : "text-foreground hover:bg-muted/60",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
-            </div>
-            {(displaySource || result.tags.length > 0) && (
-              <div className="flex w-full items-center gap-2 pl-5 text-xs text-muted-foreground">
-
-                {displaySource && (
-                  <span className="truncate">{displaySource}</span>
-                )}
-                {!displaySource && result.tags.length > 0 && (
-                  <span className="truncate">
-                    {result.tags.slice(0, 3).join(", ")}
+            >
+              <div className="flex w-full items-center gap-2">
+                <BookOpen
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+                <span className="flex-1 truncate font-medium">
+                  {result.title}
+                </span>
+                {result.date_saved && (
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {result.date_saved}
                   </span>
                 )}
               </div>
-            )}
-          </button>
-        );
-      })}
-    </div>
+              {(displaySource || result.tags.length > 0) && (
+                <div className="flex w-full items-center gap-2 pl-5 text-xs text-muted-foreground">
+
+                  {displaySource && (
+                    <span className="truncate">{displaySource}</span>
+                  )}
+                  {!displaySource && result.tags.length > 0 && (
+                    <span className="truncate">
+                      {result.tags.slice(0, 3).join(", ")}
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <IndexingNote className="px-3 pb-1.5" />
+    </>
   );
 }
 

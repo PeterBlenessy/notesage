@@ -8,6 +8,7 @@ use super::types::{AcpMcpServerInput, AuthEnvVar, AuthMethodInfo, SmokeStage, Sm
 use crate::commands::mcp::{McpEnvValue, McpTransport};
 use agent_client_protocol::schema::McpServer;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 // --- orphan PID-file records (audit batch 3 fix #9) ---
 
@@ -43,6 +44,7 @@ fn stdio_input(name: &str, command: &str) -> AcpMcpServerInput {
         args: vec!["--flag".to_string()],
         env: HashMap::new(),
         url: None,
+        headers: HashMap::new(),
     }
 }
 
@@ -93,6 +95,7 @@ async fn build_mcp_servers_http_requires_url() {
         args: vec![],
         env: HashMap::new(),
         url: Some("https://mcp.example.com".to_string()),
+        headers: HashMap::new(),
     };
     let without_url = AcpMcpServerInput {
         id: "srv-bad".to_string(),
@@ -102,6 +105,7 @@ async fn build_mcp_servers_http_requires_url() {
         args: vec![],
         env: HashMap::new(),
         url: None,
+        headers: HashMap::new(),
     };
     let built = build_acp_mcp_servers(vec![with_url, without_url]).await;
     assert_eq!(built.len(), 1);
@@ -112,6 +116,73 @@ async fn build_mcp_servers_http_requires_url() {
         }
         _ => panic!("expected Http"),
     }
+}
+
+/// What the agent receives in `session/new` / `session/load` is the ACP v1
+/// wire shape: a stdio server has no `type` and carries `env` as an array of
+/// `{ name, value }`; an http server is tagged `type: "http"` and carries
+/// `headers` the same way. Secret references never appear: a plain value
+/// passes through, a keychain reference that cannot be resolved is left out.
+#[tokio::test]
+async fn build_mcp_servers_serialise_to_the_acp_wire_shape() {
+    let mut stdio = stdio_input("fs", "/usr/bin/mcp-fs");
+    stdio.env.insert("TOKEN".to_string(), McpEnvValue::Plain("abc".to_string()));
+    stdio.env.insert(
+        "MISSING".to_string(),
+        McpEnvValue::Secret(crate::commands::mcp::McpSecretRef { secret: true }),
+    );
+    let mut http = AcpMcpServerInput {
+        id: "srv-remote-wire".to_string(),
+        name: "remote".to_string(),
+        transport: McpTransport::Http,
+        command: String::new(),
+        args: vec![],
+        env: HashMap::new(),
+        url: Some("https://mcp.example.com/mcp".to_string()),
+        headers: HashMap::new(),
+    };
+    http.headers.insert("X-Api-Key".to_string(), McpEnvValue::Plain("k1".to_string()));
+    http.headers.insert(
+        "X-Missing".to_string(),
+        McpEnvValue::Secret(crate::commands::mcp::McpSecretRef { secret: true }),
+    );
+
+    let built = build_acp_mcp_servers(vec![stdio, http]).await;
+    let wire = serde_json::to_value(&built).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!([
+            {
+                "name": "fs",
+                "command": "/usr/bin/mcp-fs",
+                "args": ["--flag"],
+                "env": [{ "name": "TOKEN", "value": "abc" }],
+            },
+            {
+                "type": "http",
+                "name": "remote",
+                "url": "https://mcp.example.com/mcp",
+                "headers": [{ "name": "X-Api-Key", "value": "k1" }],
+            },
+        ])
+    );
+    assert!(!wire.to_string().contains("secret"));
+}
+
+/// The agent spawns a stdio server without a shell, so a leading `~` in the
+/// command is expanded here. Bare names (resolved through `PATH`), absolute
+/// paths and `~user` forms are left alone.
+#[test]
+fn expand_home_in_command_only_touches_a_leading_tilde() {
+    use super::helpers::expand_home_in_command;
+    let home = std::path::Path::new("/Users/t");
+    assert_eq!(expand_home_in_command("~/bin/srv", Some(home)), PathBuf::from("/Users/t/bin/srv"));
+    assert_eq!(expand_home_in_command("~", Some(home)), PathBuf::from("/Users/t"));
+    assert_eq!(expand_home_in_command("npx", Some(home)), PathBuf::from("npx"));
+    assert_eq!(expand_home_in_command("/usr/bin/node", Some(home)), PathBuf::from("/usr/bin/node"));
+    assert_eq!(expand_home_in_command("~other/bin/srv", Some(home)), PathBuf::from("~other/bin/srv"));
+    assert_eq!(expand_home_in_command("./rel/srv", Some(home)), PathBuf::from("./rel/srv"));
+    assert_eq!(expand_home_in_command("~/bin/srv", None), PathBuf::from("~/bin/srv"));
 }
 
 /// `AcpMcpServerInput` deserializes from the renderer's camelCase payload,

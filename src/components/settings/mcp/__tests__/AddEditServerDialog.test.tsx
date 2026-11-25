@@ -163,8 +163,9 @@ describe('AddEditServerDialog', () => {
     expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Added/));
     expect(saved).toHaveLength(1);
     const configs = saved[0].configs as Record<string, Record<string, unknown>>;
-    // Auto-derived name from the command, stdio shape (command/args/env).
-    expect(configs.fs).toMatchObject({ command: 'npx fs', args: ['/tmp'], env: {} });
+    // stdio shape (command/args/env). The Command field is split like a
+    // command line: its first word is the program, the rest lead the args.
+    expect(configs.fs).toMatchObject({ command: 'npx', args: ['fs', '/tmp'], env: {} });
   });
 
   /** Fill the form for a server named "fs" and press Add. */

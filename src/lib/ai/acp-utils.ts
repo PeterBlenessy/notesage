@@ -72,14 +72,28 @@ export interface AcpSessionCapabilities {
  * that may not follow the spec exactly.
  */
 /**
- * MCP transport sub-capabilities from ACP `AgentCapabilities.mcp`. The schema
- * encodes each transport as `Option<Mcp*Capabilities>` — `null`/missing means
- * the agent does NOT accept that transport; a present object (even `{}`) means
- * it does. We don't read the nested fields, only presence.
+ * MCP transport capabilities, ACP schema **v1** (`AgentCapabilities.mcpCapabilities`).
+ * This is what the app receives: the Rust side deserialises the agent's
+ * `initialize` response with the v1 schema and re-serialises it, so both
+ * booleans are always present. stdio has no field: every v1 agent must accept
+ * stdio servers.
+ */
+export interface AcpMcpCapabilitiesV1 {
+  http?: boolean;
+  sse?: boolean;
+}
+
+/**
+ * MCP transport capabilities, ACP schema **v2** (`AgentCapabilities.mcp`).
+ * Each transport is a nullable object: `null`/missing means unsupported, a
+ * present object (even `{}`) means supported. Not what the app negotiates
+ * today (`unstable_protocol_v2` is off); accepted so a schema upgrade, or an
+ * agent that answers in the newer shape, keeps working.
  */
 export interface AcpMcpCapabilities {
   stdio?: unknown;
   http?: unknown;
+  sse?: unknown;
 }
 
 export interface AcpAgentCapabilities {
@@ -90,24 +104,42 @@ export interface AcpAgentCapabilities {
   sessionCapabilities?: AcpSessionCapabilities;
   /** @deprecated snake_case alias — prefer `sessionCapabilities`. */
   session_capabilities?: AcpSessionCapabilities;
-  /** MCP transport support (`mcp.stdio` / `mcp.http`). */
+  /** MCP transport support, v1 shape: `{ http, sse }` booleans; stdio is implied. */
+  mcpCapabilities?: AcpMcpCapabilitiesV1;
+  /** @deprecated snake_case alias — prefer `mcpCapabilities`. */
+  mcp_capabilities?: AcpMcpCapabilitiesV1;
+  /** MCP transport support, v2 shape (`mcp.stdio` / `mcp.http` / `mcp.sse` objects). */
   mcp?: AcpMcpCapabilities;
   [key: string]: unknown;
 }
 
 /**
- * Returns true when the agent advertises the given MCP transport. ACP sends each
- * transport as a nullable object — any non-null value counts as supported. When
- * the whole `mcp` field is absent (older/custom agents), this is `false`, so the
- * caller sends no MCP servers rather than risking an unsupported `session/new`
- * payload (absent-field back-compat).
+ * Returns true when the agent accepts MCP servers of the given transport in
+ * `session/new` / `session/load`.
+ *
+ * - No capabilities at all (the agent never completed `initialize`): nothing.
+ * - v2 shape (`mcp` present): each transport is supported when its entry is a
+ *   non-null object, stdio included.
+ * - v1 shape, which is what the app negotiates: **stdio is always supported**
+ *   (the protocol requires it and has no field for it); `http` and `sse` only
+ *   when `mcpCapabilities.http` / `.sse` is `true`. An agent that sends no
+ *   `mcpCapabilities` object gets stdio only.
  */
 export function hasMcpCapability(
   caps: AcpAgentCapabilities | null | undefined,
-  transport: 'stdio' | 'http',
+  transport: 'stdio' | 'http' | 'sse',
 ): boolean {
-  const value = caps?.mcp?.[transport];
-  return value !== undefined && value !== null;
+  if (caps === null || caps === undefined || typeof caps !== 'object') return false;
+
+  const v2 = caps.mcp;
+  if (v2 !== undefined && v2 !== null && typeof v2 === 'object') {
+    const value = v2[transport];
+    return value !== undefined && value !== null && value !== false;
+  }
+
+  if (transport === 'stdio') return true;
+  const v1 = caps.mcpCapabilities ?? caps.mcp_capabilities;
+  return v1 !== undefined && v1 !== null && v1[transport] === true;
 }
 
 /** True when the agent advertises `loadSession` (tolerant of snake_case). */

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   fireEvent,
@@ -491,5 +493,59 @@ describe('TagsSection', () => {
     const showMore = screen.getByRole('button', { name: /show more/i }) as HTMLButtonElement;
     expect(showMore.getAttribute('tabindex')).toBeNull();
     expect(showMore.tabIndex).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// While the library is being indexed, the list may be partial: say so.
+// ---------------------------------------------------------------------------
+
+describe('TagsSection while the library is being indexed', () => {
+  const NOTE = 'Still indexing: results may be incomplete';
+
+  beforeEach(() => {
+    indexTagsMock.mockReset();
+    useSettingsStore.setState({ sidebarTagsCap: 5, sidebarMentionsCap: 5 });
+    showIndexingForTests(null);
+  });
+
+  it('says nothing about indexing when the library is not being indexed', async () => {
+    indexTagsMock.mockResolvedValue([{ tag: 'work', file_count: 12 }]);
+    renderWithProviders(<TagsSection />);
+    await screen.findByText('work');
+    expect(screen.queryByText(NOTE)).toBeNull();
+  });
+
+  it('notes that results may be incomplete next to the rows it has so far, until indexing ends', async () => {
+    showIndexingForTests({});
+    indexTagsMock.mockResolvedValue([{ tag: 'work', file_count: 12 }]);
+    renderWithProviders(<TagsSection />);
+
+    await screen.findByText('work');
+    expect(screen.getByText(NOTE)).toBeTruthy();
+
+    act(() => showIndexingForTests(null));
+    expect(screen.queryByText(NOTE)).toBeNull();
+    expect(screen.getByText('work')).toBeTruthy();
+  });
+
+  it('shows the note in an otherwise empty section, so "nothing" is not read as "none"', async () => {
+    showIndexingForTests({});
+    indexTagsMock.mockResolvedValue([]);
+    renderWithProviders(<TagsSection />);
+    await waitFor(() => expect(indexTagsMock).toHaveBeenCalled());
+    expect(screen.getByText(NOTE)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows only "index unavailable" when the query fails, even while indexing', async () => {
+    showIndexingForTests({});
+    indexTagsMock.mockRejectedValue(new Error('database is locked'));
+    renderWithProviders(<TagsSection />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(screen.queryByText(NOTE)).toBeNull();
+    showIndexingForTests(null);
   });
 });

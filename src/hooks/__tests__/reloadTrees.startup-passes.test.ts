@@ -264,6 +264,31 @@ describe("S-1: startup does not wait for the index", () => {
     expect(perfLines("index ready")).toHaveLength(1);
   });
 
+  it("does not index a project a second time when it was added while the global pass ran", async () => {
+    const release: Array<() => void> = [];
+    indexInit.impl = () => new Promise<void>((resolve) => { release.push(resolve); });
+
+    await reloadTrees();
+    expect(api.indexInit.mock.calls.map((c) => c[0])).toEqual([undefined]);
+
+    // `useProjectIndexSync` takes a project that joins the workspace now. It
+    // is in the store by the time the startup pass reads its project list.
+    const { ensureProjectIndex } = await import("@/lib/project-index-sync");
+    useWorkspaceStore.getState().addProject(`${NEW}/Late`, []);
+    void ensureProjectIndex(`${NEW}/Late`);
+
+    // Global done → the startup pass goes through its projects, Late included.
+    release.shift()!();
+    await settle();
+    for (const r of release.splice(0)) r();
+    await settle();
+
+    const inits = api.indexInit.mock.calls.map((c) => c[0]);
+    expect(inits.filter((path) => path === `${NEW}/Late`)).toHaveLength(1);
+    expect(inits.filter((path) => path === `${NEW}/Work`)).toHaveLength(1);
+    expect(useSettingsStore.getState().indexReady).toBe(true);
+  });
+
   it("signals index-ready even when startup fails before the index pass begins", async () => {
     api.getICloudPath.mockResolvedValueOnce(ICLOUD);
     const { refreshNotesTree } = await import("@/lib/refresh-notes-tree");

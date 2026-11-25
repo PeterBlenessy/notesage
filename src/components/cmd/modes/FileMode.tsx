@@ -11,6 +11,7 @@ import { FileIcon } from "@/components/sidebar/FileIcon";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
+import { IndexingNote } from "@/components/index/IndexingNote";
 
 /**
  * FileMode — picker for the `:file <query>` verb mode (PRD
@@ -288,6 +289,7 @@ function FileMode({
         className="px-3 py-2 text-xs text-muted-foreground"
       >
         No files matching "{trimmedFilter}".
+        <IndexingNote className="mt-1" />
         {!showHiddenFiles && (
           <span className="block mt-1 text-[11px] opacity-70">
             Hidden files are excluded — toggle in Settings &gt; System.
@@ -298,49 +300,53 @@ function FileMode({
   }
 
   return (
-    <div
-      id={listboxId}
-      role="listbox"
-      aria-label={isEmptyFilter ? "Recent files" : "File search results"}
-      className="flex flex-col py-1"
-    >
-      {rows.map((row, index) => {
-        const isActive = index === highlightedIndex;
-        return (
-          <button
-            type="button"
-            id={`${listboxId}-opt-${index}`}
-            role="option"
-            aria-selected={isActive}
-            key={`${row.path}-${index}`}
-            data-index={index}
-            onMouseEnter={() => setHighlightedIndex(index)}
-            onClick={() => selectIndex(index)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[13px]",
-              isActive
-                ? "bg-muted/80 text-foreground"
-                : "text-foreground hover:bg-muted/60",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            )}
-          >
-            <FileIcon
-              fileName={row.name}
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-            />
-            <span className="flex-1 truncate font-medium">{row.name}</span>
-            {row.parentDir && (
-              <span
-                className="shrink-0 truncate max-w-[40%] text-xs text-muted-foreground"
-                title={row.parentDir}
-              >
-                {row.parentDir}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div
+        id={listboxId}
+        role="listbox"
+        aria-label={isEmptyFilter ? "Recent files" : "File search results"}
+        className="flex flex-col py-1"
+      >
+        {rows.map((row, index) => {
+          const isActive = index === highlightedIndex;
+          return (
+            <button
+              type="button"
+              id={`${listboxId}-opt-${index}`}
+              role="option"
+              aria-selected={isActive}
+              key={`${row.path}-${index}`}
+              data-index={index}
+              onMouseEnter={() => setHighlightedIndex(index)}
+              onClick={() => selectIndex(index)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[13px]",
+                isActive
+                  ? "bg-muted/80 text-foreground"
+                  : "text-foreground hover:bg-muted/60",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              )}
+            >
+              <FileIcon
+                fileName={row.name}
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              />
+              <span className="flex-1 truncate font-medium">{row.name}</span>
+              {row.parentDir && (
+                <span
+                  className="shrink-0 truncate max-w-[40%] text-xs text-muted-foreground"
+                  title={row.parentDir}
+                >
+                  {row.parentDir}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {/* The recent-files list is not read from the index; search results are. */}
+      {isEmptyFilter ? null : <IndexingNote className="px-3 pb-1.5" />}
+    </>
   );
 }
 

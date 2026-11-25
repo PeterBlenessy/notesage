@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { joinCommandLine } from './command-line';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +34,16 @@ const IMPORT_SOURCES: ImportSource[] = [
   { id: 'cursor', label: 'Cursor', icon: 'Cu' },
   { id: 'vscode', label: 'VS Code', icon: 'VS' },
 ];
+
+/**
+ * Why a discovered entry cannot be imported as it stands: a remote server
+ * with no URL, or a local one with no command. Saving either would add a
+ * server that can never start.
+ */
+function importProblem(server: McpServerEntry): 'no-url' | 'no-command' | null {
+  if (server.transport === 'http') return server.url?.trim() ? null : 'no-url';
+  return server.command.trim() ? null : 'no-command';
+}
 
 // Exported for tests (malformed-import validation coverage).
 export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -80,10 +92,18 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         enabled: c.enabled,
         status: 'stopped' as const,
         tools: [],
+        // A remote server is its transport and URL (and often an API-key
+        // header); without them it would be saved as a local server with no
+        // command.
+        transport: c.transport ?? 'stdio',
+        url: c.url ?? null,
+        headers: c.headers ?? {},
+        cwd: c.cwd ?? null,
       }));
 
       setDiscoveredServers(entries);
-      setSelectedIds(new Set(entries.map((e) => e.id)));
+      // An entry that cannot run as it stands is listed, but not imported.
+      setSelectedIds(new Set(entries.filter((e) => !importProblem(e)).map((e) => e.id)));
     } catch (err) {
       toast.error(`Failed to scan ${sourceId}: ${err}`);
     } finally {
@@ -94,16 +114,17 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const handleImport = async () => {
     setImporting(true);
     try {
-      const selected = discoveredServers.filter((s) => selectedIds.has(s.id));
+      const selected = discoveredServers.filter((s) => selectedIds.has(s.id) && !importProblem(s));
 
       // Build config entries for saving
-      const configs: Record<string, { command: string; args: string[]; env: Record<string, unknown> }> = {};
+      const configs: Record<string, Record<string, unknown>> = {};
       for (const server of selected) {
-        configs[server.name] = {
-          command: server.command,
-          args: server.args,
-          env: server.env,
-        };
+        const entry: Record<string, unknown> =
+          server.transport === 'http'
+            ? { transport: 'http', url: server.url, headers: server.headers ?? {}, env: server.env }
+            : { command: server.command, args: server.args, env: server.env };
+        if (server.cwd) entry.cwd = server.cwd;
+        configs[server.name] = entry;
       }
 
       // Read existing global config
@@ -210,24 +231,43 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                 {t("imp.foundServers", { count: discoveredServers.length })}
               </p>
               <div className="space-y-1.5 max-h-64 overflow-y-auto thin-scrollbar">
-                {discoveredServers.map((server) => (
-                  <label
-                    key={server.id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border hover:border-muted-foreground transition-colors cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={selectedIds.has(server.id)}
-                      onCheckedChange={() => toggleId(server.id)}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium">{server.name}</span>
-                      <p className="text-xs text-muted-foreground font-mono truncate">
-                        {[server.command, ...server.args].join(' ')}
-                      </p>
-                    </div>
-                  </label>
-                ))}
+                {discoveredServers.map((server) => {
+                  const remote = server.transport === 'http';
+                  const problem = importProblem(server);
+                  return (
+                    <label
+                      key={server.id}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-lg border border-border transition-colors',
+                        problem ? 'opacity-70' : 'hover:border-muted-foreground cursor-pointer',
+                      )}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(server.id)}
+                        onCheckedChange={() => toggleId(server.id)}
+                        disabled={!!problem}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{server.name}</span>
+                          <Badge variant="secondary" className="text-xs px-1.5 py-0 shrink-0">
+                            {remote ? t("common.remote") : t("conns.local")}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-mono truncate">
+                          {remote ? (server.url ?? '') : joinCommandLine([server.command, ...server.args])}
+                        </p>
+                        {problem && (
+                          <p className="text-xs text-destructive">
+                            {problem === 'no-url' ? t("imp.skipNoUrl") : t("imp.skipNoCommand")}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
+              <p className="text-xs text-muted-foreground">{t("imp.importedOffHint")}</p>
             </div>
           )}
         </div>

@@ -144,6 +144,103 @@ describe('ImportDialog', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
+  describe('remote servers and incomplete entries', () => {
+    function registerImport(configs: Array<Record<string, unknown>>) {
+      setMockInvokeHandler('mcp_check_import_sources', () => ['cursor']);
+      setMockInvokeHandler('mcp_import_configs', () => configs);
+      setMockInvokeHandler('get_home_dir', () => '/home/tester');
+      setMockInvokeHandler('path_exists', () => false);
+      const saved: Array<Record<string, unknown>> = [];
+      setMockInvokeHandler('mcp_save_config', (args) => {
+        saved.push(args ?? {});
+        return undefined;
+      });
+      return { saved };
+    }
+
+    const remote = {
+      id: 'cursor:linear',
+      name: 'linear',
+      command: '',
+      args: [],
+      env: {},
+      source: 'cursor',
+      enabled: false,
+      transport: 'http',
+      url: 'https://mcp.linear.app/mcp',
+      headers: { 'X-Api-Key': 'k-123' },
+      cwd: null,
+    };
+    const local = {
+      id: 'cursor:db',
+      name: 'db',
+      command: 'node',
+      args: ['server.js', '/Users/me/My Data'],
+      env: { PORT: '4000' },
+      source: 'cursor',
+      enabled: false,
+      transport: 'stdio',
+      url: null,
+      headers: {},
+      cwd: '~/code/db',
+    };
+
+    it('keeps transport, url, headers and cwd, and shows which entries are remote', async () => {
+      const { saved } = registerImport([remote, local]);
+      const onOpenChange = vi.fn();
+
+      renderWithProviders(<ImportDialog open onOpenChange={onOpenChange} />);
+      fireEvent.click(await screen.findByText('Cursor'));
+      await screen.findByText(/Found 2 servers/);
+
+      // The remote entry is listed by its URL and badged; the local one by its command line.
+      expect(screen.getByText('https://mcp.linear.app/mcp')).toBeTruthy();
+      expect(screen.getByText('Remote')).toBeTruthy();
+      expect(screen.getByText('Local')).toBeTruthy();
+      expect(screen.getByText('node server.js "/Users/me/My Data"')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: /Import 2 Servers/ }));
+
+      await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+      expect(saved[0].configs).toEqual({
+        linear: {
+          transport: 'http',
+          url: 'https://mcp.linear.app/mcp',
+          headers: { 'X-Api-Key': 'k-123' },
+          env: {},
+        },
+        db: {
+          command: 'node',
+          args: ['server.js', '/Users/me/My Data'],
+          env: { PORT: '4000' },
+          cwd: '~/code/db',
+        },
+      });
+    });
+
+    it('lists an entry that cannot run, says why, and does not import it', async () => {
+      const noUrl = { ...remote, id: 'cursor:nourl', name: 'nourl', url: null };
+      const noCommand = { ...local, id: 'cursor:nocmd', name: 'nocmd', command: '', args: [] };
+      const { saved } = registerImport([remote, noUrl, noCommand]);
+      const onOpenChange = vi.fn();
+
+      renderWithProviders(<ImportDialog open onOpenChange={onOpenChange} />);
+      fireEvent.click(await screen.findByText('Cursor'));
+      await screen.findByText(/Found 3 servers/);
+
+      expect(screen.getByText('Cannot be imported: this remote server has no URL.')).toBeTruthy();
+      expect(screen.getByText('Cannot be imported: this server has no command.')).toBeTruthy();
+      const boxes = screen.getAllByRole('checkbox') as HTMLButtonElement[];
+      expect(boxes.map((b) => b.disabled)).toEqual([false, true, true]);
+      expect(boxes.map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+
+      fireEvent.click(screen.getByRole('button', { name: /Import 1 Server$/ }));
+
+      await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+      expect(Object.keys(saved[0].configs as Record<string, unknown>)).toEqual(['linear']);
+    });
+  });
+
   it('returns to the source list from the Back button', async () => {
     setMockInvokeHandler('mcp_check_import_sources', () => ['claude-desktop']);
     setMockInvokeHandler('mcp_import_configs', () => [config('filesystem')]);

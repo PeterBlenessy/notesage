@@ -25,12 +25,10 @@ import {
  * - Source mode (CodeMirror) is out of scope — this hook only sees Tiptap
  *   transactions.
  *
- * Interaction with `useCursorScrollGuard`: that hook nudges the viewport when
- * the caret would slip behind the floating command bar. Both issue relative
- * smooth `scrollBy` calls on typing, which would compose additively and
- * overshoot — so the guard stands down while typewriter scrolling is enabled
- * (centering keeps the caret far above the bar anyway). See the early-return
- * in `useCursorScrollGuard`.
+ * Interaction with `CommandBarClearance` (the editor extension that keeps the
+ * caret above the floating command bar): none to manage. With the caret held
+ * at the centre of the viewport it is never inside the band that extension
+ * clears, so it does nothing while this mode is on.
  *
  * Reduced motion: `prefers-reduced-motion: reduce` switches the scroll to
  * instant (`behavior: 'auto'`) instead of smooth.

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   act,
   renderWithProviders,
@@ -299,5 +300,58 @@ describe('TagMode', () => {
     expect(alert.textContent).toBe('Search index unavailable');
     expect(screen.getByText('index is being rebuilt')).toBeTruthy();
     expect(screen.queryByText(/no occurrences found/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// While the library is being indexed, tags and occurrences may be partial.
+// ---------------------------------------------------------------------------
+
+describe('TagMode while the library is being indexed', () => {
+  const NOTE = 'Still indexing: results may be incomplete';
+
+  beforeEach(() => {
+    indexTagsMock.mockReset();
+    indexTagOccurrencesMock.mockReset();
+    indexTagOccurrencesMock.mockResolvedValue([]);
+    showIndexingForTests({});
+  });
+
+  afterEach(() => showIndexingForTests(null));
+
+  it('adds the note under "No tags match"', async () => {
+    indexTagsMock.mockResolvedValue([]);
+    renderWithProviders(<TagMode filter="" onPick={() => {}} />);
+    expect(await screen.findByText(/no tags match/i)).toBeTruthy();
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it('adds the note after the tags it has so far, outside the listbox', async () => {
+    indexTagsMock.mockResolvedValue([{ tag: 'work', file_count: 12 }]);
+    renderWithProviders(<TagMode filter="" onPick={() => {}} />);
+    await waitFor(() => expect(screen.getByText('work')).toBeTruthy());
+    expect(screen.getByRole('listbox').contains(screen.getByText(NOTE))).toBe(false);
+  });
+
+  it('adds the note under "No occurrences found" in the drilldown', async () => {
+    indexTagsMock.mockResolvedValue([{ tag: 'work', file_count: 12 }]);
+    renderWithProviders(<TagMode filter="" onPick={() => {}} initialDrilldown="work" />);
+    expect(await screen.findByText(/no occurrences found/i)).toBeTruthy();
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it('shows only "index unavailable" when a query fails', async () => {
+    indexTagsMock.mockRejectedValue(new Error('database is locked'));
+    renderWithProviders(<TagMode filter="" onPick={() => {}} />);
+    expect((await screen.findByRole('alert')).textContent).toBe('Search index unavailable');
+    expect(screen.queryByText(NOTE)).toBeNull();
+  });
+
+  it('shows no note when the library is not being indexed', async () => {
+    showIndexingForTests(null);
+    indexTagsMock.mockResolvedValue([]);
+    renderWithProviders(<TagMode filter="" onPick={() => {}} />);
+    expect(await screen.findByText(/no tags match/i)).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

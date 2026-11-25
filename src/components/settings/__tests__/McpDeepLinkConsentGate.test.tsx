@@ -34,7 +34,7 @@ describe('AddEditServerDialog deep-link consent gate', () => {
 
     expect(screen.getByText('Requested by an external link')).toBeTruthy();
 
-    const testBtn = screen.getByRole('button', { name: /test/i }) as HTMLButtonElement;
+    const testBtn = screen.getByRole('button', { name: /^test$/i }) as HTMLButtonElement;
     const addBtn = screen.getByRole('button', { name: /add server/i }) as HTMLButtonElement;
     expect(testBtn.disabled).toBe(true);
     expect(addBtn.disabled).toBe(true);
@@ -42,7 +42,7 @@ describe('AddEditServerDialog deep-link consent gate', () => {
     // Tick the acknowledgement checkbox.
     fireEvent.click(screen.getByRole('checkbox'));
 
-    expect((screen.getByRole('button', { name: /test/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: /^test$/i }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: /add server/i }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -52,7 +52,7 @@ describe('AddEditServerDialog deep-link consent gate', () => {
     );
 
     expect(screen.queryByText('Requested by an external link')).toBeNull();
-    expect((screen.getByRole('button', { name: /test/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: /^test$/i }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: /add server/i }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

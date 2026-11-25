@@ -620,7 +620,7 @@ pub async fn mcp_oauth_authorize(
     let registration_endpoint = metadata
         .registration_endpoint
         .clone()
-        .ok_or("This server does not advertise dynamic client registration")?;
+        .ok_or("This server does not advertise dynamic client registration, so Notesage cannot sign in to it. If the service offers an API key or access token, add it as a header (for example Authorization) in this server's settings instead.")?;
 
     let (redirect_uri, listener) = bind_loopback().await?;
     let reg = register_client(&client, &registration_endpoint, &redirect_uri).await?;

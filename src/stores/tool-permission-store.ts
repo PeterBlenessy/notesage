@@ -8,6 +8,12 @@ export interface PendingToolPermission {
   arguments: Record<string, unknown>;
   resolve: (decision: ToolCallDecision) => void;
   /**
+   * Set for an MCP tool call: the server and the tool's original name, so
+   * the permission card can say which third-party server is about to act
+   * (`name` is the model-facing `mcp__<server>__<tool>` form).
+   */
+  mcp?: { serverName: string; toolName: string };
+  /**
    * Conversation that owns this request (task #6) — lets the permission card
    * tell whether it belongs to the watched session, which drives the
    * foreground-aware auto-deny timeout (task #7). `null`/absent for legacy

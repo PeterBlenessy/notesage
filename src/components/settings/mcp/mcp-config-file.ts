@@ -18,6 +18,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The `mcp.json` a server is defined in, which is the file an edit or a
+ * removal must rewrite: the project's own file for a project-scoped server,
+ * the global one for everything else (servers added by hand, from the catalog
+ * or imported from another tool all live there). Other tools' own config
+ * files are never written.
+ */
+export async function mcpConfigPathFor(
+  server?: { source: string; projectRoot?: string | null },
+): Promise<string> {
+  if (server?.source === 'notesage-project' && server.projectRoot) {
+    return `${server.projectRoot}/.notesage/mcp.json`;
+  }
+  const home = await invoke<string>('get_home_dir');
+  return `${home}/.notesage/mcp.json`;
+}
+
+/**
  * Read the `mcpServers` record of an `mcp.json` that is about to be rewritten.
  *
  * - The file does not exist: `{}` (first server, start fresh).

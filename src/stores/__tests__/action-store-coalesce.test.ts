@@ -217,6 +217,37 @@ describe('incrementalUpdate', () => {
   });
 });
 
+describe('refreshRoot', () => {
+  it('scans the whole root once, with no changed file to point at', async () => {
+    void useActionStore.getState().refreshRoot(A);
+    expect(ipcCalls()).toBe(0);
+
+    await passWindow();
+
+    expect(api.indexTasks).toHaveBeenCalledTimes(1);
+    expect(api.indexTasks).toHaveBeenCalledWith([A]);
+    expect(ipcCalls()).toBe(3);
+    expect(useActionStore.getState().actions.map((a) => a.text)).toEqual([`task in ${A}`]);
+  });
+
+  it('shares its window with the saves of the same project', async () => {
+    const store = useActionStore.getState();
+    void store.incrementalUpdate(`${A}/doc.md`);
+    void store.refreshRoot(A);
+
+    await passWindow();
+
+    expect(ipcCalls()).toBe(3);
+  });
+
+  it('makes no IPC call for a root that is not scanned (a project removed meanwhile)', async () => {
+    await useActionStore.getState().refreshRoot('/lib/Removed');
+    await passWindow();
+
+    expect(ipcCalls()).toBe(0);
+  });
+});
+
 describe('while the startup index pass is still running', () => {
   beforeEach(() => {
     useSettingsStore.setState({ indexReady: false });
@@ -231,6 +262,13 @@ describe('while the startup index pass is still running', () => {
     expect(ipcCalls()).toBe(0);
     expect(useActionStore.getState().actions.map((a) => a.text)).toEqual(['from last session']);
     expect(useActionStore.getState().isScanning).toBe(false);
+  });
+
+  it('refreshRoot is dropped: the full scan at index-ready covers it', async () => {
+    await useActionStore.getState().refreshRoot(A);
+    await passWindow();
+
+    expect(ipcCalls()).toBe(0);
   });
 
   it('incrementalUpdate is dropped: the full scan at index-ready covers it', async () => {

@@ -31,6 +31,8 @@ import {
 import { agentTaskRegistry } from './task-registry';
 import { runAgentTask, type TaskCallbacks, type TaskMeta } from './run-task';
 import { getHomeDir } from './home-dir';
+import { isMcpToolName } from '@/lib/mcp/tool-naming';
+import { resolveMcpTool, mcpPermissionKey } from '@/lib/mcp/chat-tools';
 
 /** What every `$/progress`-derived event carries (see copilot-correlation.ts). */
 interface CopilotProgressKey {
@@ -68,6 +70,15 @@ function isToolPreApproved(name: string, connectionId: string, projectRoot: stri
   // "Confirm every tool call" means a person decides each time; a background
   // task has no one to ask.
   if (useSettingsStore.getState().requireAllToolConfirmations) return false;
+  // An MCP tool is approved per server + tool, under its own key (the same
+  // one chat stores), and is never on the built-in auto-allow list: a task
+  // runs it only if the user said "always" or "for this session" in chat.
+  if (isMcpToolName(name)) {
+    const target = resolveMcpTool(name, projectRoot ? [projectRoot] : []);
+    if (!target) return false;
+    return usePermissionStore.getState()
+      .isToolAllowed(mcpPermissionKey(target), connectionId, target.projectRoot) !== 'none';
+  }
   return usePermissionStore.getState().isToolAllowed(name, connectionId, projectRoot) !== 'none';
 }
 

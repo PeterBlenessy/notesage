@@ -718,6 +718,36 @@ body {
   }
 }
 
+/*
+ * Background-activity bar (sidebar footer, `BackgroundActivityBar`).
+ *
+ * Determinate progress is the shadcn `Progress` indicator's own transform.
+ * While the total is not known yet (Radix: `data-state="indeterminate"`) a
+ * short segment sweeps along the track instead; the animation's transform
+ * takes precedence over the indicator's inline one.
+ *
+ * Reduced motion: no sweep, a still half-strength line across the full
+ * width. `!important` because the transform it replaces is an inline style.
+ */
+[data-activity-bar][data-state="indeterminate"] > [data-slot="progress-indicator"] {
+  width: 40%;
+  animation: activity-bar-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes activity-bar-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-activity-bar][data-state="indeterminate"] > [data-slot="progress-indicator"] {
+    width: 100%;
+    animation: none;
+    transform: none !important;
+    opacity: 0.35;
+  }
+}
+
 /* Session run-state status dot (history rows, task #9). A gentle opacity pulse
  * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
  * components also strip the class under `useReducedMotion()` as defence-in-depth. */
@@ -981,43 +1011,23 @@ body {
  * Translucent chrome (#132)
  *
  * When the QuietLayout root carries `data-quiet-chrome-transparent="true"`,
- * the StatusBar gains a semi-transparent background + backdrop-blur to
- * match the TitleBar's frosted-glass effect. The TitleBar applies its
- * own classes inline (because it's also re-positioned absolute by
- * QuietLayout in the same setting); the StatusBar can stay component-
- * neutral by leaning on the CSS-driven override below.
+ * the TitleBar turns frosted-glass and is positioned over the editor so
+ * content scrolls behind it; the rules below adjust the editor column for
+ * that.
  *
- * The `[data-quiet-status]` selector targets the StatusBar specifically
- * (it's the only element pre-stamped with that attribute).
+ * There is deliberately NO rule for `[data-quiet-status]` here any more.
+ * One used to give the status strip a frosted background and
+ * `position: absolute; bottom: 0; left: 0; right: 0; z-index: 30`, anchored
+ * to `[data-doc-area]` — correct while the strip lived at the bottom of the
+ * editor column. The strip has since moved into the sidebar footer, beside
+ * the Settings button, where its positioned ancestor is the sidebar itself:
+ * with translucent chrome on, the rule stretched it across the whole footer,
+ * on top of the Settings button, which could then not be clicked.
+ * `e2e/tests/sidebar/settings-button.spec.ts` pins this.
  * ========================================================================= */
-.app[data-quiet-chrome-transparent="true"] [data-quiet-status] {
-  /* #142 iter-2 — match the title bar exactly so the two frosted-glass
-     layers read as a single translucent treatment. Title bar uses
-     Tailwind `bg-background/40 backdrop-blur-xl` (40 % opacity + 24 px
-     blur); this rule mirrors those exact values via color-mix + a
-     fixed pixel blur. AND it positions the bar absolutely at the
-     bottom of the editor column so content can actually scroll behind
-     it — without this, the status bar sat in normal flow and nothing
-     ever passed beneath, so the frosted bg blended with the matching
-     layout-root colour and read as opaque (same root cause as the
-     title bar fix). The bar is anchored to the `[data-doc-area]`
-     wrapper (sibling rule below makes it `position: relative`) so the
-     bar spans the editor column only — not the pinned cmd-bar gutter
-     or the sidebar. */
-  background-color: color-mix(in oklch, var(--color-background) 40%, transparent);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 30;
-}
 
-/* StatusBar anchor — making `[data-doc-area]` the positioned ancestor
-   so the absolute StatusBar above hugs the editor column. Without this
-   the bar would crawl up the DOM to the layout root and span the
-   sidebar + pinned cmd-bar widths. */
+/* Kept from the removed status rule: the editor column stays a positioned
+   ancestor in translucent mode, as anything anchored to it has assumed. */
 .app[data-quiet-chrome-transparent="true"] [data-doc-area] {
   position: relative;
 }

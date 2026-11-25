@@ -9,6 +9,7 @@ import {
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
+import { IndexingNote } from "@/components/index/IndexingNote";
 
 /**
  * TagMode — picker for the `#tag` prefix mode in the FloatingCommandBar.
@@ -293,61 +294,67 @@ function TagMode({
                 <span className="block mt-1 text-[11px] opacity-70">{occurrencesError}</span>
               </>
             ) : (
-              t("cmd.noOccurrences")
+              <>
+                {t("cmd.noOccurrences")}
+                <IndexingNote className="mt-1" />
+              </>
             )}
           </div>
         ) : (
-          <ul className="py-1">
-            {occurrences.map((occ, idx) => {
-              const selected = idx === occHighlighted;
-              return (
-                <li
-                  key={`${occ.path}-${idx}`}
-                  id={`${listboxId}-occ-${idx}`}
-                  role="option"
-                  aria-selected={selected ? "true" : "false"}
-                  onMouseEnter={() => setOccHighlighted(idx)}
-                  onClick={() =>
-                    onPick({
-                      kind: "occurrence",
-                      filePath: occ.path,
-                      fileName: occ.file_name,
-                      symbol: `#${selectedTag}`,
-                      occurrenceInFile: idx,
-                    })
-                  }
-                  className={cn(
-                    "flex items-start gap-2 px-3 py-1.5 cursor-pointer",
-                    "text-[13px] transition-colors",
-                    selected
-                      ? "bg-muted/80 text-foreground"
-                      : "text-foreground hover:bg-muted/60",
-                  )}
-                >
-                  <FileText
-                    size={12}
-                    strokeWidth={1.5}
-                    className="mt-[3px] shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-medium">
-                      {occ.file_name}
-                    </span>
-                    {(occ.context_before || occ.context_after) && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        …{occ.context_before}
-                        <span className="font-medium text-foreground">
-                          #{selectedTag}
-                        </span>
-                        {occ.context_after}…
-                      </span>
+          <>
+            <ul className="py-1">
+              {occurrences.map((occ, idx) => {
+                const selected = idx === occHighlighted;
+                return (
+                  <li
+                    key={`${occ.path}-${idx}`}
+                    id={`${listboxId}-occ-${idx}`}
+                    role="option"
+                    aria-selected={selected ? "true" : "false"}
+                    onMouseEnter={() => setOccHighlighted(idx)}
+                    onClick={() =>
+                      onPick({
+                        kind: "occurrence",
+                        filePath: occ.path,
+                        fileName: occ.file_name,
+                        symbol: `#${selectedTag}`,
+                        occurrenceInFile: idx,
+                      })
+                    }
+                    className={cn(
+                      "flex items-start gap-2 px-3 py-1.5 cursor-pointer",
+                      "text-[13px] transition-colors",
+                      selected
+                        ? "bg-muted/80 text-foreground"
+                        : "text-foreground hover:bg-muted/60",
                     )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                  >
+                    <FileText
+                      size={12}
+                      strokeWidth={1.5}
+                      className="mt-[3px] shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-medium">
+                        {occ.file_name}
+                      </span>
+                      {(occ.context_before || occ.context_after) && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          …{occ.context_before}
+                          <span className="font-medium text-foreground">
+                            #{selectedTag}
+                          </span>
+                          {occ.context_after}…
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <IndexingNote className="px-3 pb-1.5" />
+          </>
         )}
       </div>
     );
@@ -372,55 +379,61 @@ function TagMode({
             <span className="block mt-1 text-[11px] opacity-70">{tagsError}</span>
           </>
         ) : (
-          t("cmd.noTagsMatch")
+          <>
+            {t("cmd.noTagsMatch")}
+            <IndexingNote className="mt-1" />
+          </>
         )}
       </div>
     );
   }
 
   return (
-    <ul
-      data-cmd-mode="tag"
-      data-cmd-mode-level="tags"
-      id={listboxId}
-      role="listbox"
-      aria-label={t("section.tags")}
-      className={cn("py-1")}
-    >
-      {results.map((row, idx) => {
-        const selected = idx === highlighted;
-        return (
-          <li
-            key={row.name}
-            id={`${listboxId}-opt-${idx}`}
-            role="option"
-            aria-selected={selected ? "true" : "false"}
-            onMouseEnter={() => setHighlighted(idx)}
-            onClick={() => setSelectedTag(row.name)}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 cursor-pointer",
-              "text-[13px]",
-              "transition-colors",
-              selected
-                ? "bg-muted/80 text-foreground"
-                : "text-foreground hover:bg-muted/60",
-            )}
-          >
-            <Hash
-              size={12}
-              strokeWidth={1.5}
-              className="shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-            <span className="font-medium truncate">{row.name}</span>
-            <span className="ml-auto text-xs shrink-0 text-muted-foreground">
+    <>
+      <ul
+        data-cmd-mode="tag"
+        data-cmd-mode-level="tags"
+        id={listboxId}
+        role="listbox"
+        aria-label={t("section.tags")}
+        className={cn("py-1")}
+      >
+        {results.map((row, idx) => {
+          const selected = idx === highlighted;
+          return (
+            <li
+              key={row.name}
+              id={`${listboxId}-opt-${idx}`}
+              role="option"
+              aria-selected={selected ? "true" : "false"}
+              onMouseEnter={() => setHighlighted(idx)}
+              onClick={() => setSelectedTag(row.name)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 cursor-pointer",
+                "text-[13px]",
+                "transition-colors",
+                selected
+                  ? "bg-muted/80 text-foreground"
+                  : "text-foreground hover:bg-muted/60",
+              )}
+            >
+              <Hash
+                size={12}
+                strokeWidth={1.5}
+                className="shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="font-medium truncate">{row.name}</span>
+              <span className="ml-auto text-xs shrink-0 text-muted-foreground">
 
-              {formatFileCount(row.usageCount)}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
+                {formatFileCount(row.usageCount)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <IndexingNote className="px-3 pb-1.5" />
+    </>
   );
 }
 

@@ -186,6 +186,16 @@ export interface McpServerInfoIpc {
   tools: McpToolInfoIpc[];
 }
 
+/** One `mcp.json` entry the backend could not load (`mcp_config_problems`). */
+export interface McpConfigProblemIpc {
+  /** The entry's key in `mcpServers`; the file's full path when the whole
+   *  file could not be read. */
+  name: string;
+  /** `notesage_global` or `notesage_project`. */
+  source: string;
+  reason: string;
+}
+
 // ---------------------------------------------------------------------------
 // Skill & Agent types
 // ---------------------------------------------------------------------------
@@ -1896,6 +1906,13 @@ export const tauriApi = {
    *  cached tools). Servers that were never started do not appear. */
   async mcpGetServerStatus(): Promise<McpServerInfoIpc[]> {
     return await invoke<McpServerInfoIpc[]>('mcp_get_server_status');
+  },
+
+  /** Entries of the global and the given projects' `mcp.json` files that could
+   *  not be loaded (unknown transport, wrong value type, unparsable file), with
+   *  the reason. The valid entries of the same files still load. */
+  async mcpConfigProblems(projectPaths: string[]): Promise<McpConfigProblemIpc[]> {
+    return await invoke<McpConfigProblemIpc[]>('mcp_config_problems', { projectPaths });
   },
 
   // --- File-backed store (store.rs) ---

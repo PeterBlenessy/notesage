@@ -301,6 +301,8 @@ Compact strip (status dot · word count · `⌘.` focus hint) with a popover for
 
 Implementation: `src/components/editor/StatusBar.tsx` (`StatusBar` strip + `SidebarStatusBar` portal wrapper), `src/components/editor/StatusTray.tsx`, `src/stores/sidebar-status-slot-store.ts`, `src/components/sidebar/quiet/QuietSidebar.tsx` (`SidebarFooter`).
 
+**Background-activity bar.** While the library is being indexed (or a model is downloading) the footer shows a 2px `Progress` along its top border (`BackgroundActivityBar`, `--color-accent-primary` at 70%). It is absolutely positioned over the border, so the footer's height does not change; it has `pointer-events: none`; and it must never reach the Settings button or the status strip (`e2e/tests/sidebar/settings-button.spec.ts` asserts all three). Determinate when every index scope has reported its size, otherwise an indeterminate sweep (`[data-activity-bar]` in `globals.css`; a still line under `prefers-reduced-motion`). It lives inside the sidebar, so it fades with it on typing and in focus mode and needs no chrome rule of its own. What the user sees during indexing is described in `docs/features/workspace.md` § "Indexing Progress".
+
 ### Focus Mode (`⌘.`)
 
 Toggle distraction-free focus mode. Single source of truth lives in `useFocusMode` (`src/hooks/useFocusMode.ts`):

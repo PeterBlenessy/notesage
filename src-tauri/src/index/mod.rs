@@ -782,6 +782,37 @@ fn missing_from_graph(linked: &Option<HashSet<String>>, file_path: &str) -> bool
     file_path.ends_with(".md") && linked.as_ref().is_some_and(|known| !known.contains(file_path))
 }
 
+/// How many files a pass handles between two `index-progress` events.
+const PROGRESS_EVERY: usize = 50;
+
+/// The payload of an `index-progress` event.
+///
+/// `project_path` names the scope the numbers belong to (`null` for the
+/// global `~/Notesage` pass), the same way `index-ready` does. Startup runs
+/// one pass per scope, several of them at once, and each counts from zero:
+/// without the scope the frontend cannot add them up into one total.
+fn progress_payload(project_path: Option<&str>, current: usize, total: usize) -> serde_json::Value {
+    serde_json::json!({
+        "project_path": project_path,
+        "current": current,
+        "total": total,
+    })
+}
+
+/// Whether a pass that has just finished its `done`th file of `total` owes an
+/// in-between progress event. The first (`0`) and the last (`total`) event
+/// are emitted by the pass itself, unconditionally, so they are not due here.
+fn progress_due(done: usize, total: usize) -> bool {
+    done > 0 && done < total && done % PROGRESS_EVERY == 0
+}
+
+/// Emit `index-progress`. Call with no lock held. `app` is `None` in tests.
+fn emit_progress(app: Option<&AppHandle>, project_path: Option<&str>, current: usize, total: usize) {
+    if let Some(app) = app {
+        let _ = app.emit("index-progress", progress_payload(project_path, current, total));
+    }
+}
+
 /// Bring a directory's index up to date: content rows and link graph.
 ///
 /// Files are statted, and read only when the stat gate does not hold. The
@@ -820,6 +851,10 @@ fn reindex_directory(
 
     let txn = PassTxn { state, db };
     let mut uncommitted = 0;
+
+    // Every pass announces itself, whatever its size, so the frontend can add
+    // this scope's total to the overall one before the first file is done.
+    emit_progress(app, project_path, 0, total);
 
     for (i, path_str) in paths.iter().enumerate() {
         match reindex_file(db, fs, path_str, project_path, true) {
@@ -862,14 +897,11 @@ fn reindex_directory(
             uncommitted = 0;
         }
 
-        // Emit progress for large batches
-        if let Some(app) = app {
-            if total > 50 && (i % 50 == 0 || i == total - 1) {
-                let _ = app.emit("index-progress", serde_json::json!({
-                    "current": i + 1,
-                    "total": total,
-                }));
-            }
+        // In between the pass's first and last event (see below), one event
+        // every `PROGRESS_EVERY` files. No lock is held here: the connection
+        // locks are taken and released inside the calls above.
+        if progress_due(i + 1, total) {
+            emit_progress(app, project_path, i + 1, total);
         }
     }
 
@@ -886,6 +918,10 @@ fn reindex_directory(
 
     txn.commit();
     drop(txn);
+
+    // ...and every pass ends at `current == total`, once its writes are
+    // committed and with nothing locked.
+    emit_progress(app, project_path, total, total);
 
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     let project_name = project_path.unwrap_or("global");
@@ -976,6 +1012,121 @@ fn prune_deleted_files(
     Ok(to_delete)
 }
 
+/// Remove rows from the GLOBAL database for files that the given project's own
+/// database holds, returning how many files were removed.
+///
+/// A file under a registered project is indexed into that project's database.
+/// It can still have rows in the global one: the watcher indexed it there
+/// before the project's database was registered (a project added while the
+/// app was running used to stay unregistered until the next launch), or it was
+/// indexed as a loose library or explorer file before its folder became a
+/// project. Nothing else removes those rows (the file exists, so the prune
+/// keeps it), and every query adds the global database's answer to the
+/// project's, so the file is counted twice.
+///
+/// Only true duplicates go: a global row whose file the project's database
+/// does not hold (an evicted iCloud file its pass skipped, say) is the only
+/// copy there is, and is kept.
+///
+/// `global_pass_dir` is the directory the global pass itself indexes
+/// (`~/Notesage`). A project inside it is left alone: that pass indexes
+/// everything below it, projects included, and would only write the rows back
+/// (after reading every file again).
+///
+/// Locking (see the ordering on [`IndexState`]): one connection at a time,
+/// global, then the project's, then global again, each released before the
+/// next is taken. The deletes join the pass transaction if one is open on the
+/// global connection and are their own transaction otherwise.
+fn purge_project_rows_from_global(
+    global: &Mutex<Connection>,
+    project: &Mutex<Connection>,
+    project_root: &Path,
+    global_pass_dir: Option<&Path>,
+) -> Result<usize, String> {
+    if global_pass_dir.is_some_and(|dir| project_root.starts_with(dir)) {
+        return Ok(0);
+    }
+
+    // Usually nothing: then the project's database is not asked at all.
+    let candidates: Vec<String> = {
+        let conn = global.lock();
+        let mut stmt = conn
+            .prepare("SELECT path FROM files")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        // Component-wise, like `db_for_path`.
+        rows.filter_map(|r| r.ok())
+            .filter(|path| Path::new(path).starts_with(project_root))
+            .collect()
+    };
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    let duplicates: Vec<String> = {
+        let conn = project.lock();
+        let mut stmt = conn
+            .prepare("SELECT 1 FROM files WHERE path = ?1")
+            .map_err(|e| e.to_string())?;
+        candidates
+            .into_iter()
+            .filter(|path| stmt.exists([path.as_str()]).unwrap_or(false))
+            .collect()
+    };
+    if duplicates.is_empty() {
+        return Ok(0);
+    }
+
+    let conn = global.lock();
+    db::with_savepoint(&conn, || {
+        for path in &duplicates {
+            db::remove_file(&conn, path).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })?;
+    log::info!(
+        target: "notesage::index",
+        "Removed {} files of {} from the global index (they are in the project's own)",
+        duplicates.len(),
+        project_root.display()
+    );
+    Ok(duplicates.len())
+}
+
+/// Run [`purge_project_rows_from_global`] for a registered project against
+/// the open global database. A failure is logged and otherwise ignored: the
+/// rows are duplicates, not missing data.
+fn drop_project_rows_from_global(state: &IndexState, project_path: &str) {
+    // Registry locks are taken and released one at a time, before any
+    // connection is locked.
+    let Some(global) = state.global_db.lock().clone() else {
+        return;
+    };
+    let Some(project) = state.project_dbs.lock().get(Path::new(project_path)).cloned() else {
+        return;
+    };
+    let pass_dir = global_pass_dir().filter(|dir| dir.is_dir());
+    if let Err(e) = purge_project_rows_from_global(
+        &global,
+        &project,
+        Path::new(project_path),
+        pass_dir.as_deref(),
+    ) {
+        log::warn!(
+            target: "notesage::index",
+            "Could not clean the files of {} out of the global index: {}",
+            project_path, e
+        );
+    }
+}
+
+/// The directory the global pass indexes: `~/Notesage`.
+fn global_pass_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join("Notesage"))
+}
+
 // ---- Tauri Commands ----
 
 /// Run long, synchronous index work on tokio's blocking pool.
@@ -1043,14 +1194,16 @@ fn index_init_blocking(
             Some(db) => reindex_directory(state, &db, &RealFs, pp, Some(pp), Some(app))?.0,
             None => return Err("Failed to get project DB after init".to_string()),
         };
+        // The project's own rows are in place; drop the copies the global
+        // database may hold for the same files.
+        drop_project_rows_from_global(state, pp);
         let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
         Ok(stats)
     } else {
         init_global_db(state)?;
         let _ = state.ensure_links_db();
 
-        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-        let notesage_dir = home.join("Notesage");
+        let notesage_dir = global_pass_dir().ok_or("Cannot find home directory")?;
         let notesage_str = notesage_dir.to_string_lossy().to_string();
 
         let handle = state.global_db.lock().clone();
@@ -1800,6 +1953,40 @@ mod tests {
     /// watcher-triggered reindex path, just as scan_files skips them during
     /// bulk indexing.
     #[test]
+    fn the_progress_payload_names_its_scope() {
+        let project = progress_payload(Some("/lib/Work"), 50, 120);
+        assert_eq!(
+            project,
+            serde_json::json!({ "project_path": "/lib/Work", "current": 50, "total": 120 })
+        );
+
+        // The global pass has no project: an explicit null, as in `index-ready`.
+        let global = progress_payload(None, 0, 0);
+        assert_eq!(global["project_path"], serde_json::Value::Null);
+        assert_eq!(global["current"], 0);
+        assert_eq!(global["total"], 0);
+        assert_eq!(global.as_object().map(|o| o.len()), Some(3));
+    }
+
+    #[test]
+    fn in_between_progress_is_due_every_fifty_files_and_never_at_the_ends() {
+        // The pass emits 0 and `total` itself; neither is due a second time.
+        assert!(!progress_due(0, 120));
+        assert!(!progress_due(120, 120));
+        assert!(!progress_due(50, 50));
+        assert!(!progress_due(0, 0));
+
+        assert!(progress_due(50, 120));
+        assert!(progress_due(100, 120));
+        assert!(!progress_due(49, 120));
+        assert!(!progress_due(51, 120));
+
+        // A small pass has nothing in between: just its first and last event.
+        assert_eq!((1..=7).filter(|done| progress_due(*done, 7)).count(), 0);
+        assert_eq!((1..=120).filter(|done| progress_due(*done, 120)).count(), 2);
+    }
+
+    #[test]
     fn reindex_file_skips_dotfolder_paths() {
         let h = Harness::new();
         let git_dir = Path::new(&h.project).join(".git");
@@ -2265,6 +2452,179 @@ mod tests {
         assert_eq!(affected, vec![beta]);
         assert!(h.search("betaonly").is_empty());
         assert!(h.outlinks("beta.md").is_empty());
+    }
+
+    /// Index a file into the given database the way the watcher does.
+    fn index_into(h: &Harness, db: &DbHandle, path: &str) {
+        let outcome = reindex_file(db, &h.fs, path, None, false).unwrap();
+        assert!(matches!(outcome, FileOutcome::Changed(_)), "{:?}", outcome);
+    }
+
+    fn global_db(h: &Harness) -> DbHandle {
+        Arc::new(Mutex::new(
+            db::open_or_create(&h._tmp.path().join("global.db")).unwrap(),
+        ))
+    }
+
+    fn paths_in(db: &DbHandle) -> Vec<String> {
+        let conn = db.lock();
+        let mut stmt = conn.prepare("SELECT path FROM files ORDER BY path").unwrap();
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    fn count_in(db: &DbHandle, sql: &str) -> i64 {
+        db.lock().query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    fn fts_matches(db: &DbHandle, term: &str) -> i64 {
+        db.lock()
+            .query_row(
+                "SELECT COUNT(*) FROM files_fts WHERE files_fts MATCH ?1",
+                [term],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    /// A project added while the app was running had no registered database,
+    /// so the watcher indexed its files into the global one, where nothing
+    /// ever removed them.
+    #[test]
+    fn global_rows_the_project_database_also_holds_are_removed_and_the_rest_kept() {
+        let h = seeded();
+        h.pass();
+        let global = global_db(&h);
+
+        // Indexed into the global database before the project was registered.
+        index_into(&h, &global, &h.path("alpha.md"));
+        index_into(&h, &global, &h.path("gamma.md"));
+        // Under the project, but not in its database: the only copy there is.
+        let only_global = h.write_aged("late.md", "# Late\n\nlateword\n", 100);
+        index_into(&h, &global, &only_global);
+
+        // A loose file, and a folder that only shares the project's name prefix.
+        let root = h._tmp.path();
+        let write = |rel: &str, body: &str| {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, body).unwrap();
+            path.to_string_lossy().to_string()
+        };
+        let loose = write("loose.md", "# Loose\n\nlooseword #topic\n");
+        let sibling = write("project-archive/old.md", "# Old\n\nsiblingword\n");
+        index_into(&h, &global, &loose);
+        index_into(&h, &global, &sibling);
+        assert_eq!(fts_matches(&global, "firstdraft"), 1);
+        assert_eq!(
+            count_in(&global, "SELECT COUNT(*) FROM tasks"),
+            1,
+            "gamma.md's task is in the global database before the cleanup"
+        );
+
+        let project_root = PathBuf::from(&h.project);
+        let project_files = h.count("SELECT COUNT(*) FROM files");
+        let removed =
+            purge_project_rows_from_global(&global, &h.db, &project_root, None).unwrap();
+
+        assert_eq!(removed, 2);
+        let mut kept = vec![only_global, loose, sibling];
+        kept.sort();
+        assert_eq!(paths_in(&global), kept);
+        // The child rows and the full-text postings went with the files.
+        assert_eq!(fts_matches(&global, "firstdraft"), 0);
+        assert_eq!(fts_matches(&global, "lateword"), 1);
+        assert_eq!(fts_matches(&global, "looseword"), 1);
+        assert_eq!(fts_matches(&global, "siblingword"), 1);
+        assert_eq!(count_in(&global, "SELECT COUNT(*) FROM tasks"), 0);
+        assert_eq!(
+            count_in(&global, "SELECT COUNT(*) FROM tags"),
+            1,
+            "only the loose file's tag is left"
+        );
+        assert!(global.lock().is_autocommit(), "the cleanup must commit");
+        assert_eq!(
+            h.count("SELECT COUNT(*) FROM files"),
+            project_files,
+            "the project's own database is not touched"
+        );
+        assert_eq!(h.search("firstdraft"), vec![h.path("alpha.md")]);
+
+        // Nothing left to do the second time, and nothing written.
+        let changes = global.lock().total_changes();
+        assert_eq!(
+            purge_project_rows_from_global(&global, &h.db, &project_root, None).unwrap(),
+            0
+        );
+        assert_eq!(global.lock().total_changes(), changes);
+    }
+
+    /// The global pass indexes everything under its own directory, projects
+    /// included, so removing those rows would only make it read the files
+    /// again on the next launch.
+    #[test]
+    fn a_project_inside_the_global_pass_directory_keeps_its_global_rows() {
+        let h = seeded();
+        h.pass();
+        let global = global_db(&h);
+        index_into(&h, &global, &h.path("alpha.md"));
+
+        let library = h._tmp.path().to_path_buf();
+        let removed = purge_project_rows_from_global(
+            &global,
+            &h.db,
+            Path::new(&h.project),
+            Some(library.as_path()),
+        )
+        .unwrap();
+
+        assert_eq!(removed, 0);
+        assert_eq!(paths_in(&global), vec![h.path("alpha.md")]);
+    }
+
+    #[test]
+    fn the_global_cleanup_joins_an_open_pass_transaction() {
+        let h = seeded();
+        h.pass();
+        let global = global_db(&h);
+        index_into(&h, &global, &h.path("alpha.md"));
+
+        // A pass on the global database is between two files.
+        db::ensure_txn(&global.lock());
+        let removed =
+            purge_project_rows_from_global(&global, &h.db, Path::new(&h.project), None).unwrap();
+        assert_eq!(removed, 1);
+        assert!(
+            !global.lock().is_autocommit(),
+            "the pass transaction must be left open for the pass to commit"
+        );
+        db::commit_txn(&global.lock());
+        assert!(paths_in(&global).is_empty());
+    }
+
+    #[test]
+    fn the_global_cleanup_finds_both_databases_through_the_registry() {
+        let h = seeded();
+        h.pass();
+        let global = global_db(&h);
+        let outside = h._tmp.path().join("outside.md");
+        std::fs::write(&outside, "# Outside\n").unwrap();
+        let outside = outside.to_string_lossy().to_string();
+        index_into(&h, &global, &h.path("alpha.md"));
+        index_into(&h, &global, &outside);
+
+        // No global database open: nothing to do, and no panic.
+        drop_project_rows_from_global(&h.state, &h.project);
+        assert_eq!(paths_in(&global).len(), 2);
+
+        *h.state.global_db.lock() = Some(global.clone());
+        // An unregistered project is left alone.
+        drop_project_rows_from_global(&h.state, &outside);
+        assert_eq!(paths_in(&global).len(), 2);
+
+        // The temp project is not under ~/Notesage, so its duplicates go.
+        drop_project_rows_from_global(&h.state, &h.project);
+        assert_eq!(paths_in(&global), vec![outside]);
     }
 
     #[test]

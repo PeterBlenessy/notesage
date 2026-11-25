@@ -1,11 +1,19 @@
-//! Shared JSON-RPC 2.0 types and Content-Length framing for stdio transports.
+//! Shared JSON-RPC 2.0 types and the two stdio framings built on them.
 //!
-//! Both the Copilot LSP (`copilot_lsp.rs`) and MCP client (`mcp.rs`) communicate
-//! with child processes over stdin/stdout using the JSON-RPC 2.0 protocol with
-//! Content-Length header framing (the same wire format used by LSP and MCP).
+//! Both the Copilot LSP (`copilot_lsp.rs`) and the MCP client (`mcp/`)
+//! communicate with child processes over stdin/stdout using JSON-RPC 2.0, but
+//! they do NOT share a wire format:
 //!
-//! This module extracts the duplicated message types, framing logic, request ID
-//! generation, and pending-request bookkeeping into a single shared implementation.
+//! - **LSP** frames each message with a `Content-Length` header
+//!   ([`Framing::ContentLength`], [`write_message`], [`read_next_message`]).
+//! - **MCP stdio** is newline-delimited JSON: one message per line, no
+//!   embedded newlines, UTF-8 ([`Framing::NewlineDelimited`],
+//!   [`write_line_message`], [`read_next_line_message`]). A `Content-Length`
+//!   header sent to an MCP server is just a line that is not JSON, so the
+//!   server never sees the request.
+//!
+//! This module holds the message types, both framings, request ID generation,
+//! and pending-request bookkeeping in a single shared implementation.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -213,6 +221,81 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
 }
 
 // ---------------------------------------------------------------------------
+// Newline-delimited framing (MCP stdio) — write
+// ---------------------------------------------------------------------------
+
+/// Which wire framing a [`JsonRpcTransport`] writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Framing {
+    /// `Content-Length: N\r\n\r\n{json}` — LSP (the Copilot language server).
+    ContentLength,
+    /// `{json}\n` — MCP stdio.
+    NewlineDelimited,
+}
+
+/// Write one JSON-RPC message as a single line: the JSON followed by `\n`.
+///
+/// The message must not contain a raw newline, because the peer splits on
+/// them. `serde_json`'s compact output never does (newlines inside strings are
+/// escaped), but the argument is a plain string, so a caller that hands in
+/// pretty-printed JSON is refused rather than allowed to corrupt the stream.
+pub async fn write_line_message<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    json: &str,
+) -> Result<(), String> {
+    if json.contains('\n') || json.contains('\r') {
+        return Err(
+            "JSON-RPC message contains a raw newline and cannot be sent on a newline-delimited stream"
+                .to_string(),
+        );
+    }
+    // One buffer, one write: the line must reach an unbuffered writer whole.
+    let mut line = Vec::with_capacity(json.len() + 1);
+    line.extend_from_slice(json.as_bytes());
+    line.push(b'\n');
+    writer
+        .write_all(&line)
+        .await
+        .map_err(|e| format!("Failed to write message: {}", e))?;
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush: {}", e))?;
+    Ok(())
+}
+
+/// Write `json` with the given framing.
+pub async fn write_framed_message<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    framing: Framing,
+    json: &str,
+) -> Result<(), String> {
+    match framing {
+        Framing::ContentLength => write_message(writer, json).await,
+        Framing::NewlineDelimited => write_line_message(writer, json).await,
+    }
+}
+
+/// JSON-RPC "method not found".
+pub const METHOD_NOT_FOUND_ERROR_CODE: i64 = -32601;
+
+/// The reply to a peer's request `id` carrying `result`, serialized. The id
+/// is echoed exactly as received (JSON-RPC ids may be numbers or strings).
+pub fn response_json(id: &Value, result: Value) -> String {
+    serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
+}
+
+/// The error reply to a peer's request `id`, serialized.
+pub fn error_response_json(id: &Value, code: i64, message: &str) -> String {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message },
+    })
+    .to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Content-Length framing — read
 // ---------------------------------------------------------------------------
 
@@ -333,15 +416,19 @@ pub fn is_process_alive(pid: Option<u32>) -> bool {
 // Shared JSON-RPC transport
 // ---------------------------------------------------------------------------
 
-/// A reusable JSON-RPC 2.0 transport over Content-Length framed stdio.
+/// A reusable JSON-RPC 2.0 transport over a child process's stdio.
 ///
 /// Wraps a child process's stdin writer and a pending-request map. Both the
-/// Copilot LSP and MCP client use this to send requests and notifications.
-/// Each caller spawns its own reader loop (they handle server→client messages
-/// differently) using [`read_next_message`] for the common read/parse/timeout logic.
+/// Copilot LSP and MCP client use this to send requests and notifications, each
+/// with its own [`Framing`]. Each caller spawns its own reader loop (they
+/// handle server→client messages differently) using [`read_next_message`]
+/// (Content-Length) or [`read_next_line_message`] (newline-delimited) for the
+/// common read/parse/timeout logic.
 pub struct JsonRpcTransport {
     pub writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     pub pending: PendingRequests,
+    /// How outgoing messages are framed. Fixed for the life of the transport.
+    framing: Framing,
     /// Set once the reader loop has exited for good (see [`close_pending`]).
     /// A request sent after that fails at once instead of waiting for a reply
     /// that nothing will ever read.
@@ -349,16 +436,41 @@ pub struct JsonRpcTransport {
 }
 
 impl JsonRpcTransport {
-    /// Create a new transport from a child process's stdin.
+    /// Create a new Content-Length framed (LSP) transport from a child
+    /// process's stdin.
     ///
     /// The caller is responsible for spawning a reader loop on stdout that
     /// calls [`dispatch_response`] for incoming responses.
     pub fn new(stdin: ChildStdin) -> Self {
+        Self::with_framing(stdin, Framing::ContentLength)
+    }
+
+    /// Create a transport that writes with the given framing. MCP stdio
+    /// servers need [`Framing::NewlineDelimited`].
+    pub fn with_framing(stdin: ChildStdin, framing: Framing) -> Self {
         Self {
             writer: Arc::new(Mutex::new(BufWriter::new(stdin))),
             pending: new_pending_requests(),
+            framing,
             closed: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// The framing this transport writes.
+    #[cfg(test)]
+    pub fn framing(&self) -> Framing {
+        self.framing
+    }
+
+    /// True once the reader loop has exited for good (the peer is gone).
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    /// Write one already-serialized message with this transport's framing.
+    async fn write_framed(&self, json: &str) -> Result<(), String> {
+        let mut writer = self.writer.lock().await;
+        write_framed_message(&mut *writer, self.framing, json).await
     }
 
     /// Create a lightweight clone sharing the same writer and pending map.
@@ -366,6 +478,7 @@ impl JsonRpcTransport {
         Self {
             writer: self.writer.clone(),
             pending: self.pending.clone(),
+            framing: self.framing,
             closed: self.closed.clone(),
         }
     }
@@ -410,10 +523,7 @@ impl JsonRpcTransport {
             return Err("Server process has exited".to_string());
         }
 
-        let written = {
-            let mut writer = self.writer.lock().await;
-            write_message(&mut *writer, &json).await
-        };
+        let written = self.write_framed(&json).await;
         if let Err(e) = written {
             self.pending.lock().await.remove(&id);
             return Err(e);
@@ -449,8 +559,7 @@ impl JsonRpcTransport {
     ) -> Result<(), String> {
         let msg = JsonRpcNotification::new(method, params);
         let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        write_message(&mut *writer, &json).await
+        self.write_framed(&json).await
     }
 }
 
@@ -546,6 +655,111 @@ pub async fn read_next_message<R: AsyncBufRead + Unpin>(
             );
             // Not fatal — skip this message and retry
             ReadMessageResult::Timeout
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Newline-delimited framing (MCP stdio) — read
+// ---------------------------------------------------------------------------
+
+/// How much of a skipped stdout line is passed to the noise callback.
+const NOISE_PREVIEW_BYTES: usize = 500;
+
+/// Parse one stdout line of a newline-delimited JSON-RPC stream.
+///
+/// `None` for anything that is not a JSON-RPC message object: a blank line, a
+/// log line a server printed to stdout by mistake, a banner from a wrapper
+/// script, a JSON value that is not an object. Those are skipped, never fatal
+/// — one stray `console.log` must not take the connection down.
+pub fn parse_line_message(line: &[u8]) -> Option<JsonRpcMessage> {
+    let text = std::str::from_utf8(line).ok()?;
+    // Some tools prefix their first line with a UTF-8 byte order mark.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text).trim();
+    if !text.starts_with('{') {
+        return None;
+    }
+    let msg: JsonRpcMessage = serde_json::from_str(text).ok()?;
+    // An object that carries none of the JSON-RPC members is somebody's log
+    // record in JSON form, not a message.
+    if msg.id.is_none() && msg.method.is_none() && msg.result.is_none() && msg.error.is_none() {
+        return None;
+    }
+    Some(msg)
+}
+
+/// Read the next newline-delimited JSON-RPC message with timeout and process
+/// health checking — the MCP stdio counterpart of [`read_next_message`].
+///
+/// Blank lines and lines that are not JSON-RPC messages are skipped; each
+/// skipped non-blank line is handed to `on_noise` (truncated), so a caller can
+/// keep it for an error message. A timeout in the middle of a line never
+/// abandons it: the partial line is kept and the read resumes while the
+/// process is alive, so `Timeout` is only ever returned at a line boundary.
+/// A single line longer than [`MAX_MESSAGE_BYTES`] is fatal.
+pub async fn read_next_line_message<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    timeout_duration: Duration,
+    child_pid: Option<u32>,
+    mut on_noise: impl FnMut(&str),
+) -> ReadMessageResult {
+    let mut line: Vec<u8> = Vec::new();
+    loop {
+        // One byte past the cap (plus the newline), so that a line over the
+        // cap is told apart from one that ends exactly at it.
+        let budget = (MAX_MESSAGE_BYTES + 2).saturating_sub(line.len()) as u64;
+        // `read_until` appends what it has read to `line` even when the
+        // timeout cancels it, so nothing is lost across a stall.
+        let read = timeout(
+            timeout_duration,
+            (&mut *reader).take(budget).read_until(b'\n', &mut line),
+        )
+        .await;
+        match read {
+            Err(_) => {
+                if !is_process_alive(child_pid) {
+                    return ReadMessageResult::Fatal("Process died while reading".to_string());
+                }
+                if line.is_empty() {
+                    return ReadMessageResult::Timeout;
+                }
+                log::debug!(
+                    "JSON-RPC line read stalled at {} bytes, still waiting",
+                    line.len()
+                );
+            }
+            Ok(Err(e)) => return ReadMessageResult::Fatal(format!("Failed to read line: {}", e)),
+            Ok(Ok(_)) => {
+                if line.last() != Some(&b'\n') {
+                    // No newline: either the budget ran out or the stream ended.
+                    if line.len() > MAX_MESSAGE_BYTES {
+                        return ReadMessageResult::Fatal(format!(
+                            "JSON-RPC line exceeds maximum of {} bytes",
+                            MAX_MESSAGE_BYTES
+                        ));
+                    }
+                    if line.is_empty() {
+                        return ReadMessageResult::Fatal(
+                            "EOF while reading (process exited)".to_string(),
+                        );
+                    }
+                    // The peer closed its stdout without a final newline. Take
+                    // the line as it is; the next call reports the EOF.
+                }
+                if let Some(msg) = parse_line_message(&line) {
+                    return ReadMessageResult::Message(msg);
+                }
+                let text = String::from_utf8_lossy(&line);
+                let text = text.trim();
+                if !text.is_empty() {
+                    let mut end = text.len().min(NOISE_PREVIEW_BYTES);
+                    while !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    on_noise(&text[..end]);
+                }
+                line.clear();
+            }
         }
     }
 }
@@ -971,5 +1185,230 @@ mod tests {
         .expect("a request on a closed transport fails at once");
         assert!(later.is_err());
         assert!(transport.pending.lock().await.is_empty());
+    }
+
+    // --- newline-delimited framing (MCP stdio) ---
+
+    #[tokio::test]
+    async fn line_message_is_the_json_and_one_newline() {
+        // Byte-for-byte what the MCP SDK's `serializeMessage` produces:
+        // `JSON.stringify(message) + "\n"`. No header, no carriage return.
+        let mut buf: Vec<u8> = Vec::new();
+        let json = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#;
+        write_line_message(&mut buf, json).await.unwrap();
+        assert_eq!(buf, format!("{}\n", json).into_bytes());
+        assert!(!String::from_utf8(buf).unwrap().contains("Content-Length"));
+    }
+
+    #[tokio::test]
+    async fn line_message_escapes_newlines_inside_strings_and_keeps_utf8() {
+        let req = JsonRpcRequest::new(
+            3,
+            "tools/call",
+            Some(serde_json::json!({"text": "line one\nline two\r\n", "name": "smörgåsbord ✓"})),
+        );
+        let json = serde_json::to_string(&req).unwrap();
+        let mut buf: Vec<u8> = Vec::new();
+        write_line_message(&mut buf, &json).await.unwrap();
+        // Exactly one raw newline: the terminator.
+        assert_eq!(buf.iter().filter(|b| **b == b'\n').count(), 1);
+        assert_eq!(buf.last(), Some(&b'\n'));
+        let parsed: Value = serde_json::from_slice(&buf[..buf.len() - 1]).unwrap();
+        assert_eq!(parsed["params"]["text"], "line one\nline two\r\n");
+        assert_eq!(parsed["params"]["name"], "smörgåsbord ✓");
+    }
+
+    #[tokio::test]
+    async fn line_message_refuses_a_raw_newline() {
+        let mut buf: Vec<u8> = Vec::new();
+        let pretty = "{\n  \"jsonrpc\": \"2.0\"\n}";
+        assert!(write_line_message(&mut buf, pretty).await.is_err());
+        assert!(buf.is_empty(), "nothing may reach the stream");
+    }
+
+    #[tokio::test]
+    async fn framed_write_follows_the_framing() {
+        let json = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let mut lsp: Vec<u8> = Vec::new();
+        write_framed_message(&mut lsp, Framing::ContentLength, json).await.unwrap();
+        assert!(lsp.starts_with(b"Content-Length: "));
+        let mut mcp: Vec<u8> = Vec::new();
+        write_framed_message(&mut mcp, Framing::NewlineDelimited, json).await.unwrap();
+        assert_eq!(mcp, format!("{}\n", json).into_bytes());
+    }
+
+    /// Collect every message of a newline-delimited stream, and the noise.
+    async fn read_all_lines(input: &[u8]) -> (Vec<JsonRpcMessage>, Vec<String>, String) {
+        let mut reader = BufReader::new(input);
+        let mut messages = Vec::new();
+        let mut noise = Vec::new();
+        loop {
+            match read_next_line_message(&mut reader, Duration::from_secs(5), None, |l| {
+                noise.push(l.to_string())
+            })
+            .await
+            {
+                ReadMessageResult::Message(m) => messages.push(m),
+                ReadMessageResult::Timeout => panic!("no timeout on an in-memory stream"),
+                ReadMessageResult::Fatal(e) => return (messages, noise, e),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn line_reader_reads_one_message_per_line() {
+        let input = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n";
+        let (messages, noise, end) = read_all_lines(input).await;
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].id.as_ref().and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(messages[1].method.as_deref(), Some("notifications/tools/list_changed"));
+        assert!(noise.is_empty());
+        assert!(end.contains("EOF"), "{end}");
+    }
+
+    #[tokio::test]
+    async fn line_reader_skips_blank_lines_log_output_and_crlf() {
+        // A server that logs to stdout, a wrapper script's banner, CRLF line
+        // endings, a JSON log record, a BOM: none of it may break the stream.
+        let input = "\u{feff}{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":null}\r\n\
+\n\
+Server listening on stdio\n\
+   \n\
+{\"level\":\"info\",\"msg\":\"started\"}\n\
+[1, 2, 3]\n\
+{not json at all\n\
+Content-Length: 38\r\n\
+\r\n\
+{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}\n";
+        let (messages, noise, _) = read_all_lines(input.as_bytes()).await;
+        let ids: Vec<_> = messages.iter().map(|m| m.id.as_ref().and_then(|v| v.as_u64())).collect();
+        assert_eq!(ids, vec![Some(1), Some(2)]);
+        assert_eq!(
+            noise,
+            vec![
+                "Server listening on stdio",
+                "{\"level\":\"info\",\"msg\":\"started\"}",
+                "[1, 2, 3]",
+                "{not json at all",
+                "Content-Length: 38",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn line_reader_takes_a_final_line_without_a_newline() {
+        let input = b"{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":null}";
+        let (messages, _, end) = read_all_lines(input).await;
+        assert_eq!(messages.len(), 1);
+        assert!(end.contains("EOF"), "{end}");
+    }
+
+    #[tokio::test]
+    async fn line_reader_reports_eof_as_fatal() {
+        let (messages, _, end) = read_all_lines(b"").await;
+        assert!(messages.is_empty());
+        assert!(end.contains("EOF"), "{end}");
+    }
+
+    #[tokio::test]
+    async fn line_reader_survives_a_stall_in_the_middle_of_a_line() {
+        use tokio::io::AsyncWriteExt;
+        let first = r#"{"jsonrpc":"2.0","id":1,"result":{"text":"a slow tool result"}}"#;
+        let second = r#"{"jsonrpc":"2.0","id":2,"result":null}"#;
+        let (mut tx, rx) = tokio::io::duplex(4096);
+        let writer = tokio::spawn(async move {
+            let (head, tail) = first.split_at(first.len() / 2);
+            tx.write_all(head.as_bytes()).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            tx.write_all(format!("{}\n{}\n", tail, second).as_bytes()).await.unwrap();
+            tx
+        });
+        let mut reader = BufReader::new(rx);
+        let short = Duration::from_millis(40);
+
+        let mut ids = Vec::new();
+        while ids.len() < 2 {
+            match read_next_line_message(&mut reader, short, None, |l| panic!("noise: {l}")).await {
+                ReadMessageResult::Message(m) => ids.push(m.id.and_then(|v| v.as_u64())),
+                ReadMessageResult::Timeout => continue,
+                ReadMessageResult::Fatal(e) => panic!("framing was lost: {e}"),
+            }
+        }
+        assert_eq!(ids, vec![Some(1), Some(2)]);
+        drop(writer.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn line_reader_times_out_only_at_a_line_boundary() {
+        let (_tx, rx) = tokio::io::duplex(64);
+        let mut reader = BufReader::new(rx);
+        let outcome =
+            read_next_line_message(&mut reader, Duration::from_millis(30), None, |_| {}).await;
+        assert!(matches!(outcome, ReadMessageResult::Timeout));
+    }
+
+    #[test]
+    fn replies_echo_the_request_id_as_received() {
+        // A server may use a string id; the reply must carry it unchanged.
+        let ok: Value = serde_json::from_str(&response_json(&serde_json::json!("abc-1"), serde_json::json!({}))).unwrap();
+        assert_eq!(ok, serde_json::json!({"jsonrpc":"2.0","id":"abc-1","result":{}}));
+        let err: Value = serde_json::from_str(&error_response_json(
+            &serde_json::json!(7),
+            METHOD_NOT_FOUND_ERROR_CODE,
+            "Method not found: roots/list",
+        ))
+        .unwrap();
+        assert_eq!(err["id"], 7);
+        assert_eq!(err["error"]["code"], -32601);
+        assert!(err.get("result").is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_newline_transport_writes_lines_to_the_child() {
+        // `cat` echoes stdin: what comes back is exactly what the transport
+        // wrote, so this pins the bytes a real MCP server would receive.
+        let mut child = tokio::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("piped");
+        let mut stdout = BufReader::new(child.stdout.take().expect("piped"));
+        let transport = JsonRpcTransport::with_framing(stdin, Framing::NewlineDelimited);
+        assert_eq!(transport.framing(), Framing::NewlineDelimited);
+        assert_eq!(transport.clone_handle().framing(), Framing::NewlineDelimited);
+
+        transport.send_notification("notifications/initialized", None).await.unwrap();
+        let mut line = String::new();
+        tokio::time::timeout(Duration::from_secs(5), stdout.read_line(&mut line))
+            .await
+            .expect("cat echoes the line")
+            .unwrap();
+        assert_eq!(line, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_default_transport_still_writes_content_length_frames() {
+        // The Copilot language server depends on this.
+        let mut child = tokio::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("piped");
+        let mut stdout = BufReader::new(child.stdout.take().expect("piped"));
+        let transport = JsonRpcTransport::new(stdin);
+        assert_eq!(transport.framing(), Framing::ContentLength);
+
+        transport.send_notification("initialized", None).await.unwrap();
+        let value = tokio::time::timeout(Duration::from_secs(5), read_message(&mut stdout))
+            .await
+            .expect("cat echoes the frame")
+            .unwrap();
+        assert_eq!(value["method"], "initialized");
     }
 }

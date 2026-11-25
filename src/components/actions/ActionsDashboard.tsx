@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useActionStore, type ActionItem } from '@/stores/action-store';
 import { ActionItemRow } from './ActionItemRow';
 import { ActionFilterBar } from './ActionFilterBar';
+import { IndexingNote } from '@/components/index/IndexingNote';
 
 interface ActionsDashboardProps {
   onActionClick?: (action: ActionItem) => void;
@@ -99,6 +100,8 @@ export function ActionsDashboard({
               <div className="text-center py-12">
                 <CheckSquare2 className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" strokeWidth={1} />
                 <p className="text-sm text-muted-foreground">No open actions</p>
+                {/* Tasks and goals are read from the index: "none" may only mean "not yet". */}
+                <IndexingNote className="mt-1" />
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                   Create tasks with &ldquo;- [ ] Task text&rdquo; in any markdown file, or delegate comments to agents.
                 </p>

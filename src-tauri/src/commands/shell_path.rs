@@ -34,16 +34,68 @@ const CALLER_WAIT: Duration = Duration::from_secs(5);
 /// `LATE_SHELL_PATH`) for the spawns that come after.
 const SHELL_HARD_LIMIT: Duration = Duration::from_secs(60);
 
-/// Get the user's login shell PATH by running `$SHELL -il -c 'echo $PATH'`.
-/// The result is cached after the first call. Returns `None` if resolution
-/// fails or has not finished within `CALLER_WAIT` (callers then fall back to
-/// the process's inherited PATH).
+/// Printed before and after the PATH by the probe command, so that whatever
+/// else an interactive login shell writes to stdout (a greeting, `motd`, an
+/// rc file's `echo`, a version manager's notice) is not mistaken for it.
+const PATH_PROBE_START: &str = "__NOTESAGE_PATH_START__";
+const PATH_PROBE_END: &str = "__NOTESAGE_PATH_END__";
+
+/// The command the login shell runs to report its PATH.
+///
+/// For POSIX-style shells (sh, bash, zsh, dash, ksh) this is three `echo`s:
+/// the PATH itself is printed exactly as `echo $PATH` printed it before, only
+/// now between two marker lines. fish keeps PATH as a list, and `echo $PATH`
+/// prints it space-separated, so there the list is joined with `:` first.
+fn path_probe_command(shell: &str) -> String {
+    let name = std::path::Path::new(shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(shell);
+    let print_path = if name == "fish" {
+        "string join : $PATH"
+    } else {
+        "echo \"$PATH\""
+    };
+    format!("echo {PATH_PROBE_START}; {print_path}; echo {PATH_PROBE_END}")
+}
+
+/// Extract the PATH from the probe command's stdout: the text between the
+/// LAST start marker and the end marker that follows it. `None` when the
+/// markers are missing (the command never ran) or enclose nothing.
+///
+/// Everything outside the markers is ignored. Lines inside them are joined
+/// with `:`, which also covers a shell that prints a list one entry per line.
+fn parse_path_probe(output: &str) -> Option<String> {
+    let start = output.rfind(PATH_PROBE_START)? + PATH_PROBE_START.len();
+    let rest = &output[start..];
+    let end = rest.find(PATH_PROBE_END)?;
+    let path = rest[..end]
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(":");
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Get the user's login shell PATH by running `$SHELL -il -c <probe>` (see
+/// [`path_probe_command`]). The result is cached after the first call. Returns
+/// `None` if resolution fails or has not finished within `CALLER_WAIT`
+/// (callers then fall back to the process's inherited PATH).
 pub fn get_shell_path() -> Option<&'static str> {
     let in_time = SHELL_PATH.get_or_init(|| {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        resolve_login_shell_path(&shell, "echo $PATH", CALLER_WAIT, SHELL_HARD_LIMIT, |path| {
-            let _ = LATE_SHELL_PATH.set(path);
+        let probe = path_probe_command(&shell);
+        resolve_login_shell_path(&shell, &probe, CALLER_WAIT, SHELL_HARD_LIMIT, |output| {
+            if let Some(path) = parse_path_probe(&output) {
+                let _ = LATE_SHELL_PATH.set(path);
+            }
         })
+        .and_then(|output| parse_path_probe(&output))
     });
     in_time
         .as_deref()
@@ -190,5 +242,97 @@ mod tests {
             resolve_login_shell_path("/nonexistent/shell", "echo x", GENEROUS, GENEROUS, |_| {}),
             None
         );
+    }
+
+    // --- the PATH probe (markers, fish, banners) ---
+
+    #[test]
+    fn probe_command_is_plain_echo_for_posix_shells_and_a_join_for_fish() {
+        for shell in ["/bin/zsh", "/bin/bash", "/bin/sh", "bash", "/opt/homebrew/bin/zsh"] {
+            assert_eq!(
+                path_probe_command(shell),
+                "echo __NOTESAGE_PATH_START__; echo \"$PATH\"; echo __NOTESAGE_PATH_END__",
+                "{shell}"
+            );
+        }
+        for shell in ["/opt/homebrew/bin/fish", "/usr/local/bin/fish", "fish"] {
+            assert_eq!(
+                path_probe_command(shell),
+                "echo __NOTESAGE_PATH_START__; string join : $PATH; echo __NOTESAGE_PATH_END__",
+                "{shell}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_takes_only_what_is_between_the_markers() {
+        let cases: &[(&str, Option<&str>)] = &[
+            // The plain case: byte-for-byte what `echo $PATH` used to return.
+            (
+                "__NOTESAGE_PATH_START__\n/opt/homebrew/bin:/usr/bin:/bin\n__NOTESAGE_PATH_END__\n",
+                Some("/opt/homebrew/bin:/usr/bin:/bin"),
+            ),
+            // An rc file that greets on stdout used to corrupt the first entry.
+            (
+                "Welcome back!\nnvm: now using node v22\n__NOTESAGE_PATH_START__\n/a/bin:/b/bin\n__NOTESAGE_PATH_END__\n",
+                Some("/a/bin:/b/bin"),
+            ),
+            // ... and one that prints after the command (a logout hook).
+            (
+                "__NOTESAGE_PATH_START__\n/a/bin\n__NOTESAGE_PATH_END__\nlogout\n",
+                Some("/a/bin"),
+            ),
+            // CRLF and stray blank lines.
+            (
+                "__NOTESAGE_PATH_START__\r\n/a/bin:/b/bin\r\n\r\n__NOTESAGE_PATH_END__\r\n",
+                Some("/a/bin:/b/bin"),
+            ),
+            // A shell that prints its list one entry per line.
+            (
+                "__NOTESAGE_PATH_START__\n/a/bin\n/b/bin\n/c d/bin\n__NOTESAGE_PATH_END__\n",
+                Some("/a/bin:/b/bin:/c d/bin"),
+            ),
+            // A banner that happens to echo the start marker: the last one wins.
+            (
+                "__NOTESAGE_PATH_START__ junk\n__NOTESAGE_PATH_START__\n/a/bin\n__NOTESAGE_PATH_END__\n",
+                Some("/a/bin"),
+            ),
+            // No markers: the command did not run; a banner is not a PATH.
+            ("Welcome back!\n/usr/bin:/bin\n", None),
+            ("__NOTESAGE_PATH_START__\n/usr/bin\n", None),
+            ("__NOTESAGE_PATH_START__\n\n__NOTESAGE_PATH_END__\n", None),
+            ("", None),
+        ];
+        for (output, expected) in cases {
+            assert_eq!(parse_path_probe(output).as_deref(), *expected, "{output:?}");
+        }
+    }
+
+    #[test]
+    fn the_probe_survives_a_banner_from_a_real_shell() {
+        // A real /bin/sh, with a "banner" printed before and after the probe.
+        let command = format!("echo 'Last login: today'; {}; echo bye", path_probe_command("/bin/sh"));
+        let command = command.replace("\"$PATH\"", "/fake/bin:/usr/bin");
+        let output = resolve_login_shell_path("/bin/sh", &command, GENEROUS, GENEROUS, |_| {})
+            .expect("the shell ran");
+        assert_eq!(parse_path_probe(&output).as_deref(), Some("/fake/bin:/usr/bin"));
+    }
+
+    #[test]
+    fn the_probe_reports_the_same_path_as_plain_echo_for_bash_and_zsh() {
+        // Behaviour for the shells that already worked must not change.
+        for shell in ["/bin/bash", "/bin/zsh", "/bin/sh"] {
+            if !std::path::Path::new(shell).exists() {
+                continue;
+            }
+            let run = |command: &str| {
+                let out = Command::new(shell).args(["-c", command]).env("PATH", "/x y/bin:/usr/bin:/bin").output().unwrap();
+                String::from_utf8_lossy(&out.stdout).to_string()
+            };
+            let plain = run("echo $PATH").trim().to_string();
+            let probed = parse_path_probe(&run(&path_probe_command(shell)));
+            assert_eq!(probed.as_deref(), Some(plain.as_str()), "{shell}");
+            assert_eq!(plain, "/x y/bin:/usr/bin:/bin", "{shell}");
+        }
     }
 }

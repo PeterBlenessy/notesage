@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { RefreshCw, Plus, Download, Boxes, FolderSync } from 'lucide-react';
+import { RefreshCw, Plus, Download, Boxes, FolderSync, AlertTriangle, FolderOpen } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { tauriApi } from '@/lib/tauri';
+import { requiredArgsFor } from './mcp/catalog-requirements';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,7 +29,7 @@ export type { CatalogPrefill } from './mcp/types';
 // ---------------------------------------------------------------------------
 
 export function McpServersSettings() {
-  const { servers } = useMcpStore();
+  const { servers, configProblems } = useMcpStore();
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -63,9 +66,20 @@ export function McpServersSettings() {
       env: item.required_env.map((e) => ({ key: e.key, value: '', secret: e.secret })),
       transport: item.transport,
       url: item.url ?? null,
+      // What only the user can supply (the folder Filesystem may read): the
+      // dialog asks for it instead of adding a server that exits at once.
+      requiredArgs: requiredArgsFor(item),
     });
     setCatalogOpen(false);
     setAddOpen(true);
+  };
+
+  const handleReveal = async (path: string) => {
+    try {
+      await tauriApi.revealInFinder(path);
+    } catch (err) {
+      toast.error(t("mcps.revealFailed", { error: String(err) }));
+    }
   };
 
   const handleAddOpenChange = (open: boolean) => {
@@ -117,7 +131,53 @@ export function McpServersSettings() {
         <p className="text-xs text-muted-foreground mt-1">
           {t("mcps.intro")}
         </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {t("mcps.whereItWorks")}
+        </p>
       </div>
+
+      {configProblems.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" strokeWidth={1.5} />
+          <AlertTitle>{t("mcps.configProblemsTitle", { count: configProblems.length })}</AlertTitle>
+          <AlertDescription>
+            <p>{t("mcps.configProblemsIntro")}</p>
+            <ul className="mt-2 space-y-2">
+              {configProblems.map((problem, i) => {
+                const file = problem.file ?? null;
+                // A problem with a whole file is named by the file's path:
+                // show the path once, not as both name and location.
+                const wholeFile = file !== null && problem.name === file;
+                const where =
+                  file ?? (problem.source === 'notesage_project' ? t("mcps.projectConfigFile") : t("mcps.globalConfigFile"));
+                return (
+                  <li key={`${where}:${problem.name}:${i}`} className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-medium text-foreground break-all">
+                        {wholeFile ? t("mcps.wholeFileProblem") : problem.name}
+                      </span>
+                      <p className="text-xs font-mono text-muted-foreground break-all">{where}</p>
+                      <p className="text-xs break-words">{problem.reason}</p>
+                    </div>
+                    {file && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 shrink-0 gap-1 text-xs text-foreground"
+                        aria-label={t("mcps.revealFileFor", { name: wholeFile ? file : problem.name })}
+                        onClick={() => handleReveal(file)}
+                      >
+                        <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+                        {t("mcps.revealFile")}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {servers.length === 0 ? (
         <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
