@@ -718,6 +718,36 @@ body {
   }
 }
 
+/*
+ * Background-activity bar (sidebar footer, `BackgroundActivityBar`).
+ *
+ * Determinate progress is the shadcn `Progress` indicator's own transform.
+ * While the total is not known yet (Radix: `data-state="indeterminate"`) a
+ * short segment sweeps along the track instead; the animation's transform
+ * takes precedence over the indicator's inline one.
+ *
+ * Reduced motion: no sweep, a still half-strength line across the full
+ * width. `!important` because the transform it replaces is an inline style.
+ */
+[data-activity-bar][data-state="indeterminate"] > [data-slot="progress-indicator"] {
+  width: 40%;
+  animation: activity-bar-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes activity-bar-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-activity-bar][data-state="indeterminate"] > [data-slot="progress-indicator"] {
+    width: 100%;
+    animation: none;
+    transform: none !important;
+    opacity: 0.35;
+  }
+}
+
 /* Session run-state status dot (history rows, task #9). A gentle opacity pulse
  * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
  * components also strip the class under `useReducedMotion()` as defence-in-depth. */

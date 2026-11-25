@@ -228,10 +228,13 @@ export function StatusBar({
             reach across the Settings gear that shares the footer row.
 
             Local AI status is not lost — the StatusTray's Session group shows
-            it with the same `localAiDotClass` helper, one click away. What DID
-            lose its only ambient surface is background-activity progress
-            (indexing, model downloads), which rode the same dot as a ring;
-            flagged rather than silently dropped. */}
+            it with the same `localAiDotClass` helper, one click away.
+
+            Background-activity progress (indexing, model downloads) rode the
+            same dot as a ring and lost its only ambient surface with it. It
+            is back, but not in this strip: `BackgroundActivityBar` draws it
+            along the sidebar footer's top border, where it cannot take width
+            from the gear, and the tray's Session group spells it out. */}
 
         {/* Word count is only meaningful when a document is open — when
             the editor is null (landing state, no tab) we render the

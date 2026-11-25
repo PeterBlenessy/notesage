@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
 import { t } from "@/lib/i18n";
+import { useIndexProgressStore } from "@/stores/index-progress-store";
 
 /**
  * Who has initialised which project's index this launch.
@@ -27,6 +28,18 @@ const settled = new Set<string>();
  * Never rejects. Resolves to whether the scope ended up indexed.
  */
 export async function initIndexWithRecovery(projectPath?: string): Promise<boolean> {
+  // Bracket the whole attempt, recovery included, for the indexing indicator:
+  // a pass that fails emits no `index-ready`, but this function always returns.
+  const progress = useIndexProgressStore.getState();
+  progress.begin(projectPath ?? null);
+  try {
+    return await initIndexOrRecover(projectPath);
+  } finally {
+    progress.settle(projectPath ?? null);
+  }
+}
+
+async function initIndexOrRecover(projectPath?: string): Promise<boolean> {
   try {
     await tauriApi.indexInit(projectPath);
     return true;

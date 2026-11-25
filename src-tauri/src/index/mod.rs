@@ -782,6 +782,37 @@ fn missing_from_graph(linked: &Option<HashSet<String>>, file_path: &str) -> bool
     file_path.ends_with(".md") && linked.as_ref().is_some_and(|known| !known.contains(file_path))
 }
 
+/// How many files a pass handles between two `index-progress` events.
+const PROGRESS_EVERY: usize = 50;
+
+/// The payload of an `index-progress` event.
+///
+/// `project_path` names the scope the numbers belong to (`null` for the
+/// global `~/Notesage` pass), the same way `index-ready` does. Startup runs
+/// one pass per scope, several of them at once, and each counts from zero:
+/// without the scope the frontend cannot add them up into one total.
+fn progress_payload(project_path: Option<&str>, current: usize, total: usize) -> serde_json::Value {
+    serde_json::json!({
+        "project_path": project_path,
+        "current": current,
+        "total": total,
+    })
+}
+
+/// Whether a pass that has just finished its `done`th file of `total` owes an
+/// in-between progress event. The first (`0`) and the last (`total`) event
+/// are emitted by the pass itself, unconditionally, so they are not due here.
+fn progress_due(done: usize, total: usize) -> bool {
+    done < total && done % PROGRESS_EVERY == 0
+}
+
+/// Emit `index-progress`. Call with no lock held. `app` is `None` in tests.
+fn emit_progress(app: Option<&AppHandle>, project_path: Option<&str>, current: usize, total: usize) {
+    if let Some(app) = app {
+        let _ = app.emit("index-progress", progress_payload(project_path, current, total));
+    }
+}
+
 /// Bring a directory's index up to date: content rows and link graph.
 ///
 /// Files are statted, and read only when the stat gate does not hold. The
@@ -820,6 +851,10 @@ fn reindex_directory(
 
     let txn = PassTxn { state, db };
     let mut uncommitted = 0;
+
+    // Every pass announces itself, whatever its size, so the frontend can add
+    // this scope's total to the overall one before the first file is done.
+    emit_progress(app, project_path, 0, total);
 
     for (i, path_str) in paths.iter().enumerate() {
         match reindex_file(db, fs, path_str, project_path, true) {
@@ -862,14 +897,11 @@ fn reindex_directory(
             uncommitted = 0;
         }
 
-        // Emit progress for large batches
-        if let Some(app) = app {
-            if total > 50 && (i % 50 == 0 || i == total - 1) {
-                let _ = app.emit("index-progress", serde_json::json!({
-                    "current": i + 1,
-                    "total": total,
-                }));
-            }
+        // In between the pass's first and last event (see below), one event
+        // every `PROGRESS_EVERY` files. No lock is held here: the connection
+        // locks are taken and released inside the calls above.
+        if progress_due(i + 1, total) {
+            emit_progress(app, project_path, i + 1, total);
         }
     }
 
@@ -886,6 +918,10 @@ fn reindex_directory(
 
     txn.commit();
     drop(txn);
+
+    // ...and every pass ends at `current == total`, once its writes are
+    // committed and with nothing locked.
+    emit_progress(app, project_path, total, total);
 
     let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
     let project_name = project_path.unwrap_or("global");
@@ -1916,6 +1952,40 @@ mod tests {
     /// Files inside dotfolders (e.g. .git/) must be skipped by the
     /// watcher-triggered reindex path, just as scan_files skips them during
     /// bulk indexing.
+    #[test]
+    fn the_progress_payload_names_its_scope() {
+        let project = progress_payload(Some("/lib/Work"), 50, 120);
+        assert_eq!(
+            project,
+            serde_json::json!({ "project_path": "/lib/Work", "current": 50, "total": 120 })
+        );
+
+        // The global pass has no project: an explicit null, as in `index-ready`.
+        let global = progress_payload(None, 0, 0);
+        assert_eq!(global["project_path"], serde_json::Value::Null);
+        assert_eq!(global["current"], 0);
+        assert_eq!(global["total"], 0);
+        assert_eq!(global.as_object().map(|o| o.len()), Some(3));
+    }
+
+    #[test]
+    fn in_between_progress_is_due_every_fifty_files_and_never_at_the_ends() {
+        // The pass emits 0 and `total` itself; neither is due a second time.
+        assert!(!progress_due(0, 120));
+        assert!(!progress_due(120, 120));
+        assert!(!progress_due(50, 50));
+        assert!(!progress_due(0, 0));
+
+        assert!(progress_due(50, 120));
+        assert!(progress_due(100, 120));
+        assert!(!progress_due(49, 120));
+        assert!(!progress_due(51, 120));
+
+        // A small pass has nothing in between: just its first and last event.
+        assert_eq!((1..=7).filter(|done| progress_due(*done, 7)).count(), 0);
+        assert_eq!((1..=120).filter(|done| progress_due(*done, 120)).count(), 2);
+    }
+
     #[test]
     fn reindex_file_skips_dotfolder_paths() {
         let h = Harness::new();

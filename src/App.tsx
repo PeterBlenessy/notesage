@@ -23,6 +23,7 @@ const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").th
 const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useProjectIndexSync } from "@/hooks/useProjectIndexSync";
+import { useIndexProgressListener } from "@/hooks/useIndexProgressListener";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { initBuildChannel } from "@/lib/build-channel";
@@ -211,6 +212,9 @@ function App() {
   // Indexes a project that joins the workspace after startup (the startup
   // pass only covers the projects known at launch).
   useProjectIndexSync();
+  // The one listener for the index's progress events; the sidebar footer bar,
+  // the status tray and the "still indexing" notes all read its store.
+  useIndexProgressListener();
   useActionScanner();
   useTraySync();
   useApprovalMigrationToast();

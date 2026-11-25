@@ -31,6 +31,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
+import { IndexingNote } from "@/components/index/IndexingNote";
 
 /**
  * Default maximum number of mention rows shown before "Show more" expands
@@ -192,7 +193,11 @@ export function MentionsSection({
         <p role="alert" title={loadError} className="px-2 text-xs text-destructive">
           {t("search.indexUnavailable")}
         </p>
-      ) : null}
+      ) : (
+        // Not next to the error: "unavailable" already says the list is not
+        // to be trusted, and it is the one the user can act on.
+        <IndexingNote className="px-2" />
+      )}
       {visibleMentions.length > 0 ? (
         <ul className="flex flex-col">
           {visibleMentions.map((mention) => (

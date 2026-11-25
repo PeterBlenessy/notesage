@@ -102,6 +102,25 @@ async fn index_open(project_paths: Vec<String>) -> Result<(), String>
 
 Opens the global index database and each given project's database without indexing anything. Startup calls it before the file watchers start, because the index pass itself now runs in the background: a watcher event for a project whose database is not registered yet would otherwise be indexed into the global database and counted twice.
 
+### index_init
+
+```rust
+async fn index_init(project_path: Option<String>) -> Result<IndexStats, String>
+```
+
+Opens one scope's index database and brings it up to date with the files on disk: the project at `project_path`, or the global `~/Notesage` library when it is `None`. Startup runs it once for the global scope and then once per project, in the background and in parallel; `useProjectIndexSync` runs it for a project that joins the workspace later.
+
+**Events emitted** (the scope is `project_path`, `null` for the global pass, in both):
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `index-progress` | `{ project_path: string \| null, current: number, total: number }` | Once when the pass starts (`current: 0`, as soon as the directory has been scanned and `total` is known), every 50 files in between, and once when it ends (`current == total`). Every pass emits its first and last event whatever its size; a pass over an empty directory emits `0 / 0` twice. |
+| `index-ready` | `{ project_path: string \| null }` | When the pass has finished successfully. **Not** emitted when the pass fails, so "is it still running" must not hang on this event alone. |
+
+`current` and `total` count the files of that one pass. The payload used to have no `project_path` and was only sent for passes over 50 files, so the numbers restarted from zero for every project; the frontend now keeps the numbers per scope and adds them up (`src/lib/index-progress.ts`). No index lock is held while either event is emitted.
+
+`useIndexProgressListener` (mounted once in `App.tsx`) is the only listener for `index-progress`; it feeds `index-progress-store`, which also hears from `initIndexWithRecovery` when each `index_init` call begins and returns. The index-backed views listen to `index-ready` to query again.
+
 
 ### create_file
 

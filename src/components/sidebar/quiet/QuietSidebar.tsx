@@ -15,6 +15,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
+import { useBackgroundActivity } from "@/components/editor/status/use-background-activity";
+import { BackgroundActivityBar } from "@/components/sidebar/quiet/BackgroundActivityBar";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import {
@@ -381,14 +383,23 @@ function SidebarResizeHandle() {
  */
 function SidebarFooter({ onOpenSettings }: { onOpenSettings?: () => void }) {
   const setSlot = useSidebarStatusSlotStore((s) => s.setEl);
+  const activity = useBackgroundActivity();
+  const activityLabel = activity.active ? activity.label : null;
   return (
     <div
       // Isolate footer keystrokes from the nav's type-to-filter handler so
       // activating the gear (Space/Enter) or focusing the status strip doesn't
       // leak characters into the filter string.
       onKeyDown={(e) => e.stopPropagation()}
-      className="mt-2 pt-2 flex items-center gap-1 shrink-0 border-t border-border"
+      // `relative` anchors the activity bar, which lies over the top border.
+      className="relative mt-2 pt-2 flex items-center gap-1 shrink-0 border-t border-border"
     >
+      {activityLabel ? (
+        <BackgroundActivityBar
+          label={activityLabel}
+          fraction={activity.indeterminate ? null : activity.fraction}
+        />
+      ) : null}
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -414,6 +425,8 @@ function SidebarFooter({ onOpenSettings }: { onOpenSettings?: () => void }) {
       <div
         ref={setSlot}
         data-sidebar-status-slot
+        // The bar takes no pointer events, so its text is offered here.
+        title={activityLabel ?? undefined}
         className="flex-1 min-w-0 flex items-center"
       />
     </div>

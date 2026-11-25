@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   act,
   renderWithProviders,
@@ -223,5 +224,51 @@ describe('ResearchMode', () => {
     expect(screen.getByText('database is locked')).toBeTruthy();
     expect(screen.queryByText('No research matches')).toBeNull();
     consoleError.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// While the library is being indexed, results may be partial: say so.
+// ---------------------------------------------------------------------------
+
+describe('ResearchMode while the library is being indexed', () => {
+  const NOTE = 'Still indexing: results may be incomplete';
+
+  beforeEach(() => {
+    indexSearchResearchMock.mockReset();
+    showIndexingForTests({});
+  });
+
+  afterEach(() => showIndexingForTests(null));
+
+  it('adds the note under "No research matches"', async () => {
+    indexSearchResearchMock.mockResolvedValue([]);
+    renderWithProviders(<ResearchMode filter="anything" onPick={() => {}} />);
+    expect(await screen.findByText('No research matches')).toBeTruthy();
+    expect(screen.getByText(NOTE)).toBeTruthy();
+  });
+
+  it('adds the note after the results it has so far, outside the listbox', async () => {
+    indexSearchResearchMock.mockResolvedValue([makeResult({ title: 'Alpha' })]);
+    renderWithProviders(<ResearchMode filter="" onPick={() => {}} />);
+    await screen.findByText('Alpha');
+    expect(screen.getByRole('listbox').contains(screen.getByText(NOTE))).toBe(false);
+  });
+
+  it('shows only "index unavailable" when the query fails', async () => {
+    indexSearchResearchMock.mockRejectedValue(new Error('database is locked'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWithProviders(<ResearchMode filter="anything" onPick={() => {}} />);
+    expect((await screen.findByRole('alert')).textContent).toBe('Search index unavailable');
+    expect(screen.queryByText(NOTE)).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('shows no note when the library is not being indexed', async () => {
+    showIndexingForTests(null);
+    indexSearchResearchMock.mockResolvedValue([]);
+    renderWithProviders(<ResearchMode filter="anything" onPick={() => {}} />);
+    expect(await screen.findByText('No research matches')).toBeTruthy();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

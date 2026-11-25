@@ -1,78 +1,112 @@
 // @vitest-environment jsdom
 
 /**
- * Regression tests for the listener lifecycle of `useBackgroundActivity`
- * (deep-review batch 2, item #1).
- *
- * The hook registers two Tauri event listeners (`index-progress`,
- * `index-ready`) behind a dynamic `import("@tauri-apps/api/event")`, so the
- * registrations resolve asynchronously. An unmount that races the resolution
- * used to leak both listeners (and setState on the unmounted hook). The fix
- * is the mounted-flag pattern from `useSandboxViolations`: late-resolving
- * registrations are unlistened immediately when the hook is already gone.
+ * `useBackgroundActivity` — indexing (from `index-progress-store`) and model
+ * downloads (from `recording-store`) as one activity. The hook registers no
+ * Tauri listeners any more; that lifecycle is `useIndexProgressListener`'s.
  */
 
 import '@/test/tauri-mock';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { emitMockEvent, getListenerCount } from '@/test/tauri-mock';
+import { getListenerCount } from '@/test/tauri-mock';
 import { useBackgroundActivity } from '../use-background-activity';
+import { showIndexingForTests } from '@/stores/index-progress-store';
+import { useRecordingStore } from '@/stores/recording-store';
+import { setLocale } from '@/lib/i18n';
 
-/**
- * Flush the async registration chain: the dynamic module import plus the two
- * `listen()` promises all resolve on microtasks; one macrotask hop makes the
- * flush robust against extra chaining.
- */
-async function flushListenRegistration(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
-describe('useBackgroundActivity — listener lifecycle', () => {
-  it('registers both listeners once mounted and removes them on unmount', async () => {
-    const { unmount } = renderHook(() => useBackgroundActivity());
-    await flushListenRegistration();
-
-    expect(getListenerCount('index-progress')).toBe(1);
-    expect(getListenerCount('index-ready')).toBe(1);
-
-    unmount();
-    expect(getListenerCount('index-progress')).toBe(0);
-    expect(getListenerCount('index-ready')).toBe(0);
+describe('useBackgroundActivity', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    showIndexingForTests(null);
+    useRecordingStore.setState({ activeDownloads: {} });
+    setLocale('en');
   });
 
-  it('unmount BEFORE the listen registrations resolve does not throw and unlistens the late registrations', async () => {
-    const { unmount } = renderHook(() => useBackgroundActivity());
-
-    // Unmount synchronously — the dynamic import / listen() promises have not
-    // resolved yet, so the registrations arrive after cleanup already ran.
-    unmount();
-
-    // Let the late registrations resolve; the mounted-flag must immediately
-    // unlisten them instead of storing dead unlisteners in the closure.
-    await flushListenRegistration();
-
-    expect(getListenerCount('index-progress')).toBe(0);
-    expect(getListenerCount('index-ready')).toBe(0);
-
-    // Nothing left to receive the event — emitting must be a no-op, not a
-    // setState on an unmounted component.
-    expect(() => emitMockEvent('index-progress', { current: 1, total: 2 })).not.toThrow();
+  afterEach(() => {
+    showIndexingForTests(null);
+    useRecordingStore.setState({ activeDownloads: {} });
+    setLocale(null);
+    vi.useRealTimers();
   });
 
-  it('reflects index-progress events while mounted (sanity for the guarded handlers)', async () => {
+  it('is idle with nothing running, and registers no Tauri listeners of its own', async () => {
     const { result } = renderHook(() => useBackgroundActivity());
-    await flushListenRegistration();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current).toMatchObject({ active: false, kind: null, label: null });
+    expect(getListenerCount('index-progress')).toBe(0);
+    expect(getListenerCount('index-ready')).toBe(0);
+  });
+
+  it('reports indexing with one overall count and a determinate fraction', () => {
+    showIndexingForTests({ filesDone: 1200, filesTotal: 3000, fraction: 0.4 });
+    const { result } = renderHook(() => useBackgroundActivity());
+    expect(result.current).toEqual({
+      active: true,
+      kind: 'indexing',
+      fraction: 0.4,
+      label: 'Indexing your library, 1,200 of 3,000 files',
+      indeterminate: false,
+    });
+  });
+
+  it('is indeterminate, without numbers, until a pass has reported a total', () => {
+    showIndexingForTests({});
+    const { result } = renderHook(() => useBackgroundActivity());
+    expect(result.current).toMatchObject({
+      active: true,
+      indeterminate: true,
+      fraction: null,
+      label: 'Indexing your library…',
+    });
+  });
+
+  it('labels indexing in Swedish', () => {
+    setLocale('sv');
+    showIndexingForTests({ filesDone: 5, filesTotal: 10, fraction: 0.5 });
+    const { result } = renderHook(() => useBackgroundActivity());
+    expect(result.current.label).toBe('Indexerar ditt bibliotek, 5 av 10 filer');
+  });
+
+  it('reports a model download as before: determinate, averaged, lingering after it ends', () => {
+    useRecordingStore.setState({ activeDownloads: { base: { progress: 40 } } });
+    const { result } = renderHook(() => useBackgroundActivity());
+    expect(result.current).toMatchObject({
+      active: true,
+      kind: 'download',
+      indeterminate: false,
+      label: 'Downloading model 40%',
+    });
+    expect(result.current.fraction).toBeCloseTo(0.4);
 
     act(() => {
-      emitMockEvent('index-progress', { current: 1, total: 4 });
+      useRecordingStore.setState({ activeDownloads: { base: { progress: 20 }, small: { progress: 60 } } });
     });
+    expect(result.current.label).toBe('Downloading 2 models 40%');
 
+    act(() => {
+      useRecordingStore.setState({ activeDownloads: {} });
+    });
+    // Grace period: still showing the last state.
+    act(() => {
+      vi.advanceTimersByTime(699);
+    });
     expect(result.current.active).toBe(true);
-    expect(result.current.indeterminate).toBe(true);
-    expect(result.current.label).toBe('Indexing 1/4');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.active).toBe(false);
+  });
+
+  it('indexing wins while both are live, and the download shows again when it ends', () => {
+    useRecordingStore.setState({ activeDownloads: { base: { progress: 40 } } });
+    showIndexingForTests({ filesDone: 1, filesTotal: 4, fraction: 0.25 });
+    const { result } = renderHook(() => useBackgroundActivity());
+    expect(result.current.kind).toBe('indexing');
+
+    act(() => showIndexingForTests(null));
+    expect(result.current).toMatchObject({ kind: 'download', label: 'Downloading model 40%' });
   });
 });

@@ -316,6 +316,20 @@ function, in `scripts/macos-release-embed.sh`.
 - While a review is active, a persistent `DiffReviewPill` floats over the editor's top-right ("Reviewing \<branch\>" · Accept all · End); the row's context menu shows "End branch review" in place of "Compare branch…"
 - External modify events during an active review route to the silent auto-reload path (`useFileWatcher`) so external-change hunks never fight the branch review for the `InlineDiff` decoration layer
 
+## Indexing Progress
+
+The SQLite document index (search, Tags, Mentions, tasks/Actions, backlinks) is brought up to date in the background at every launch, one pass for the `~/Notesage` library and one per project, and again for any project that joins the workspace later. Startup does not wait for it, so for a moment the index-backed views can hold only part of the library. Most launches finish in well under a second because unchanged files are not re-read; the first launch after an update that changes the index format re-reads everything once, which on a large iCloud library takes a while.
+
+What the user sees while a pass is running (nothing at all if it is over within 400 ms):
+
+- **Sidebar footer:** a 2px progress line along the footer's top border, with the tooltip "Indexing your library, 1,200 of 3,000 files" on the status strip beside the Settings button. The count is ONE total across every scope that has reported. The line is indeterminate (a sweeping segment, or a still half-strength line under `prefers-reduced-motion`) until every scope has reported its size, so it never runs backwards when the next project joins. It takes no pointer events and does not change the footer's height. A transcription-model download uses the same line when nothing is being indexed.
+- **Status tray** (click the status strip): the same sentence in the Local AI group, with a second line naming what is being indexed now and how many projects have yet to start ("Now: Library, Work · 2 projects still to start").
+- **Index-backed views:** one muted line, "Still indexing: results may be incomplete", in the sidebar's Tags and Mentions sections, under file (`⌘P` search, not the recent-files list), tag and research results in the command bar, in their "no results" states, and in the Actions dashboard's empty state. Where a view reports "Search index unavailable", only that is shown.
+
+The indicator stays up for 700 ms after the last pass ends, at 100%, so the burst of passes at startup reads as one. Indexing counts as finished when every started scope has ended **and** `settings.indexReady` is true.
+
+**How it is wired:** the backend emits `index-progress` (`{ project_path, current, total }`) and `index-ready` per scope (see `docs/tauri-commands.md` § `index_init`). `useIndexProgressListener` (mounted once in `App.tsx`) feeds them into `src/stores/index-progress-store.ts`, together with `settings.indexReady` and the workspace's project list; `initIndexWithRecovery` additionally tells the store when each `index_init` call begins and returns, because a pass that fails emits no `index-ready`. The per-scope arithmetic is the pure module `src/lib/index-progress.ts`. A project removed mid-pass is dropped from the total and whatever its pass goes on to report is ignored. Consumers read `useIndexProgressStore((s) => s.status)`, or `useBackgroundActivity()` for indexing and model downloads as one activity; none of them registers a Tauri listener of its own. `<IndexingNote />` (`src/components/index/`) is the line for a view that reads the index.
+
 ## External Change Detection & Review
 
 Detects external file changes (from other editors, AI agents, terminal commands) and updates the sidebar tree and editor content.
