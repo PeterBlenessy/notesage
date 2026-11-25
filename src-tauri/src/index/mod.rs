@@ -803,7 +803,7 @@ fn progress_payload(project_path: Option<&str>, current: usize, total: usize) ->
 /// in-between progress event. The first (`0`) and the last (`total`) event
 /// are emitted by the pass itself, unconditionally, so they are not due here.
 fn progress_due(done: usize, total: usize) -> bool {
-    done < total && done % PROGRESS_EVERY == 0
+    done > 0 && done < total && done % PROGRESS_EVERY == 0
 }
 
 /// Emit `index-progress`. Call with no lock held. `app` is `None` in tests.
