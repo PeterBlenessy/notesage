@@ -349,6 +349,15 @@ test.describe('Speakers settings — the opt-in', () => {
 
 test.describe('Identify speakers — on a recording', () => {
   test('find the voices, hear one, name them from suggestions, and save', async ({ page }) => {
+    // The clip's asset URL does not exist in a browser. WebKit fails the
+    // load at once (and the dialog rightly leaves the "playing" state);
+    // Chromium leaves play() pending. Make playback itself succeed, so the
+    // test is about the button and the command it sends in every engine.
+    await page.addInitScript(() => {
+      HTMLMediaElement.prototype.play = function play() {
+        return Promise.resolve();
+      };
+    });
     await openApp(page, { speakers: { rememberVoices: true }, profiles: KNOWN, candidates: CANDIDATES, holdAnalysis: true });
     const dialog = await openIdentify(page, `More actions: ${TITLE}`, 'Identify speakers…');
     await expect(dialog).toHaveAttribute('data-view', 'setup');

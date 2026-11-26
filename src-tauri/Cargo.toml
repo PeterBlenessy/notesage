@@ -199,11 +199,12 @@ symphonia = { version = "0.6", default-features = false, features = [
 # as `whisper-rs`: the mobile reader identifies no speakers. See
 # `docs/features/speakers.md` for why this and not ONNX Runtime.
 #
-# Cargo.lock holds 0.21.10, not the newest 0.21.x (0.21.20 when this was
-# added): the newer tract-linalg requires `time < 0.3.42`, which collides
-# with the `time` that reqwest's cookie store needs, so cargo settles on the
-# newest release without that bound. 0.21.10 is what the model was run on.
-tract-onnx = "0.21"
+# 0.22.2 is the floor: earlier releases have RUSTSEC-2026-0217 (integer
+# overflow in the NNEF tensor parser). The patched 0.21.x releases cannot be
+# used, since their tract-linalg requires `time < 0.3.42`, which collides
+# with the `time` that Tauri's plist needs. The voice model gives identical
+# embeddings on 0.21.10 and 0.22.6 (compared on the real model file).
+tract-onnx = "0.22.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
