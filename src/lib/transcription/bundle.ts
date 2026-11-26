@@ -81,12 +81,78 @@ export async function readRecordingManifest(bundleDir: string): Promise<Recordin
   }
 }
 
-/** Write a bundle's `recording.json` in the contract's canonical form. */
+/**
+ * Write a bundle's `recording.json` in the contract's canonical form.
+ *
+ * `manifest` may carry the optional fields added for system audio, import and
+ * naming (`source`, `tracks`, `originalFile`, `title`, …): they are part of
+ * `RecordingManifest`, and `createMacRecordingManifest` accepts them as facts.
+ */
 export async function writeRecordingManifest(
   bundleDir: string,
   manifest: RecordingManifest,
 ): Promise<void> {
   await tauriApi.writeFile(joinPath(bundleDir, RECORDING_MANIFEST), serializeRecordingManifest(manifest));
+}
+
+/** Per-bundle chain, so two read-modify-writes of one manifest never interleave. */
+const manifestWrites = new Map<string, Promise<unknown>>();
+
+/**
+ * Read a bundle's manifest, change it, write it back, serialised per bundle.
+ *
+ * The scanner (transcription status), the job (which file is the transcript)
+ * and the Recordings view (title) all change the same small file. Each used
+ * to read and write on its own, and the slower one silently undid the other.
+ * `change` returns the new manifest, or `null` to leave the file alone.
+ * Resolves with what is on disk afterwards; `null` when there is no manifest.
+ */
+export function updateRecordingManifest(
+  bundleDir: string,
+  change: (manifest: RecordingManifest) => RecordingManifest | null,
+): Promise<RecordingManifest | null> {
+  const run = async (): Promise<RecordingManifest | null> => {
+    const current = await readRecordingManifest(bundleDir);
+    if (!current) return null;
+    const next = change(current);
+    if (!next) return current;
+    await writeRecordingManifest(bundleDir, next);
+    return next;
+  };
+  const chained = (manifestWrites.get(bundleDir) ?? Promise.resolve()).then(run, run);
+  const settled = chained.catch(() => undefined);
+  manifestWrites.set(bundleDir, settled);
+  void settled.then(() => {
+    if (manifestWrites.get(bundleDir) === settled) manifestWrites.delete(bundleDir);
+  });
+  return chained;
+}
+
+/**
+ * The transcript's file name in a bundle: the one the manifest names, else
+ * the legacy `transcript.md` every bundle used before transcripts were named
+ * after the recording.
+ */
+export function transcriptFileOf(manifest: RecordingManifest | null): string {
+  return manifest?.transcript?.file ?? TRANSCRIPT_FILENAME;
+}
+
+/** What a recording is called: the user's title, else its folder name. */
+export function recordingTitle(bundleDir: string, manifest: RecordingManifest | null): string {
+  return manifest?.title?.trim() || basename(bundleDir);
+}
+
+/** Audio containers a bundle's primary file may be in, by preference. */
+const AUDIO_FILE_PATTERN = /^audio\.(m4a|wav|mp3|aac|flac|ogg)$/i;
+
+/**
+ * The primary audio file among a bundle's file names, for a bundle with no
+ * manifest to say: `audio.m4a` before `audio.wav` (the encoder removes the
+ * WAV only once the AAC is verified, so when both exist the AAC is good).
+ */
+export function findAudioFile(names: readonly string[]): string | null {
+  const audio = names.filter((n) => AUDIO_FILE_PATTERN.test(n));
+  return audio.find((n) => /\.m4a$/i.test(n)) ?? audio.find((n) => /\.wav$/i.test(n)) ?? audio[0] ?? null;
 }
 
 /**
@@ -95,19 +161,6 @@ export async function writeRecordingManifest(
  */
 export function bundleTargetPath(bundleDir: string, projectRoot: string): string {
   return joinPath(projectRoot, basename(bundleDir));
-}
-
-/**
- * Write the rendered transcript markdown to `transcript.md` next to the audio
- * file. Returns the absolute transcript path.
- */
-export async function writeTranscriptToBundle(
-  audioPath: string,
-  markdown: string,
-): Promise<string> {
-  const transcriptPath = transcriptPathForAudio(audioPath);
-  await tauriApi.writeFile(transcriptPath, markdown);
-  return transcriptPath;
 }
 
 /**

@@ -131,7 +131,8 @@ describe("recording.json contract", () => {
       ["a numeric startedAt", withPatch((r) => { r.startedAt = 1757073731; })],
       ["a negative duration", withPatch((r) => { r.durationSecs = -1; })],
       ["a string duration", withPatch((r) => { r.durationSecs = "1834.2"; })],
-      ["an unknown source", withPatch((r) => { r.source = "system"; })],
+      ["an unknown source", withPatch((r) => { r.source = "telepathy"; })],
+      ["a source that is not a string", withPatch((r) => { r.source = 1; })],
       ["a non-string language", withPatch((r) => { r.language = 42; })],
       ["an empty language", withPatch((r) => { r.language = ""; })],
       ["no audio", withPatch((r) => { delete r.audio; })],
@@ -240,5 +241,99 @@ describe("createMacRecordingManifest", () => {
     const base = { startedAtMs: 0, durationSecs: 1, bytes: 1, sampleRate: 16000, audioFile: "audio.wav", device: "Mac", appVersion: "" };
     expect(createMacRecordingManifest({ ...base, language: "auto" }).language).toBeUndefined();
     expect(createMacRecordingManifest(base).language).toBeUndefined();
+  });
+
+  it("takes the codec from the audio file that is actually there (the Mac encodes to AAC after stop)", () => {
+    const base = { startedAtMs: 0, durationSecs: 1, bytes: 1, sampleRate: 48000, device: "Mac", appVersion: "" };
+    expect(createMacRecordingManifest({ ...base, audioFile: "audio.m4a" }).audio.codec).toBe("aac");
+    expect(createMacRecordingManifest({ ...base, audioFile: "audio.wav" }).audio.codec).toBe("pcm");
+    expect(createMacRecordingManifest({ ...base, audioFile: "audio.wav", codec: "aac", channels: 2 }).audio).toMatchObject({
+      codec: "aac",
+      channels: 2,
+    });
+  });
+
+  it("carries source, tracks, title and the imported file when given", () => {
+    const base = { startedAtMs: 0, durationSecs: 1, bytes: 1, sampleRate: 48000, audioFile: "audio.m4a", device: "Mac", appVersion: "" };
+    const both = createMacRecordingManifest({
+      ...base,
+      source: "both",
+      tracks: [
+        { role: "mic", file: "mic.m4a" },
+        { role: "system", file: "system.m4a" },
+      ],
+      title: "Weekly sync",
+    });
+    expect(both).toMatchObject({ source: "both", title: "Weekly sync" });
+    expect(both.tracks).toHaveLength(2);
+    expect(parseRecordingManifest(serializeRecordingManifest(both))).toEqual(both);
+
+    const imported = createMacRecordingManifest({
+      ...base,
+      source: "import",
+      originalFile: { name: "Weekly sync.mp4", path: "/Users/p/Downloads/Weekly sync.mp4" },
+    });
+    expect(parseRecordingManifest(serializeRecordingManifest(imported))).toEqual(imported);
+    // Absent, they are absent: a plain microphone manifest is unchanged.
+    expect(Object.keys(createMacRecordingManifest(base))).toEqual([
+      "version",
+      "createdBy",
+      "startedAt",
+      "durationSecs",
+      "source",
+      "audio",
+      "transcription",
+    ]);
+  });
+});
+
+describe("manifest additions (system audio, import, naming)", () => {
+  it("accepts every source the contract names", () => {
+    for (const source of ["microphone", "system", "both", "import"]) {
+      expect(parseRecordingManifest(withPatch((r) => { r.source = source; }))?.source).toBe(source);
+    }
+  });
+
+  it("an old manifest without the new fields still round-trips byte for byte", () => {
+    expect(serializeRecordingManifest(parseRecordingManifest(FIXTURE)!)).toBe(FIXTURE);
+  });
+
+  it("serialises the new fields after the original ones, in a fixed order", () => {
+    const m = parseRecordingManifest(
+      withPatch((r) => {
+        r.autoTranscribe = false;
+        r.transcript = { file: "Weekly sync.md", hash: "c53-0" };
+        r.title = "Weekly sync";
+        r.originalFile = { name: "a.mp4", path: "/a.mp4" };
+        r.tracks = [{ role: "mic", file: "mic.m4a" }];
+      }),
+    )!;
+    const keys = Object.keys(JSON.parse(serializeRecordingManifest(m)) as object);
+    expect(keys.slice(-5)).toEqual(["title", "tracks", "originalFile", "transcript", "autoTranscribe"]);
+    expect(keys.slice(0, 4)).toEqual(["version", "createdBy", "startedAt", "durationSecs"]);
+  });
+
+  it("drops a malformed optional field instead of rejecting the whole bundle", () => {
+    const m = parseRecordingManifest(
+      withPatch((r) => {
+        r.title = 7;
+        r.tracks = [{ role: "mic", file: "../../etc/passwd" }, { role: "bass", file: "x.m4a" }, "junk"];
+        r.originalFile = { name: "" };
+        r.transcript = { file: "../outside.md" };
+        r.autoTranscribe = "no";
+      }),
+    );
+    expect(m).not.toBeNull();
+    expect(m).not.toHaveProperty("title");
+    expect(m).not.toHaveProperty("tracks");
+    expect(m).not.toHaveProperty("originalFile");
+    // A transcript name that points outside the bundle is never honoured.
+    expect(m).not.toHaveProperty("transcript");
+    expect(m).not.toHaveProperty("autoTranscribe");
+  });
+
+  it("still preserves fields it does not know", () => {
+    const m = parseRecordingManifest(withPatch((r) => { r.somethingNew = { a: 1 }; }))!;
+    expect(JSON.parse(serializeRecordingManifest(m))).toHaveProperty("somethingNew", { a: 1 });
   });
 });

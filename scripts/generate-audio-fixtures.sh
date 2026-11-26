@@ -36,4 +36,27 @@ afconvert -f m4af -d aac  "$TMP/tone.wav" "$OUT/tone.m4a"
 # Core Audio Format, which `classifyFile` already lists as shareable.
 afconvert -f caff -d LEI16 "$TMP/tone.wav" "$OUT/tone.caf"
 
+# Video containers, for importing a meeting recording (`import_media`). These
+# need a video encoder, which macOS does not ship on the command line, so they
+# are only regenerated where ffmpeg is installed; the committed files are used
+# otherwise.
+if command -v ffmpeg >/dev/null 2>&1; then
+  # What Teams and Zoom write: H.264 video beside 48 kHz stereo AAC, 2 s.
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=black:s=64x64:r=2:d=2" \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=2" \
+    -filter_complex "[1:a]volume=4.0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" \
+    -c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 40 -c:a aac -b:a 64k -ac 2 -shortest \
+    "$OUT/meeting-video-aac-48k-stereo.mp4"
+  # A screen recording with no sound: the "no audio track" error case.
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=black:s=64x64:r=2:d=2" \
+    -c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 40 -an \
+    "$OUT/video-without-audio.mp4"
+  # Opus in WebM: a container the built-in decoder does not read.
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1" \
+    -c:a libopus -b:a 24k "$OUT/tone-opus.webm"
+fi
+
 ls -l "$OUT"

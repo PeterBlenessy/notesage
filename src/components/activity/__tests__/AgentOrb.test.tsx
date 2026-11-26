@@ -26,9 +26,11 @@ import {
   fireEvent,
   act,
   waitFor,
+  within,
 } from '@/test/component-harness';
 import type { AgentTask } from '@/stores/activity-store';
 import { useSessionRunStore } from '@/stores/session-run-store';
+import { useRecordingStore } from '@/stores/recording-store';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom
@@ -177,9 +179,20 @@ import { AgentOrb } from '../AgentOrb';
 // Tests
 // ---------------------------------------------------------------------------
 
+/** The live capture as recording-store reports it: the orb's only source. */
+function setRecording(seconds: number | null, paused = false) {
+  useRecordingStore.setState({
+    phase: seconds === null ? 'idle' : paused ? 'paused' : 'recording',
+    isRecording: seconds !== null,
+    isPaused: paused,
+    recordedSeconds: seconds ?? 0,
+  });
+}
+
 describe('AgentOrb (#29)', () => {
   beforeEach(() => {
     useReducedMotionMock.mockReturnValue(false);
+    setRecording(null);
     mockTasks = [];
     mockCmdBarPinned = false;
     logInfoMock.mockReset();
@@ -359,7 +372,8 @@ describe('AgentOrb (#29)', () => {
   });
 
   it('shows a recording indicator + elapsed time when a recording is active (#13)', () => {
-    // recordingStartedAt 90s in the past → elapsed renders 01:30.
+    // 90 recorded seconds → 01:30.
+    setRecording(90);
     mockTasks = [
       {
         id: 'rec-1',
@@ -376,14 +390,39 @@ describe('AgentOrb (#29)', () => {
     // Recording indicator replaces the plain count badge.
     expect(screen.getByTestId('agent-orb-recording')).toBeTruthy();
     expect(screen.queryByTestId('agent-orb-badge')).toBeNull();
-    expect(screen.getByText('01:30')).toBeTruthy();
+    expect(within(screen.getByTestId('agent-orb')).getByText('01:30')).toBeTruthy();
     // aria-label narrates the recording leg.
     expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toMatch(
       /^Recording — 01:30$/,
     );
   });
 
+  it('shows the same h:mm:ss as everywhere else past an hour, never at 8px (U9, U32)', () => {
+    setRecording(3913, true);
+    renderWithProviders(<AgentOrb />);
+    const time = within(screen.getByTestId('agent-orb')).getByText('1:05:13');
+    expect(time.className).not.toContain('text-[8px]');
+    expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
+      'Recording paused — 1:05:13',
+    );
+  });
+
+  it('keeps the recording visible and stoppable while the command bar is pinned (U2)', () => {
+    setRecording(12);
+    mockCmdBarPinned = true;
+    renderWithProviders(<AgentOrb />);
+    // The orb itself is hidden…
+    expect((screen.getByTestId('agent-orb') as HTMLElement).style.display).toBe('none');
+    // …but the indicator is not inside it, and its controls are there.
+    const chip = document.querySelector('[data-recording-chip]') as HTMLElement;
+    expect(chip).toBeTruthy();
+    expect(screen.getByTestId('agent-orb').contains(chip)).toBe(false);
+    expect(chip.textContent).toContain('00:12');
+    expect(screen.getByRole('button', { name: 'Stop and save' })).toBeTruthy();
+  });
+
   it('shows the seconds-ray ring for a recording and does NOT pulse (#13)', () => {
+    setRecording(0);
     mockTasks = [
       {
         id: 'rec-1',
@@ -416,6 +455,7 @@ describe('AgentOrb (#29)', () => {
   });
 
   it('pulses when a non-recording task runs alongside a recording (#13)', () => {
+    setRecording(0);
     mockTasks = [
       {
         id: 'rec-1',

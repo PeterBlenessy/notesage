@@ -8,6 +8,8 @@
  * language in one of the two places.
  */
 
+import { getLocale, t } from '@/lib/i18n';
+
 export interface SpeechLanguage {
   value: string;
   label: string;
@@ -52,9 +54,36 @@ export const SPEECH_LANGUAGES: readonly SpeechLanguage[] = [
   { value: 'vi', label: 'Vietnamese' },
 ] as const;
 
-/** Human-readable name for a stored language value. */
+/**
+ * Human-readable name for a language code, in the APP's language: "Swedish"
+ * in an English UI, "Svenska" in a Swedish one. `auto` is the translated
+ * "Auto-detect".
+ *
+ * The names come from `Intl.DisplayNames`, which knows every language Whisper
+ * can report (far more than the picker lists), so a detected `"nn"` reads
+ * "Norwegian Nynorsk" instead of the bare code. The first letter is
+ * capitalised because every use is a label or a list entry, and several
+ * languages write their own names in lower case. Falls back to the static
+ * English label, then to the code.
+ */
 export function speechLanguageLabel(value: string): string {
-  return SPEECH_LANGUAGES.find((l) => l.value === value)?.label ?? value;
+  if (value === 'auto') return t('transcription.languageAuto');
+  const fallback = SPEECH_LANGUAGES.find((l) => l.value === value)?.label ?? value;
+  try {
+    const name = new Intl.DisplayNames([getLocale()], { type: 'language' }).of(value);
+    if (!name || name === value) return fallback;
+    return name.charAt(0).toLocaleUpperCase(getLocale()) + name.slice(1);
+  } catch {
+    return fallback;
+  }
+}
+
+/** The picker's options with translated labels, `auto` first, the rest in the app language's alphabetical order. */
+export function speechLanguageOptions(): SpeechLanguage[] {
+  const options = SPEECH_LANGUAGES.map((l) => ({ value: l.value, label: speechLanguageLabel(l.value) }));
+  const [auto, ...rest] = options;
+  rest.sort((a, b) => a.label.localeCompare(b.label, getLocale()));
+  return auto ? [auto, ...rest] : rest;
 }
 
 /**

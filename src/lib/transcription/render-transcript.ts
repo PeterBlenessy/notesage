@@ -6,6 +6,14 @@ import {
 } from '@/lib/frontmatter';
 
 /**
+ * LEGACY FORMAT. New transcripts are written by `segments.ts` /
+ * `transcript-files.ts`: the segments live in `segments.json` and the note has
+ * a small frontmatter and timestamps in its body. This file is what bundles
+ * transcribed before that look like, and `parseTranscriptSegments` is how
+ * their segments are still read. Nothing in the app calls `renderTranscript`
+ * any more; it stays as the executable definition of the old format, which
+ * the tests of the read-only fallback build their fixtures with.
+ *
  * Renders a whole-file transcription (`TranscriptSegment[]`) into the markdown
  * transcript note that lands in the recording bundle (`transcript.md`).
  *

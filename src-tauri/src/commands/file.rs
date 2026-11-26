@@ -476,13 +476,53 @@ pub async fn path_exists(path: String) -> Result<bool, String> {
 /// byte count the phone wrote at stop time. An evicted iCloud placeholder
 /// (`.audio.m4a.icloud` beside a missing `audio.m4a`) is an error here — the
 /// caller then asks `icloud_ensure_downloaded` for it.
+///
+/// So is a DATALESS file, the way current macOS evicts: it exists and reports
+/// its full length, so the size gate would pass, but its content is in iCloud
+/// and reading it blocks until it has been downloaded again.
 #[tauri::command]
 pub async fn file_size(path: String) -> Result<u64, String> {
     let meta = fs::metadata(&path).map_err(|e| format!("Failed to stat {path}: {e}"))?;
     if !meta.is_file() {
         return Err(format!("Not a file: {path}"));
     }
+    if super::sync::is_dataless(&meta) {
+        return Err(format!("File is not downloaded from iCloud: {path}"));
+    }
     Ok(meta.len())
+}
+
+/// Whether an audio file is there, how big it is, and whether its content is
+/// on this machine. Returned by `audio_file_status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct AudioFileStatus {
+    pub exists: bool,
+    pub size: u64,
+    /// False for a file evicted to iCloud, in either shape: dataless (exists,
+    /// full size, no content) or a `.name.icloud` placeholder beside a
+    /// missing file.
+    pub local: bool,
+}
+
+/// Pure half of `audio_file_status`. `file` is `(size, dataless)` for a
+/// regular file that exists.
+pub fn classify_audio_file(file: Option<(u64, bool)>) -> AudioFileStatus {
+    match file {
+        Some((size, dataless)) => AudioFileStatus { exists: true, size, local: !dataless },
+        None => AudioFileStatus { exists: false, size: 0, local: false },
+    }
+}
+
+/// Status of an audio file without reading it (so it never triggers an
+/// iCloud download). A missing file is a status, not an error: the frontend
+/// asks this to decide between "Downloading from iCloud…" and "ready".
+#[tauri::command]
+pub async fn audio_file_status(path: String) -> Result<AudioFileStatus, String> {
+    let file = fs::metadata(&path)
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| (m.len(), super::sync::is_dataless(&m)));
+    Ok(classify_audio_file(file))
 }
 
 #[tauri::command]
@@ -710,6 +750,44 @@ mod tests {
         fs::write(dir.path().join(".audio.m4a.icloud"), b"plist").unwrap();
         assert!(file_size(missing.to_string_lossy().to_string()).await.is_err());
         assert!(file_size(dir.path().to_string_lossy().to_string()).await.is_err());
+    }
+
+    /// A dataless file exists at full size; it must still read as not local,
+    /// or the UI offers to transcribe audio that is not on this Mac.
+    #[test]
+    fn audio_status_reports_an_evicted_file_as_not_local() {
+        assert_eq!(
+            classify_audio_file(Some((30_000_000, true))),
+            AudioFileStatus { exists: true, size: 30_000_000, local: false }
+        );
+        assert_eq!(
+            classify_audio_file(Some((30_000_000, false))),
+            AudioFileStatus { exists: true, size: 30_000_000, local: true }
+        );
+        assert_eq!(classify_audio_file(None), AudioFileStatus { exists: false, size: 0, local: false });
+    }
+
+    #[tokio::test]
+    async fn audio_file_status_is_a_status_for_missing_files_and_directories_too() {
+        let dir = TempDir::new().unwrap();
+        let audio = dir.path().join("audio.m4a");
+        fs::write(&audio, vec![0u8; 1234]).unwrap();
+        let status = audio_file_status(audio.to_string_lossy().to_string()).await.unwrap();
+        assert_eq!(status, AudioFileStatus { exists: true, size: 1234, local: true });
+
+        // Only a placeholder on disk: not there, not local, and not an error.
+        fs::write(dir.path().join(".gone.m4a.icloud"), b"plist").unwrap();
+        let gone = dir.path().join("gone.m4a").to_string_lossy().to_string();
+        assert_eq!(
+            audio_file_status(gone).await.unwrap(),
+            AudioFileStatus { exists: false, size: 0, local: false }
+        );
+        let as_dir = audio_file_status(dir.path().to_string_lossy().to_string()).await.unwrap();
+        assert!(!as_dir.exists);
+
+        // The serialised field names are the contract.
+        let json = serde_json::to_value(status).unwrap();
+        assert_eq!(json, serde_json::json!({ "exists": true, "size": 1234, "local": true }));
     }
 
     #[test]

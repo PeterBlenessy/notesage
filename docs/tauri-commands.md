@@ -1413,92 +1413,219 @@ const results = await tauriApi.indexSearchResearch(
 );
 ```
 
-## Meeting Recording & Transcription Operations
+## Meeting Recording Operations
 
-Located in `src-tauri/src/commands/transcription.rs`
+Located in `src-tauri/src/commands/recording/` (managed state: `RecordingState`). Capture is separate from transcription: samples go to a file and nothing else happens to them until the recording has stopped. On mobile targets the same command names come from `commands/transcription_stub.rs` and return an "unavailable" error.
+
+| Module | Holds |
+| --- | --- |
+| `wav.rs` | Streaming 16-bit WAV writer (header patchable at any time, write failures surfaced, 4 GiB guard), header repair from file length, streaming reader |
+| `ring.rs` | Lock-free SPSC ring between the audio callback and the capture thread |
+| `mix.rs` | Downmix, streaming sample-rate conversion, the mono mix of two tracks |
+| `monitor.rs` | Pure rules: level metering (10/s), silence, stall watchdog, pause clock, timeline padding, drift, disk thresholds |
+| `track.rs` | Ring → mono → WAV for one track |
+| `owner.rs` | `CaptureOwner` (bounded stop) and the state shared with the capture thread |
+| `session.rs` | The capture thread's loop, against an abstract audio backend (tested with simulated devices) |
+| `capture.rs` | The cpal backend: the only code that touches the audio stack |
+| `staging.rs` | Staging bundles, finalize into the library, orphan recovery |
+| `encode.rs` | WAV → AAC (`afconvert`) after stop, verified before the WAV is deleted |
+| `finish.rs` | The stop path once the audio thread has let go |
+| `preflight.rs` | Microphone authorisation, system-audio support, free space |
+| `state.rs` | `RecordingState` and the admission rules (#264) |
+
+**Where a recording lives.** `start_recording` records into a LOCAL staging bundle, `~/.notesage/recordings-staging/Recording <YYYY-MM-DD HH-MM-SS>/` (folders `0700`, files `0600`), never into iCloud. After `stop_recording` the frontend writes `recording.json` into that folder and calls `finalize_recording_bundle`, which moves the whole folder into `<library>/Recordings/`. Whatever is still in staging at the next launch is returned by `recover_orphan_recordings`.
+
+**Sources and files.** `"microphone"` and `"system"` write one track straight to `audio.wav`. `"both"` writes `mic.wav` and `system.wav`, padded so both start at the same instant, and `stop_recording` mixes them into `audio.wav`. Every file is mono at the device's native rate. On macOS each WAV is then encoded to AAC (`.m4a`, 64 kbit/s at 44.1 kHz and above) and removed once the encode has been read back and its duration matches; on any doubt the WAV is kept.
+
+**System audio** uses cpal's CoreAudio process-tap loopback (an input stream on the default OUTPUT device). It needs macOS 14.2+ and `NSAudioCaptureUsageDescription` (`src-tauri/Info.plist`). macOS has no public API to read that permission and a denied tap delivers silence, so denial shows up as a `silence` warning on the system source, not as an error.
+
+All result structs serialize with snake_case field names. Arguments follow Tauri's default (camelCase in JS → snake_case in Rust).
+
+### recording_preflight
+
+```rust
+#[tauri::command]
+pub async fn recording_preflight(
+    state: State<'_, RecordingState>,
+    source: String,
+) -> Result<RecordingPreflight, String>
+
+pub struct RecordingPreflight {
+    pub microphone: String,     // "granted" | "denied" | "undetermined" | "unknown"
+    pub system_audio: String,   // "available" | "unsupported" | "unknown"
+    pub input_device: Option<String>,
+    pub output_device: Option<String>,
+    pub free_bytes: u64,        // on the staging volume
+}
+```
+
+Never prompts. `system_audio` is `"unsupported"` below macOS 14.2 and off macOS; it is never `"denied"` (see above).
 
 ### start_recording
-
-Starts microphone capture, streaming samples to a WAV file in the recordings inbox (`~/Notesage/Recordings/Recording <YYYY-MM-DD HH-MM-SS>/audio.wav`). A single capture-owner thread owns the `cpal` stream (which is `!Send`) and the WAV writer; only one recording may be active at a time. Emits `recording-level` events while capturing. Capture can be paused/resumed (`pause_recording` / `resume_recording`) without tearing down the stream — paused samples are discarded, so the recorded length is pause-aware.
 
 ```rust
 #[tauri::command]
 pub async fn start_recording(
     app: AppHandle,
-    state: State<'_, TranscriptionState>,
-    source: String,
+    state: State<'_, RecordingState>,
+    source: String,   // "microphone" | "system" | "both"
 ) -> Result<(), String>
 ```
 
-**Parameters:**
+Opens the stream(s) off the async runtime. Only one recording may be active; a start is refused (`Recording already in progress`) while one is active, while another start is still opening its streams, or while a stop is tearing down (#264). Fails rather than record less than asked: if any requested source cannot be opened, nothing is recorded and the staging bundle is removed.
 
-- `source`: Audio source — `"microphone"` (only supported value; `"system"`/`"both"` are not yet implemented)
+Errors (exact, or exact prefix): `Recording already in progress`, `Unknown recording source: …`, `No microphone available`, `Microphone access is denied…`, `System audio recording requires macOS 14.2 or later`, `System audio recording is not available on this platform`, `No audio output device available`, `System audio cannot be captured from this output device…` (the output device also has inputs, so cpal would record its input instead), `Not enough free disk space to record…` (< 200 MB), `The previous recording is still shutting down…`, `Failed to …`.
 
-**Returns:**
+### pause_recording / resume_recording
 
-- `Ok(())`: Recording started (WAV file created)
-- `Err(String)`: Error if already recording or no microphone available
+```rust
+pub async fn pause_recording(state: State<'_, RecordingState>) -> Result<(), String>
+pub async fn resume_recording(state: State<'_, RecordingState>) -> Result<(), String>
+```
+
+Idempotent. While paused the audio callbacks discard their samples; the streams stay open. Error: `No recording in progress`.
 
 ### stop_recording
-
-Stops capture and **awaits full teardown** — the capture thread drops the `cpal` stream and finalizes the WAV file before this returns, so a rapid stop→start can never overlap two CoreAudio streams (the root cause of the old dictation hang, #264). Returns the finalized WAV path plus capture metadata.
 
 ```rust
 #[tauri::command]
 pub async fn stop_recording(
-    state: State<'_, TranscriptionState>,
+    state: State<'_, RecordingState>,
 ) -> Result<RecordingResult, String>
-```
 
-**Returns:**
-
-- `Ok(RecordingResult)`: Finalized WAV path + metadata (`rms`/`peak` let the frontend warn on silence)
-- `Err(String)`: Error if not currently recording
-
-**RecordingResult struct** (serializes with snake_case field names):
-
-```rust
 pub struct RecordingResult {
-    pub path: String,
-    pub duration_secs: f64,
+    pub bundle_dir: String,        // the staging bundle
+    pub audio_path: String,        // audio.m4a, or audio.wav when not encoded
+    pub tracks: Vec<TrackRef>,     // [{ role: "mic" | "system", path }] for "both"; empty otherwise
+    pub duration_secs: f64,        // from samples that reached the file
+    pub peak: f32,
     pub sample_rate: u32,
+    pub dropped_frames: u64,
+    pub warnings: Vec<String>,     // codes, see below
+    pub path: String,              // same as audio_path (older callers)
     pub source: String,
     pub rms: f32,
-    pub peak: f32,
+    pub track_peaks: TrackPeaks,   // { mic: Option<f32>, system: Option<f32> }
 }
 ```
 
+Waits (up to 10 s) for the capture thread to drop its streams and finalise the files, then mixes and encodes. **Can take seconds to tens of seconds** for an hour of audio; all of it runs off the async workers. A new recording may start as soon as the teardown phase is over.
+
+`warnings` codes, optionally followed by `: detail`: `mic-silent`, `system-silent`, `dropped-frames`, `drift` (the two tracks disagree with the clock by more than 100 ms), `device-changed`, `track-lost`, `track-unreadable`, `write-error`, `mix-failed`, `encode-failed` (WAV kept), `stop-timeout`, `stopped-early`.
+
+Errors: `No recording in progress`; `Recording could not be finalised: …` when no track is a readable WAV (the bundle is left in staging for recovery).
+
+### discard_recording
+
+```rust
+pub async fn discard_recording(
+    state: State<'_, RecordingState>,
+    bundle_dir: Option<String>,
+) -> Result<(), String>
+```
+
+Without `bundle_dir`: stops the live recording, if any, and deletes its staging bundle (no live recording is not an error). With `bundle_dir`: deletes that staging bundle; anything that is not a direct child of the staging root is refused (`Not a staging recording: …`).
+
+### finalize_recording_bundle
+
+```rust
+pub async fn finalize_recording_bundle(
+    state: State<'_, RecordingState>,
+    staging_dir: String,
+    dest_recordings_dir: String,
+) -> Result<FinalizedBundle, String>   // { bundle_dir, audio_path, tracks }
+```
+
+Moves a stopped staging bundle into `dest_recordings_dir` (created if missing) under a non-colliding name (`<name>`, `<name> (2)`, …). A rename is tried first; otherwise the bundle is copied to a hidden `.<name>.partial-<pid>` folder inside the destination, every file size is verified, and only then is it renamed into place and the staging copy deleted. A failure leaves the staging bundle intact and nothing visible in the destination. Call it after writing `recording.json` into the staging bundle.
+
+### recover_orphan_recordings
+
+```rust
+pub async fn recover_orphan_recordings(
+    state: State<'_, RecordingState>,
+) -> Result<Vec<OrphanRecording>, String>
+
+pub struct OrphanRecording {
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub tracks: Vec<TrackRef>,
+    pub duration_secs: f64,
+    pub started_at: Option<String>,   // RFC 3339
+    pub source: Option<String>,
+    pub has_manifest: bool,
+}
+```
+
+Returns staging bundles left by a crash or quit, skipping the live recording and bundles this session has stopped but not yet finalised. WAV headers are repaired from the file length, zero-data files and empty bundles are deleted, a missing mix is produced from the two tracks. Nothing is encoded or moved.
+
+### get_recording_state
+
+```rust
+pub async fn get_recording_state(
+    state: State<'_, RecordingState>,
+) -> Result<RecordingStateInfo, String>
+// { recording, paused, source, started_at_ms, elapsed_recorded_ms, fatal }
+```
+
+`elapsed_recorded_ms` comes from samples written, so it excludes pauses. `fatal` means the backend stopped capturing by itself; call `stop_recording` to collect the result.
+
+### Events
+
+- `recording-level`: `{ mic: number | null, system: number | null }`, the peak (0..1) since the previous event; `null` for a source that is not being recorded. At most 10 per second, never while paused.
+- `recording-warning`: `{ kind, message, fatal, source? }` with `kind` one of `silence`, `device-lost`, `device-changed`, `write-error`, `low-disk`, `dropped-frames`. `source` (`"microphone"` or `"system"`) is present when the warning concerns one source, and `message` (English) then starts with `mic: ` or `system: `. `fatal: true` means the recording has been stopped and finalised by the backend.
+  - `silence`: nothing above 0.0002 on a source for the first 5 s, or for 30 s after signal.
+  - `device-lost`: no audio callbacks for 2 s (6 s for a stream that has not delivered yet); the stream is reopened on the current default device, and `device-changed` follows when audio arrives. The gap is written as silence so timestamps stay true. Fatal when no source could be reopened for 30 s. A change of the default output device re-opens the system tap and emits only `device-changed`.
+  - `low-disk`: below 500 MB (warning), below 50 MB (fatal).
+
+### App exit
+
+`RunEvent::Exit` calls `RecordingState::stop_for_exit`, which stops a live capture and leaves its WAV valid, waiting at most 3 s for the audio thread. Nothing is encoded; the bundle is returned by `recover_orphan_recordings` on the next launch. Independently of that, the WAV header is patched every 10 s while recording, so a crash or force-quit costs seconds.
+
+## Meeting Recording & Transcription Operations
+
+Located in `src-tauri/src/commands/transcription.rs`
+
 ### transcribe_file
 
-Transcribes a finalized audio file in a single whole-file Whisper pass (no real-time chunking — quality over latency). Reads the WAV at `path`, resamples to 16kHz mono, and returns ordered timestamped segments. Emits `transcription-progress` events carrying `jobId` so concurrent jobs can be told apart.
+Transcribes a finalized audio file, or the separately recorded tracks of one. The pipeline lives in `src-tauri/src/commands/transcribe/` (the command is a thin wrapper):
+
+- **Streaming decode.** The file is decoded packet by packet (symphonia; CoreAudio fallback on macOS), downmixed and band-limited-resampled to 16 kHz mono as it goes. The file is never held at its native rate.
+- **Parts.** Audio is transcribed in parts of about ten minutes, cut at the quietest half second near the end of each part, and released afterwards. Memory is flat (about 150 MB beyond the model) whatever the length of the recording. Timestamps are offset by each part's exact start.
+- **Silence and level.** Silences of two seconds or more that are far below the speech level are skipped (energy gate; timestamps are mapped back to original time) and quiet input is raised (at most 20 dB, never clipping).
+- **Queue.** Jobs run one at a time and wait for their turn *before* touching the file. The model is loaded and used under one lock, and unloaded after 10 idle minutes.
+- **Language.** `language` pins the language. Without it the language is detected once (first part with speech) and kept for the rest of the job, including the other track.
+- **Evicted audio.** A file iCloud has evicted (dataless, or a `.name.icloud` placeholder) is requested and waited for (5 minutes) on a blocking thread before decoding.
 
 ```rust
 #[tauri::command]
 pub async fn transcribe_file(
     app: AppHandle,
     state: State<'_, TranscriptionState>,
-    job_id: String,
+    job_id: Option<String>,
     path: String,
     model: String,
     language: Option<String>,
+    tracks: Option<Vec<TranscribeTrack>>, // { role: "mic" | "system", path }
 ) -> Result<TranscriptionResult, String>
 ```
 
-**Parameters:**
+**Parameters** (camelCase over IPC: `jobId`, `path`, `model`, `language`, `tracks`):
 
-- `job_id`: Caller-generated id echoed back in progress events (`jobId` over IPC)
-- `path`: Absolute path to the finalized WAV (from `stop_recording`)
+- `job_id`: Optional caller-generated id, echoed in progress events and accepted by `cancel_transcription`
+- `path`: Absolute path to the audio (any format the decoder reads). Also the `audio_path` of the job's events
 - `model`: Whisper model — `"large-v3-turbo-q5_0"` (default) or `"small"`. Older names still work if the file is on disk
-- `language`: Optional language code (e.g., `"en"`, `"sv"`, `"fr"`). `None` for auto-detection.
+- `language`: Optional language code (e.g., `"en"`, `"sv"`). `None`, `""` or `"auto"` for auto-detection
+- `tracks`: Optional. When given (a recording made with source "both"), each track is transcribed separately and the segments are merged by start time with `speaker` `"me"` (role `mic`) or `"others"` (role `system`). A `me` segment that repeats what `others` said at the same moment (the microphone hearing the loudspeakers) is dropped
 
 **Returns:**
 
-- `Ok(TranscriptionResult)`: Segments with timestamps, duration, and detected language
-- `Err(String)`: Error if the file cannot be read or the model is not found
+- `Ok(TranscriptionResult)`: Segments ordered by start, duration, and the language used
+- `Err("Transcription cancelled")`: exactly this string when the job was cancelled, waiting or running
+- `Err(String)`: `Audio file not found: …`, `Model '…' not downloaded. …`, `The audio file is still in iCloud and could not be downloaded: …`, or a decode error
 
 **Events emitted:**
 
-- `transcription-progress` (`{ jobId: string, percent: number, segment?: string }`): Progress updates during transcription
+- `transcription-progress` (`{ job_id: string | null, audio_path: string, stage: "loading" | "decoding" | "transcribing" | "finishing", percent: number }`): `percent` is an integer 0..100 for the whole job (all tracks), never decreases, and is emitted only when it or the stage changes. No transcript text. A waiting job emits nothing; the first event is `loading` 0 and the last, on success, `finishing` 100
 
 **TranscriptionResult struct** (serializes with snake_case field names):
 
@@ -1506,17 +1633,77 @@ pub async fn transcribe_file(
 pub struct TranscriptionResult {
     pub segments: Vec<TranscriptSegment>,
     pub duration_secs: f64,
-    pub language: String,
+    pub language: String,             // the pinned language, or the detected one
+    pub decoder: String,              // "symphonia" | "coreaudio"
 }
 
 pub struct TranscriptSegment {
-    pub start: f64,
+    pub start: f64,                   // seconds from the start of the audio
     pub end: f64,
     pub text: String,
-    pub speaker_id: Option<String>,   // reserved for future diarization; None in v1
-    pub speaker_name: Option<String>, // reserved for future naming pass; None in v1
+    pub speaker: Option<String>,      // "me" | "others" with `tracks`; key omitted otherwise
+    pub speaker_id: Option<String>,   // reserved for future diarization; always None
+    pub speaker_name: Option<String>, // reserved for future naming pass; always None
 }
 ```
+
+### cancel_transcription
+
+Stops a transcription (or an `import_media`) that is waiting for its turn or running. A waiting job never starts; a running one stops within one Whisper step and releases its audio and the model lock.
+
+```rust
+#[tauri::command]
+pub async fn cancel_transcription(
+    job_id: Option<String>,
+    audio_path: Option<String>,
+) -> Result<bool, String>
+```
+
+**Parameters:** a job matches when `job_id` equals its id, or `audio_path` equals the `path` it was started with (for an import: its `source_path`).
+
+**Returns:** `true` when at least one job matched. The cancelled `transcribe_file` rejects with `Transcription cancelled`, a cancelled `import_media` with `Import cancelled`.
+
+### import_media
+
+Extracts the audio of a video or audio file (a Teams or Zoom `.mp4`, `.mov`, `.m4a`, `.mp3`, `.wav`, …) into a new recording bundle. The source is not copied.
+
+```rust
+#[tauri::command]
+pub async fn import_media(
+    app: AppHandle,
+    source_path: String,
+    dest_recordings_dir: String,
+) -> Result<ImportResult, String>
+
+pub struct ImportResult {             // snake_case over IPC
+    pub bundle_dir: String,
+    pub audio_path: String,
+    pub duration_secs: f64,
+    pub original_name: String,        // the source's file name, with extension
+}
+```
+
+- The bundle is `dest_recordings_dir/Import <sanitised stem> <YYYY-MM-DD HHMMSS>` (a number is appended if taken), mode 0700; the audio 0600. The caller writes `recording.json` afterwards.
+- On macOS the audio is `audio.m4a` (AAC, mono, 64 kbit/s) made by `/usr/bin/afconvert` reading the source directly, and checked (it must open and be as long as the source). Everywhere else, and whenever that fails, it is a 16 kHz mono `audio.wav` (115 MB per hour) from the streaming decoder.
+- Extraction happens in `~/.notesage/import-staging/`; the bundle appears in the library only when its audio is complete. A failed or cancelled import leaves nothing behind.
+- Readable sources: what symphonia is built with (WAV, MP3, AAC or ALAC in MP4/M4A/MOV, FLAC, Ogg Vorbis, AIFF, CAF) plus, on macOS, anything CoreAudio opens. WebM/Opus and Matroska are not supported.
+
+**Events emitted:** `import-progress` (`{ source_path: string, percent: number }`, integer, on change).
+
+**Errors:** `Import cancelled`, `Source file not found: …`, `The file is still in iCloud and could not be downloaded: …`, `No audio track found in <name>`, `Unsupported media format: <name> (…)`, `Cannot write to <dir>: …`.
+
+### audio_file_status
+
+Located in `src-tauri/src/commands/file.rs`. Whether an audio file exists, its size, and whether its content is on this machine, without reading it (so it never triggers an iCloud download).
+
+```rust
+#[tauri::command]
+pub async fn audio_file_status(path: String) -> Result<AudioFileStatus, String>
+
+pub struct AudioFileStatus { pub exists: bool, pub size: u64, pub local: bool }
+```
+
+`local` is `false` for a file iCloud has evicted: a dataless file (exists, full size, no content) or a missing file with a `.name.icloud` placeholder (then `exists` is `false` too). A missing file is a status, not an error. `file_size` fails for a dataless file (`File is not downloaded from iCloud: …`) and `icloud_ensure_downloaded` requests it and answers `downloading`.
 
 ### list_whisper_models
 
@@ -1548,6 +1735,8 @@ pub struct ModelInfo {
 
 Downloads a Whisper GGML model from Hugging Face. Supports concurrent downloads. Emits progress events. Can be cancelled via `cancel_model_download`.
 
+The file is written to `ggml-<name>.bin.downloading` and renamed when complete and verified. A partial file is kept after a failure or a quit and continued with an HTTP `Range` request on the next attempt (an explicit cancel deletes it). The download fails if no data arrives for 30 seconds (`Download stalled: …`) or the disk lacks room (`Not enough free disk space: …`). Before the rename the file must have the length the server announced and the ggml magic number; a catalogue entry with a `sha256` is also checked against that hash and its exact size (`Downloaded file failed verification (…). It was removed; try again.`). The revision and hashes are in `transcribe/model_download.rs` (`MODEL_REVISION`) and `KNOWN_MODELS`; they are not pinned yet.
+
 ```rust
 #[tauri::command]
 pub async fn download_whisper_model(
@@ -1563,7 +1752,7 @@ pub async fn download_whisper_model(
 
 **Events emitted:**
 
-- `model-download-progress` (`{ model: string, percent: number }`): Download progress updates
+- `model-download-progress` (`{ model: string, downloaded: number, total: number }`): bytes on disk so far and the full size (`total` is 0 when the server does not say), at most about ten per second. A resumed download starts at the bytes already there
 
 ### cancel_model_download
 
@@ -1583,7 +1772,7 @@ pub async fn cancel_model_download(
 
 ### delete_whisper_model
 
-Deletes a downloaded Whisper model file from disk.
+Deletes a downloaded Whisper model file from disk. Fails with `Model '<name>' is in use by a running transcription. Try again when it finishes.` while a transcription is running with, or waiting for, that model; it never waits for the model lock.
 
 ```rust
 #[tauri::command]
@@ -1607,8 +1796,9 @@ const models = await tauriApi.listWhisperModels();
 await tauriApi.downloadWhisperModel('small');
 
 // Listen for download progress
-listen<{ model: string; percent: number }>('model-download-progress', (event) => {
-  console.log(`${event.payload.model}: ${event.payload.percent}%`);
+listen<{ model: string; downloaded: number; total: number }>('model-download-progress', (event) => {
+  const { model, downloaded, total } = event.payload;
+  console.log(`${model}: ${total > 0 ? Math.round((downloaded / total) * 100) : 0}%`);
 });
 
 // Cancel a download
@@ -1619,10 +1809,15 @@ await tauriApi.startRecording('microphone');
 // ... meeting happens ...
 const rec = await tauriApi.stopRecording();   // { path, duration_secs, ... }
 const jobId = crypto.randomUUID();
-listen<{ jobId: string; percent: number }>('transcription-progress', (event) => {
-  if (event.payload.jobId === jobId) updateProgress(event.payload.percent);
-});
+listen<{ job_id: string | null; audio_path: string; stage: string; percent: number }>(
+  'transcription-progress',
+  (event) => {
+    if (event.payload.job_id === jobId) updateProgress(event.payload.stage, event.payload.percent);
+  },
+);
 const result = await tauriApi.transcribeFile(jobId, rec.path, 'small', 'en');
+// ... or stop it: transcribeFile then rejects with "Transcription cancelled"
+await invoke('cancel_transcription', { jobId, audioPath: null });
 ```
 
 ### TranscriptionState (Managed State)
@@ -1630,8 +1825,6 @@ const result = await tauriApi.transcribeFile(jobId, rec.path, 'small', 'en');
 ```rust
 pub struct TranscriptionState {
     models_dir: PathBuf,
-    recordings_dir: PathBuf,
-    capture: Mutex<Option<CaptureOwner>>,
     download_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 ```
@@ -1639,8 +1832,6 @@ pub struct TranscriptionState {
 **Fields:**
 
 - `models_dir`: Path to `~/.notesage/whisper-models/`
-- `recordings_dir`: Path to `~/Notesage/Recordings/` (the recording-bundle inbox)
-- `capture`: The single active capture owner (`cpal` stream + WAV writer + stop signal + join handle); `Some` only while a recording is in progress. Taking it out of the mutex enforces one stream at a time and is the synchronization point for the awaited teardown
 - `download_cancels`: Per-model cancel signals for concurrent downloads
 
 ## MCP Operations

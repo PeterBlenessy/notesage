@@ -184,7 +184,18 @@ export const shortcutActions: Record<string, ShortcutAction> = {
   },
   "open-settings": ({ callbacks }) => callbacks.onSettingsOpen(),
   "keyboard-shortcuts": ({ callbacks }) => callbacks.onShortcutsOpen(),
-  "toggle-recording": ({ callbacks }) => callbacks.onToggleRecording?.(),
+  // A held ⌘⇧R must not start-then-stop: auto-repeat is ignored here, and the
+  // recording flow's own phase guard ignores a toggle while one is in flight.
+  "toggle-recording": ({ callbacks, event }) => {
+    if (event.repeat) return;
+    callbacks.onToggleRecording?.();
+  },
+  // ⌘⇧U — pause a running recording, resume a paused one. Consumed by
+  // `useRecordingShortcut` (always mounted), like the toggle.
+  "toggle-recording-pause": ({ event }) => {
+    if (event.repeat) return;
+    window.dispatchEvent(new CustomEvent("notesage:toggle-recording-pause"));
+  },
 
   // ── Editor view-zoom (transient, layout-stable via produced char) ────
   "zoom-in": () => fireZoom("in"),

@@ -804,6 +804,151 @@ describe('transcription jobs', () => {
     expect(task?.transcriptPath).toBe('/t.md');
     expect(task?.progress).toBe(100);
   });
+
+  // -------------------------------------------------------------------------
+  // U18 — a progress stream must not wake the whole app
+  // -------------------------------------------------------------------------
+
+  it('setTranscriptionProgress is a no-op when the integer percent and the stage are unchanged', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 42, 'transcribing');
+    const tasksBefore = useActivityStore.getState().tasks;
+    const stateBefore = useActivityStore.getState();
+    const listener = vi.fn();
+    const unsubscribe = useActivityStore.subscribe(listener);
+
+    // The backend emits on change only, but a burst of fractional values that
+    // round to the same integer must cost nothing either.
+    for (const value of [42, 42.2, 41.6, 42, 42.49]) {
+      useActivityStore.getState().setTranscriptionProgress('tx-1', value, 'transcribing');
+    }
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 42);
+    // An unknown job is nobody's business.
+    useActivityStore.getState().setTranscriptionProgress('nope', 77, 'transcribing');
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(useActivityStore.getState()).toBe(stateBefore);
+    expect(useActivityStore.getState().tasks).toBe(tasksBefore);
+
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 43, 'transcribing');
+    unsubscribe();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(useActivityStore.getState().tasks[0].progress).toBe(43);
+  });
+
+  it('stores an integer percent and the stage; a stage change alone is an update', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 0, 'loading');
+    expect(useActivityStore.getState().tasks[0]).toMatchObject({ progress: 0, transcriptionStage: 'loading' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 0, 'decoding');
+    expect(useActivityStore.getState().tasks[0].transcriptionStage).toBe('decoding');
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 17.6, 'transcribing');
+    expect(useActivityStore.getState().tasks[0].progress).toBe(18);
+    useActivityStore.getState().setTranscriptionProgress('tx-1', Number.NaN);
+    expect(useActivityStore.getState().tasks[0].progress).toBe(0);
+  });
+
+  it('anchors the time estimate at the first real progress, not at the start of the job', () => {
+    vi.setSystemTime(new Date('2026-05-30T14:00:00Z'));
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    expect(useActivityStore.getState().tasks[0].runStartedAt).toBe(Date.now());
+
+    vi.setSystemTime(new Date('2026-05-30T14:00:40Z'));
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 0, 'loading');
+    expect(useActivityStore.getState().tasks[0].progressAnchorAt).toBeUndefined();
+
+    vi.setSystemTime(new Date('2026-05-30T14:01:00Z'));
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 4, 'transcribing');
+    const anchored = useActivityStore.getState().tasks[0];
+    expect(anchored.progressAnchorAt).toBe(Date.now());
+    expect(anchored.progressAnchorPercent).toBe(4);
+
+    // Later progress does not move the anchor.
+    vi.setSystemTime(new Date('2026-05-30T14:05:00Z'));
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 50, 'transcribing');
+    expect(useActivityStore.getState().tasks[0].progressAnchorAt).toBe(anchored.progressAnchorAt);
+  });
+
+  // -------------------------------------------------------------------------
+  // U16 / U17 — cancelled and interrupted are not failures
+  // -------------------------------------------------------------------------
+
+  it('setTranscriptionCancelled marks the job cancelled, with no error', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 30, 'transcribing');
+    useActivityStore.getState().setTranscriptionCancelled('tx-1');
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.status).toBe('cancelled');
+    expect(task.errorMessage).toBeUndefined();
+    expect(task.transcriptionStage).toBeUndefined();
+    expect(task.completedAt).toBeDefined();
+    // Not for other kinds of task.
+    useActivityStore.getState().addTask(makeTask({ id: 'agent-1' }));
+    useActivityStore.getState().setTranscriptionCancelled('agent-1');
+    expect(useActivityStore.getState().tasks.find((t) => t.id === 'agent-1')?.status).toBe('running');
+  });
+
+  it('resetTranscriptionForRerun starts a clean run: no stale progress, stage, estimate or flags', () => {
+    vi.setSystemTime(new Date('2026-05-30T14:00:00Z'));
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 60, 'transcribing');
+    useActivityStore.getState().setTranscriptionError('tx-1', 'boom');
+    useActivityStore.setState((s) => ({ tasks: s.tasks.map((t) => ({ ...t, interrupted: true })) }));
+
+    vi.setSystemTime(new Date('2026-05-30T15:00:00Z'));
+    useActivityStore.getState().resetTranscriptionForRerun('tx-1');
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task).toMatchObject({ status: 'running', progress: 0, runStartedAt: Date.now() });
+    expect(task.errorMessage).toBeUndefined();
+    expect(task.interrupted).toBeUndefined();
+    expect(task.transcriptionStage).toBeUndefined();
+    expect(task.progressAnchorAt).toBeUndefined();
+  });
+
+  it('setTranscriptionLabel renames a card, and is free when the label is already that', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'Recording 1', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionLabel('tx-1', 'Weekly sync');
+    expect(useActivityStore.getState().tasks[0].label).toBe('Weekly sync');
+    const listener = vi.fn();
+    const unsubscribe = useActivityStore.subscribe(listener);
+    useActivityStore.getState().setTranscriptionLabel('tx-1', 'Weekly sync');
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('a job that was running when the app quit rehydrates as interrupted, not as a failure (U17)', async () => {
+    vi.useRealTimers();
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'Meeting', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 37, 'transcribing');
+    // An agent task in the same state keeps its existing treatment.
+    useActivityStore.getState().addTask(makeTask({ id: 'agent-1' }));
+
+    await waitForPersist();
+    await simulateRestart(DEFAULTS);
+
+    const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
+    expect(task).toMatchObject({ status: 'error', interrupted: true, progress: 0, audioPath: '/a.wav' });
+    expect(task?.errorMessage).toBeUndefined();
+    expect(task?.transcriptionStage).toBeUndefined();
+    expect(task?.progressAnchorAt).toBeUndefined();
+    expect(task?.completedAt).toBeDefined();
+
+    const agent = useActivityStore.getState().tasks.find((t) => t.id === 'agent-1');
+    expect(agent?.status).toBe('error');
+    expect(agent?.interrupted).toBeUndefined();
+  });
+
+  it('a job that had failed before the quit stays a failure, with its reason', async () => {
+    vi.useRealTimers();
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'Meeting', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionError('tx-1', 'Unrecognised audio format');
+    await waitForPersist();
+    await simulateRestart(DEFAULTS);
+    const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
+    expect(task).toMatchObject({ status: 'error', errorMessage: 'Unrecognised audio format' });
+    expect(task?.interrupted).toBeUndefined();
+  });
 });
 
 // ===========================================================================

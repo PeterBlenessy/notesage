@@ -8,6 +8,7 @@ import {
   FolderInput,
   FolderOpen,
   RotateCcw,
+  CircleSlash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -15,62 +16,43 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useActivityStore } from '@/stores/activity-store';
 import type { AgentTask } from '@/stores/activity-store';
-import { useRecordingStore } from '@/stores/recording-store';
-import { dirname, basename as pathBasename, moveBundleToProject, transcriptPathForAudio } from '@/lib/transcription/bundle';
+import { useRecordingsStore } from '@/stores/recordings-store';
+import { dirname, basename as pathBasename, moveBundleToProject } from '@/lib/transcription/bundle';
 import { useFileOperations } from '@/hooks/useFileOperations';
-import { startTranscription } from '@/hooks/useTranscriptionJob';
+import { cancelTranscriptionJob, startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
-import { getFormatLocale, t } from "@/lib/i18n";
-import {
-  SPEECH_LANGUAGES,
-  speechLanguageLabel,
-  pickModelForLanguage,
-} from '@/lib/transcription/languages';
+import { t } from "@/lib/i18n";
+import { speechLanguageLabel } from '@/lib/transcription/languages';
+import { formatRecordingLength } from '@/lib/transcription/segments';
+import { describeTranscriptionError, isModelMissingError } from '@/lib/transcription/errors';
+import { isQueuedJob, jobStatusText, jobTimingText } from '@/lib/transcription/job-status';
 import { useFormatLocale } from "@/lib/useLocale";
+import { RerunTranscriptionMenu, openTranscriptionSettings, type RerunChoice } from './RerunTranscriptionMenu';
+import {
+  ReplaceTranscriptDialog,
+  guardTranscriptWrite,
+  type PendingTranscriptWrite,
+} from '@/components/recordings/ReplaceTranscriptDialog';
+import { useNow } from '@/components/recordings/useNow';
+
+/**
+ * The card's corner actions: 24px targets that are always visible. They were
+ * 16px icons that only appeared on hover, which is neither findable nor
+ * hittable, and invisible to anyone not using a mouse.
+ */
+const CORNER_ACTION =
+  'shrink-0 h-6 w-6 text-muted-foreground hover:text-foreground transition-colors duration-150';
 
 /** Display name for a project root — the trailing path component. */
 function projectDisplayName(projectRoot: string): string {
   return pathBasename(projectRoot) || projectRoot;
-}
-
-/**
- * Friendly name for an ISO 639-1 code (`"sv"` → `"Swedish"`), via the built-in
- * `Intl.DisplayNames`. Whisper detects ~99 languages, far more than the curated
- * picker list, so a lookup table here would fall short of what it can return.
- * Falls back to the raw code when the runtime lacks the API or the code is
- * unrecognized — a bare `"sv"` still tells the user more than nothing.
- *
- * Follows the app language once the user picks one (#705), so a Swedish UI
- * reads "svenska"; with no choice made it stays English, as it always was.
- */
-function languageDisplayName(code: string): string {
-  try {
-    // Falls back to English rather than `undefined`: this hardcoded `['en']`
-    // before, so passing `undefined` (which resolves to the RUNTIME's locale)
-    // would silently change "Swedish" to "svenska" on a Swedish machine for a
-    // user who never touched the language picker. The choice is honoured; the
-    // absence of one keeps the previous behaviour.
-    return new Intl.DisplayNames([getFormatLocale() ?? 'en'], { type: 'language' }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-/** "large-v3" -> "Large V3" — mirrors `TranscriptionSettings`' model label. */
-function modelDisplayName(name: string): string {
-  return name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
@@ -90,42 +72,28 @@ function parseStartFromPath(path?: string): number | undefined {
 }
 
 /**
- * Compact recorded length: `M:SS` under an hour, `H:MM:SS` over.
- */
-function formatLength(secs?: number): string | null {
-  if (secs == null || !Number.isFinite(secs)) return null;
-  const total = Math.max(0, Math.round(secs));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${m}:${String(s).padStart(2, '0')}`;
-}
-
-/**
  * "start – stop · length" summary for a recording. Falls back to the start time
  * encoded in the bundle folder name when the live metadata is absent, so even
  * legacy / disk-restored items show what they can. Returns null only when
- * nothing at all can be derived.
+ * nothing at all can be derived. The length is `h:mm:ss`, the one format a
+ * recording's length is written in.
  */
 function recordingSummary(task: AgentTask): string | null {
   const startMs =
     task.recordingStartedAt ?? parseStartFromPath(task.transcriptPath ?? task.audioPath);
   const start = formatClock(startMs);
   const stop = formatClock(task.recordingStoppedAt);
-  const length = formatLength(task.recordingDurationSecs);
+  const length = formatRecordingLength(task.recordingDurationSecs);
   const span = start && stop ? `${start} – ${stop}` : start ?? stop ?? null;
   return [span, length].filter(Boolean).join('  ·  ') || null;
 }
 
 /**
- * t("activity.moveToProject") action shown on a completed transcription job — an
- * icon-only, hover-revealed control in the card's top-right cluster. Lists the
- * open projects from `workspace-store`; picking one relocates the whole bundle
- * (audio + transcript) into that project via `moveBundleToProject`, toasts
- * success, and records the move in the store (which hides this action). The
- * trigger stays visible while its menu is open (`data-[state=open]`).
+ * t("activity.moveToProject") action shown on a completed transcription job.
+ * Lists the open projects from `workspace-store`; picking one relocates the
+ * whole bundle (audio + transcript) into that project via
+ * `moveBundleToProject`, toasts success, and records the move in the store
+ * (which hides this action).
  */
 function MoveToProjectMenu({ task }: { task: AgentTask }) {
   const projects = useWorkspaceStore((s) => s.projects);
@@ -141,19 +109,19 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
     setMoving(true);
     try {
       const newBundleDir = await moveBundleToProject(bundleDir, projectRoot);
-      // The transcript keeps its filename inside the relocated bundle folder;
-      // derive the new note path from the audio filename convention.
+      // Every file keeps its name inside the relocated folder. The transcript
+      // is named after the recording now, so its name is taken from the path
+      // the job recorded rather than assumed to be `transcript.md`.
       const movedAudio = `${newBundleDir}/${basename(task.audioPath ?? '')}`;
-      const newTranscriptPath = task.audioPath
-        ? transcriptPathForAudio(movedAudio)
-        : `${newBundleDir}/${basename(task.transcriptPath ?? '')}`;
+      const newTranscriptPath = `${newBundleDir}/${basename(task.transcriptPath ?? '')}`;
       // Repoint audioPath too — it moved along with the transcript, and a
       // stale audioPath would break "re-run transcription" and "reveal in
       // Finder" after the move.
       setTranscriptionMoved(task.id, newTranscriptPath, task.audioPath ? movedAudio : undefined);
-      toast.success(`Moved to ${projectDisplayName(projectRoot)}`);
+      toast.success(t('recordings.moved', { project: projectDisplayName(projectRoot) }));
+      useRecordingsStore.getState().refresh();
     } catch (err) {
-      toast.error(`Failed to move recording: ${err}`);
+      toast.error(t('recordings.moveFailed', { error: String(err) }));
     } finally {
       setMoving(false);
     }
@@ -171,12 +139,12 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
                 disabled={moving || projects.length === 0}
                 onClick={(e) => e.stopPropagation()}
                 aria-label={t("activity.moveToProject")}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className={CORNER_ACTION}
               >
                 {moving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} />
                 ) : (
-                  <FolderInput className="h-3 w-3" strokeWidth={1.5} />
+                  <FolderInput className="h-3.5 w-3.5" strokeWidth={1.5} />
                 )}
               </Button>
             </DropdownMenuTrigger>
@@ -205,124 +173,19 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
 }
 
 /**
- * t("activity.rerunTranscription") action shown on a finished (done or errored)
- * transcription job — an icon-only, hover-revealed control listing every
- * downloaded Whisper model. Picking one re-transcribes the retained audio
- * (`audio.wav`, or the phone's `audio.m4a`) and replaces the displayed
- * transcript — the fix for "wrong model, bad result."
+ * Transcription-job card (kind === 'transcription').
  *
- * The language can be changed here too. A wrong language is the more common
- * failure and the more destructive one: the model hears the words correctly
- * and writes them in another language's spelling, so the output looks like
- * confident nonsense rather than a bad transcript. Re-running with the right
- * language fixes it outright, so it belongs beside the model choice rather
- * than buried in Settings.
- * Reuses the job's own id (`jobId`) so `useTranscriptionJob` updates this
- * same card in place instead of adding a new list entry.
- */
-function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
-  const models = useRecordingStore((s) => s.availableModels);
-  const defaultModel = useRecordingStore((s) => s.defaultModel);
-  const refreshModels = useRecordingStore((s) => s.refreshModels);
-  const downloadedModels = models.filter((m) => m.downloaded);
-  const audioPath = task.audioPath;
-
-  if (!audioPath) return null;
-
-  const handleRerun = (model: string, language?: string) => {
-    startTranscription({
-      audioPath,
-      documentId: task.documentId,
-      recordingStartedAt: task.recordingStartedAt,
-      recordingStoppedAt: task.recordingStoppedAt,
-      recordingDurationSecs: task.recordingDurationSecs,
-      jobId: task.id,
-      model,
-      language: language ?? task.language,
-    });
-  };
-
-  return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open && models.length === 0) void refreshModels();
-      }}
-    >
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={(e) => e.stopPropagation()}
-                aria-label={t("activity.rerunTranscription")}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
-              >
-                <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={4}>
-            <p className="text-xs">{t("activity.rerunTranscription")}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          {t("activity.rerunWithModel")}
-        </DropdownMenuLabel>
-        {downloadedModels.length === 0 ? (
-          <DropdownMenuItem disabled>{t("activity.noModelsDownloaded")}</DropdownMenuItem>
-        ) : (
-          downloadedModels.map((m) => (
-            <DropdownMenuItem key={m.name} onSelect={() => handleRerun(m.name)}>
-              {modelDisplayName(m.name)}
-            </DropdownMenuItem>
-          ))
-        )}
-        {downloadedModels.length > 0 && (
-          <>
-        <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="text-xs">
-            {t("activity.rerunInLanguage")}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
-            {SPEECH_LANGUAGES.map((lang) => (
-              <DropdownMenuItem
-                key={lang.value}
-                onSelect={() =>
-                  handleRerun(
-                    // Not simply `defaultModel`: re-running to FIX a wrong
-                    // language must not hand the job to an English-only model.
-                    pickModelForLanguage(
-                      defaultModel,
-                      lang.value,
-                      downloadedModels.map((m) => m.name),
-                    ),
-                    lang.value,
-                  )
-                }
-              >
-                {lang.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
- * Transcription-job card (kind === 'transcription'). Distinct ScrollText icon
- * + label; a shadcn `Progress` bar while running (a spinner stands in when
- * progress is 0/unknown); a t("activity.moveToProject") action on completion; the shared
- * error treatment on failure. Once the transcript is ready the card itself is
- * clickable and opens the transcript note in the editor.
+ * - **Running**: what the backend is doing (queued, loading the model,
+ *   reading the audio, transcribing N%), a progress bar, the time spent and
+ *   an estimate of the time left, and a Cancel button.
+ * - **Done**: the card is clickable and opens the transcript.
+ * - **Failed**: WHY, in words; where to retry; and, when the cause is a
+ *   missing model, a button that goes to where models are downloaded.
+ * - **Interrupted** (the app quit mid-job) and **cancelled** are not
+ *   failures and are not drawn as one.
+ *
+ * Transcribing again is offered on every finished card and never overwrites
+ * an existing transcript without asking.
  */
 export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemove?: (id: string) => void }) {
   // Subscribe to language changes: the formatting helpers below read the
@@ -331,16 +194,22 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
   useFormatLocale();
 
   const { openFile } = useFileOperations();
+  const [pendingWrite, setPendingWrite] = useState<PendingTranscriptWrite | null>(null);
   const isRunning = task.status === 'running';
+  const isCancelled = task.status === 'cancelled';
+  const isInterrupted = task.status === 'error' && task.interrupted === true;
+  const isFailed = task.status === 'error' && !isInterrupted;
   const progress = task.progress ?? 0;
-  const showSpinner = isRunning && progress === 0;
+  // A boolean, so another job's progress does not re-render this card.
+  const queued = useActivityStore((s) => (isRunning ? isQueuedJob(task, s.tasks) : false));
+  const now = useNow(isRunning && !queued);
 
   const transcriptPath = task.transcriptPath;
   const canOpen = task.status === 'done' && !!transcriptPath;
   // Anything we can point Finder at: the transcript note, or the raw audio if
   // transcription failed before a note was written.
-  const revealTarget = transcriptPath ?? task.audioPath;
-  const canReveal = task.status !== 'running' && !!revealTarget;
+  const revealTarget = (task.status === 'done' ? transcriptPath : undefined) ?? task.audioPath ?? transcriptPath;
+  const canReveal = !isRunning && !!revealTarget;
   const summary = recordingSummary(task);
   // Always say which language the transcript was made in.
   //
@@ -357,16 +226,17 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
         ? task.detectedLanguage
         : task.language
       : undefined;
-  // The bundle folder holding the audio + transcript.md — "where did my
+  // The bundle folder holding the audio and the transcript — "where did my
   // recording go" should never be a question (#698).
   const bundlePath = revealTarget ? dirname(revealTarget) : undefined;
+  const modelMissing = isFailed && isModelMissingError(task.errorMessage);
 
   const handleOpen = async () => {
     if (!canOpen || !transcriptPath) return;
     try {
       await openFile(transcriptPath, pathBasename(transcriptPath));
     } catch (err) {
-      toast.error(`Failed to open transcript: ${err}`);
+      toast.error(t('recordings.openFailed', { error: String(err) }));
     }
   };
 
@@ -375,9 +245,41 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
     try {
       await tauriApi.revealInFinder(revealTarget);
     } catch (err) {
-      toast.error(`Failed to reveal: ${err}`);
+      toast.error(t('recordings.revealFailed', { error: String(err) }));
     }
   };
+
+  const rerun = (choice: Partial<RerunChoice>) => {
+    const audioPath = task.audioPath;
+    if (!audioPath) return;
+    void guardTranscriptWrite(dirname(audioPath), task.label, (mode) =>
+      startTranscription({
+        audioPath,
+        documentId: task.documentId,
+        recordingStartedAt: task.recordingStartedAt,
+        recordingStoppedAt: task.recordingStoppedAt,
+        recordingDurationSecs: task.recordingDurationSecs,
+        jobId: task.id,
+        model: choice.model,
+        language: choice.language ?? task.language,
+        transcriptMode: mode,
+      }),
+    ).then(setPendingWrite);
+  };
+
+  const statusLine =
+    task.status === 'done'
+      ? canOpen
+        ? t("activity.transcriptReadyOpen")
+        : t("activity.transcriptReady")
+      : isRunning
+        ? jobStatusText({ queued, stage: task.transcriptionStage, progress })
+        : isCancelled
+          ? t('transcription.cancelled')
+          : isInterrupted
+            ? t('transcription.errorInterrupted')
+            : t('transcription.failed');
+  const timing = isRunning && !queued ? jobTimingText({ ...task, now }) : null;
 
   return (
     <div
@@ -397,27 +299,32 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
     >
       <div className="flex items-start gap-2">
         <div className="shrink-0 mt-0.5">
-          {task.status === 'error' ? (
-            <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />
+          {isFailed ? (
+            <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} aria-hidden="true" />
           ) : task.status === 'done' ? (
-            <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+          ) : isCancelled || isInterrupted ? (
+            <CircleSlash className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
           ) : (
-            <ScrollText className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            <ScrollText className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-medium text-foreground truncate">
             {task.label}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {task.status === 'error'
-              ? t("activity.transcriptionFailed")
-              : task.status === 'done'
-                ? canOpen
-                  ? t("activity.transcriptReadyOpen")
-                  : t("activity.transcriptReady")
-                : t("activity.transcribing")}
+          {/* Announced when it CHANGES (queued → transcribing → ready). The
+              percent is not part of it once it is ticking: see below. */}
+          <p className="text-xs text-muted-foreground" role="status" aria-live="polite" data-testid="transcription-status">
+            {isRunning && !queued && task.transcriptionStage !== 'finishing' && (task.transcriptionStage === 'transcribing' || progress > 0)
+              ? t('activity.transcribing')
+              : statusLine}
           </p>
+          {isFailed && (
+            <p className="mt-0.5 text-xs text-destructive break-words" data-testid="transcription-error">
+              {describeTranscriptionError(task.errorMessage)}
+            </p>
+          )}
           {summary && (
             <p className="text-[11px] text-muted-foreground tabular-nums">{summary}</p>
           )}
@@ -430,40 +337,82 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           )}
           {languageUsed && (
             <p className="text-[11px] text-muted-foreground">
-              {autoDetected ? 'Detected language' : 'Language'}:{' '}
-              {autoDetected
-                ? languageDisplayName(languageUsed)
-                : speechLanguageLabel(languageUsed)}
+              {autoDetected ? t('activity.detectedLanguage') : t('activity.language')}:{' '}
+              {speechLanguageLabel(languageUsed)}
             </p>
           )}
         </div>
-        {/* Top-right action cluster — icon-only, hover-revealed, left of the
-            remove ✕: [Re-run] [Move to project] [Reveal in Finder] [✕]. */}
+        {/* Top-right action cluster: [Transcribe again] [Move to project]
+            [Reveal in Finder] [Remove]. */}
         {!isRunning && (
           <div className="flex shrink-0 items-center gap-0.5">
-            <RerunTranscriptionMenu task={task} />
+            {task.audioPath && (
+              <RerunTranscriptionMenu onPick={rerun}>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={t("activity.rerunTranscription")}
+                  title={t("activity.rerunTranscription")}
+                  className={CORNER_ACTION}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </Button>
+              </RerunTranscriptionMenu>
+            )}
             {task.status === 'done' && !task.moved && <MoveToProjectMenu task={task} />}
             {canReveal && (
               <IconActionButton
                 label={t("activity.revealInFinder")}
                 onClick={(e) => { e.stopPropagation(); void handleReveal(); }}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className={CORNER_ACTION}
               >
-                <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+                <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
               </IconActionButton>
             )}
             {onRemove && (
               <IconActionButton
-                label="Remove from this list — the audio and transcript stay on disk (use Reveal in Finder to delete them)"
+                label={t('transcription.removeFromList')}
                 onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
-                className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+                className={CORNER_ACTION}
               >
-                <X className="h-3 w-3" strokeWidth={1.5} />
+                <X className="h-3.5 w-3.5" strokeWidth={1.5} />
               </IconActionButton>
             )}
           </div>
         )}
       </div>
+
+      {/* What to do about a job that did not finish. Real buttons, with words. */}
+      {(isFailed || isInterrupted) && (
+        <div className="pl-5 flex flex-wrap items-center gap-1.5">
+          {isInterrupted && task.audioPath && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={(e) => { e.stopPropagation(); rerun({}); }}
+            >
+              {t('recordings.retry')}
+            </Button>
+          )}
+          <Button
+            variant={isInterrupted ? 'ghost' : 'outline'}
+            size="xs"
+            onClick={(e) => { e.stopPropagation(); useRecordingsStore.getState().openRecordings(); }}
+          >
+            {t('transcription.retryFromRecordings')}
+          </Button>
+          {modelMissing && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={(e) => { e.stopPropagation(); openTranscriptionSettings(); }}
+            >
+              {t('transcription.downloadModel')}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Bundle path — "where did my recording go" should never be a question. */}
       {!isRunning && bundlePath && (
@@ -474,23 +423,49 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
 
       {/* Progress affordance while running */}
       {isRunning && (
-        <div className="pl-5">
-          {showSpinner ? (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-              <span>{t("activity.starting")}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Progress value={progress} className="h-1.5 flex-1" />
-              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                {Math.round(progress)}%
+        <div className="pl-5 space-y-1">
+          <div className="flex items-center gap-2">
+            {task.transcriptionStage === 'transcribing' || progress > 0 ? (
+              <>
+                <Progress
+                  value={progress}
+                  className="h-1.5 flex-1"
+                  aria-label={t('transcription.progressLabel', { title: task.label })}
+                />
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {Math.round(progress)}%
+                </span>
+              </>
+            ) : (
+              <span className="flex flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+                {!queued && (
+                  <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+                )}
               </span>
-            </div>
+            )}
+            <Button
+              variant="outline"
+              size="xs"
+              className="shrink-0"
+              aria-label={t('transcription.cancelNamed', { title: task.label })}
+              onClick={(e) => { e.stopPropagation(); void cancelTranscriptionJob(task.id); }}
+            >
+              {t('common.cancel')}
+            </Button>
+          </div>
+          {timing && (
+            <p className="text-[11px] text-muted-foreground tabular-nums" data-testid="transcription-timing">
+              {timing}
+            </p>
           )}
         </div>
       )}
 
+      {/* Portalled, but React events still bubble to the card: without this a
+          click on "Replace" would also open the transcript. */}
+      <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <ReplaceTranscriptDialog pending={pendingWrite} onClose={() => setPendingWrite(null)} />
+      </div>
     </div>
   );
 }

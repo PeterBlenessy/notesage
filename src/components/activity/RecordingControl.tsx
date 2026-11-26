@@ -1,17 +1,17 @@
-import { Mic, Square } from 'lucide-react';
+import { Loader2, Mic, Square } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMeetingRecording } from '@/hooks/useMeetingRecording';
+import { recordingSourceLabel } from '@/hooks/useRecording';
+import { useRecordingStore } from '@/stores/recording-store';
+import { formatRecordedTime } from '@/lib/recording-time';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
+import { log } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 
-/** `mm:ss`, or `h:mm:ss` once a recording runs past an hour. */
-function formatElapsed(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  return s >= 3600 ? `${Math.floor(s / 3600)}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
 /**
- * Start / stop a voice recording, in the AgentOrb panel header (#696).
+ * Start / stop a recording, in the AgentOrb panel header (#696).
  *
  * The old entry point was a microphone inside `StatusTray` → `EditorToolsGroup`,
  * which returns null without a live `editor`. Once the status strip moved into
@@ -22,30 +22,71 @@ function formatElapsed(seconds: number): string {
  *
  * The orb is the honest home: it already owns recording and transcription
  * state, and it is always mounted, unlike the editor-scoped tray.
+ *
+ * A labelled button, not a bare 14px glyph: "Record" with the source it will
+ * capture, "Stop" with the recorded time while one is live, "Saving…" while
+ * the audio is being compressed (when a second start would be refused).
  */
 export function RecordingControl() {
-  const { toggleRecording, isRecording, elapsedTime } = useMeetingRecording();
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
+  const { toggleRecording, isRecording, elapsedTime, phase } = useMeetingRecording();
+  const nextSource = useRecordingStore((s) => s.lastUsedSource);
+  const busy = phase === 'starting' || phase === 'stopping';
+
+  const label =
+    phase === 'stopping'
+      ? t("recording.state.saving")
+      : phase === 'starting'
+        ? t("recording.state.starting")
+        : isRecording
+          ? t("recording.stopShort")
+          : t("recording.start");
+  const tooltip = isRecording
+    ? t("recording.stopAndSave")
+    : t("recording.startWith", { source: recordingSourceLabel(nextSource) });
 
   return (
-    <button
-      type="button"
-      onClick={() => void toggleRecording()}
-      aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-      title={isRecording ? 'Stop recording (⌘⇧R)' : 'Start recording (⌘⇧R)'}
-      className={cn(
-        'ios-press-row flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs',
-        'transition-colors hover:bg-muted',
-        isRecording ? 'text-[var(--color-destructive)]' : 'text-muted-foreground',
-      )}
-    >
-      {isRecording ? (
-        <>
-          <Square strokeWidth={1.5} className="h-3 w-3 fill-current" />
-          <span className="tabular-nums">{formatElapsed(elapsedTime)}</span>
-        </>
-      ) : (
-        <Mic strokeWidth={1.5} className="h-3.5 w-3.5" />
-      )}
-    </button>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            data-testid="recording-control"
+            onClick={() => {
+              void toggleRecording().catch((err) =>
+                log.warn('recording', 'Toggle recording failed', err),
+              );
+            }}
+            disabled={busy}
+            aria-pressed={isRecording}
+            aria-label={busy ? label : tooltip}
+            className={cn('shrink-0', isRecording && 'text-[var(--color-destructive)]')}
+          >
+            {busy ? (
+              <Loader2
+                className="size-3 animate-spin motion-reduce:animate-none"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            ) : isRecording ? (
+              <Square className="size-3 fill-current" strokeWidth={1.5} aria-hidden="true" />
+            ) : (
+              <Mic className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+            )}
+            <span>{label}</span>
+            {isRecording && !busy ? (
+              <span className="tabular-nums">{formatRecordedTime(elapsedTime)}</span>
+            ) : null}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="flex items-center gap-2 text-xs">
+          <span>{tooltip}</span>
+          <kbd className="font-sans text-[10px] text-muted-foreground">⌘⇧R</kbd>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

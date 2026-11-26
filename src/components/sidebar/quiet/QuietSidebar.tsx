@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
 import { useBackgroundActivity } from "@/components/editor/status/use-background-activity";
+import { RecordingIndicator } from "@/components/activity/RecordingIndicator";
 import { BackgroundActivityBar } from "@/components/sidebar/quiet/BackgroundActivityBar";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -265,6 +266,11 @@ export function QuietSidebar({
         <TagsSection filter={filter} />
         <MentionsSection filter={filter} />
       </div>
+      {/* Live recording indicator: a row of its OWN above the footer, present
+          only while a recording exists. Not inside the footer row — that row
+          already fits the Settings button and the status strip into as little
+          as 200px, and nothing may be laid over either. */}
+      <RecordingIndicator variant="sidebar" />
       {/* Sticky footer — OUTSIDE the scroll body so it never moves when the
           section list scrolls. Holds the discoverable Settings button and the
           status strip relocated from the editor footer. */}

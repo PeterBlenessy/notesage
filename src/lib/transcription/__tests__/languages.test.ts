@@ -16,7 +16,9 @@ import {
   detectSpeechLanguage,
   isLanguageMismatch,
   pickModelForLanguage,
+  speechLanguageOptions,
 } from '@/lib/transcription/languages';
+import { setLocale } from '@/lib/i18n';
 
 function withNavigatorLanguages(languages: string[]): void {
   vi.stubGlobal('navigator', { languages, language: languages[0] });
@@ -172,5 +174,39 @@ describe('pickModelForLanguage', () => {
     // A poor transcription the user can see is more useful than an action
     // that silently does nothing.
     expect(pickModelForLanguage('small', 'sv', ['small'])).toBe('small');
+  });
+});
+
+// U33: the language names were English only.
+describe('language names follow the app language', () => {
+  afterEach(() => setLocale(null));
+
+  it('names languages in English by default and in Swedish in a Swedish UI', () => {
+    setLocale('en');
+    expect(speechLanguageLabel('sv')).toBe('Swedish');
+    expect(speechLanguageLabel('auto')).toBe('Auto-detect');
+    setLocale('sv');
+    expect(speechLanguageLabel('sv')).toBe('Svenska');
+    expect(speechLanguageLabel('en')).toBe('Engelska');
+    expect(speechLanguageLabel('de')).toBe('Tyska');
+    expect(speechLanguageLabel('auto')).toBe('Identifiera automatiskt');
+  });
+
+  it('names a language Whisper detected that the picker does not list, and falls back to the code', () => {
+    setLocale('en');
+    expect(speechLanguageLabel('is')).toBe('Icelandic');
+    expect(speechLanguageLabel('zzz')).toBe('zzz');
+  });
+
+  it('offers every picker language once, auto-detect first, the rest sorted in the app language', () => {
+    setLocale('sv');
+    const options = speechLanguageOptions();
+    expect(options).toHaveLength(SPEECH_LANGUAGES.length);
+    expect(options[0]).toEqual({ value: 'auto', label: 'Identifiera automatiskt' });
+    expect(new Set(options.map((o) => o.value)).size).toBe(SPEECH_LANGUAGES.length);
+    const labels = options.slice(1).map((o) => o.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b, 'sv')));
+    // Swedish sorts "Ö…" last, not beside "O…".
+    expect(labels.indexOf('Svenska')).toBeLessThan(labels.indexOf('Tyska'));
   });
 });

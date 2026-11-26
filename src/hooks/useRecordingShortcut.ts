@@ -1,5 +1,13 @@
 import { useEffect } from "react";
-import { toggleMeetingRecording } from "@/hooks/useMeetingRecording";
+import {
+  initRecordingEvents,
+  toggleMeetingRecording,
+  togglePauseMeetingRecording,
+} from "@/hooks/useMeetingRecording";
+import { log } from "@/lib/logger";
+
+export const TOGGLE_RECORDING_EVENT = "notesage:toggle-recording";
+export const TOGGLE_RECORDING_PAUSE_EVENT = "notesage:toggle-recording-pause";
 
 /**
  * Wires the global `notesage:toggle-recording` event (⌘⇧R) to meeting
@@ -23,9 +31,26 @@ export function useRecordingShortcut(): void {
   // toggle, which reads `isRecording` lazily. It subscribes to nothing.
   useEffect(() => {
     const handle = () => {
-      void toggleMeetingRecording();
+      void toggleMeetingRecording().catch((err) => {
+        log.warn("recording", "Toggle recording failed", err);
+      });
     };
-    window.addEventListener("notesage:toggle-recording", handle);
-    return () => window.removeEventListener("notesage:toggle-recording", handle);
+    // ⌘⇧U: pause a running recording, resume a paused one.
+    const handlePause = () => {
+      void togglePauseMeetingRecording().catch((err) => {
+        log.warn("recording", "Pause/resume failed", err);
+      });
+    };
+    window.addEventListener(TOGGLE_RECORDING_EVENT, handle);
+    window.addEventListener(TOGGLE_RECORDING_PAUSE_EVENT, handlePause);
+    // The backend's level and warning events have the same "always mounted"
+    // requirement as the shortcut: a warning about a lost microphone must
+    // arrive whatever is on screen.
+    const stopEvents = initRecordingEvents();
+    return () => {
+      window.removeEventListener(TOGGLE_RECORDING_EVENT, handle);
+      window.removeEventListener(TOGGLE_RECORDING_PAUSE_EVENT, handlePause);
+      stopEvents();
+    };
   }, []);
 }

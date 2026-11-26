@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
 import { describe, it, expect, beforeEach } from "vitest";
-import { fireEvent, renderWithProviders, screen, waitFor } from "@/test/component-harness";
+import { act, fireEvent, renderWithProviders, screen, waitFor } from "@/test/component-harness";
+import { useRecordingStore } from "@/stores/recording-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { RecordingsSection } from "@/components/sidebar/quiet/RecordingsSection";
 import { useRecordingsStore } from "@/stores/recordings-store";
@@ -58,10 +59,25 @@ describe("RecordingsSection (sidebar row)", () => {
   it("badges the bundles that failed, because those are the ones wanting a decision", async () => {
     // Not a count of all recordings: they transcribe and file themselves, so a
     // standing total would never reach zero and would never mean anything.
+    // What `list_directory` returns one level deep: each bundle with its files.
+    const bundleEntry = (name: string) => ({
+      name,
+      path: `${DIR}/${name}`,
+      is_directory: true,
+      hidden: false,
+      children: ["audio.m4a", "recording.json"].map((file) => ({
+        name: file,
+        path: `${DIR}/${name}/${file}`,
+        is_directory: false,
+        hidden: false,
+      })),
+    });
     setMockInvokeHandler("list_directory", () => [
-      { name: "Recording 2026-09-05 12-04-00", path: `${DIR}/Recording 2026-09-05 12-04-00`, is_directory: true, hidden: false },
-      { name: "Recording 2026-09-06 09-00-00", path: `${DIR}/Recording 2026-09-06 09-00-00`, is_directory: true, hidden: false },
+      bundleEntry("Recording 2026-09-05 12-04-00"),
+      bundleEntry("Recording 2026-09-06 09-00-00"),
     ]);
+    setMockInvokeHandler("audio_file_status", () => ({ exists: true, size: 1024, local: true }));
+    setMockInvokeHandler("get_device_name", () => "Peter's Mac");
     setMockInvokeHandler("read_file", (args) =>
       String(args?.path ?? "").includes("2026-09-05")
         ? manifest({
@@ -97,5 +113,46 @@ describe("RecordingsSection (sidebar row)", () => {
     useRecordingsStore.setState({ open: true });
     useInboxStore.getState().openInbox();
     expect(useRecordingsStore.getState().open).toBe(false);
+  });
+
+  // U1: the view was a trap; clicking the row that opened it did nothing.
+  it("clicking the row again leaves the Recordings view, by mouse and by keyboard", async () => {
+    renderWithProviders(<RecordingsSection />);
+    const row = await screen.findByTestId("recordings-row");
+    fireEvent.click(row);
+    expect(useRecordingsStore.getState().open).toBe(true);
+    expect(row.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(row);
+    expect(useRecordingsStore.getState().open).toBe(false);
+    expect(row.getAttribute("aria-current")).toBeNull();
+
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(useRecordingsStore.getState().open).toBe(true);
+    fireEvent.keyDown(row, { key: " " });
+    expect(useRecordingsStore.getState().open).toBe(false);
+  });
+
+  it("shows on the row that a recording is in progress", async () => {
+    useRecordingStore.setState({ isRecording: false });
+    renderWithProviders(<RecordingsSection />);
+    await screen.findByTestId("recordings-row");
+    expect(screen.queryByTestId("recordings-live-dot")).toBeNull();
+    act(() => useRecordingStore.setState({ isRecording: true }));
+    expect(screen.getByTestId("recordings-live-dot").getAttribute("aria-label")).toBe("Recording in progress");
+    act(() => useRecordingStore.setState({ isRecording: false }));
+  });
+
+  it("names the failed count for assistive tech, in words", async () => {
+    useRecordingsStore.setState({
+      dir: DIR,
+      bundles: [{ status: "failed" }, { status: "failed" }, { status: "done" }] as never,
+    });
+    setMockInvokeHandler("list_directory", () => {
+      throw new Error("not now");
+    });
+    setMockInvokeHandler("path_exists", () => true);
+    useSettingsStore.setState({ homeDir: null, notesRootPath: undefined, icloudNotesagePath: undefined });
+    renderWithProviders(<RecordingsSection />);
+    expect(screen.getByTestId("recordings-failed").getAttribute("aria-label")).toBe("2 failed transcriptions");
   });
 });

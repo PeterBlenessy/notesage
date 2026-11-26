@@ -163,6 +163,22 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('resolve_wikilink', () => []);
   // MCP: no config entries failed to load.
   setMockInvokeHandler('mcp_config_problems', () => []);
+  // Transcription and import: a backend that has one short recording's worth
+  // to say, with every file on this disk.
+  setMockInvokeHandler('transcribe_file', () => ({
+    segments: [{ start: 0, end: 2, text: 'Hello.', speaker: null }],
+    duration_secs: 2,
+    language: 'en',
+    decoder: 'mock',
+  }));
+  setMockInvokeHandler('cancel_transcription', () => true);
+  setMockInvokeHandler('audio_file_status', () => ({ exists: true, size: 1024, local: true }));
+  setMockInvokeHandler('import_media', (args) => {
+    const source = String(args?.sourcePath ?? '');
+    const name = source.slice(source.lastIndexOf('/') + 1);
+    const dir = `${String(args?.destRecordingsDir ?? '')}/Import ${name.replace(/\.[^.]+$/, '')} 2026-01-01 000000`;
+    return { bundle_dir: dir, audio_path: `${dir}/audio.m4a`, duration_secs: 60, original_name: name };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -173,3 +189,118 @@ beforeEach(() => {
   clearMockInvokeHandlers();
   eventListeners.clear();
 });
+
+// ---------------------------------------------------------------------------
+// Recording commands (recording contract, 2026-11)
+// ---------------------------------------------------------------------------
+
+/** What `registerRecordingHandlers` recorded, in call order. */
+export interface RecordingMockLog {
+  /** Command names, in the order they were invoked. */
+  calls: string[];
+  /** Every `write_file`, in order. */
+  written: Array<{ path: string; content: string }>;
+  /** Arguments of every `finalize_recording_bundle`. */
+  finalized: Array<{ stagingDir: string; destRecordingsDir: string }>;
+}
+
+/**
+ * Register a small in-memory recorder behind the recording commands: a
+ * capture that can be started, paused, stopped into a LOCAL staging bundle,
+ * finalised into a library folder, or discarded. Call it in `beforeEach`
+ * (handlers are cleared between tests) and override single commands with
+ * `setMockInvokeHandler` afterwards.
+ *
+ * Returns a log of what was invoked, so a test can assert ORDER (the manifest
+ * is written into staging before the bundle is finalised).
+ */
+export function registerRecordingHandlers(): RecordingMockLog {
+  const log: RecordingMockLog = { calls: [], written: [], finalized: [] };
+  const STAGING = '/Users/me/.notesage/recordings-staging/Recording 2026-11-25 101500';
+  let recording = false;
+  let paused = false;
+  let source: string | null = null;
+  const on = (command: string, handler: (args?: Record<string, unknown>) => unknown) =>
+    setMockInvokeHandler(command, (args) => {
+      log.calls.push(command);
+      return handler(args);
+    });
+
+  on('recording_preflight', () => ({
+    microphone: 'granted',
+    system_audio: 'available',
+    input_device: 'MacBook Pro Microphone',
+    output_device: 'MacBook Pro Speakers',
+    free_bytes: 50_000_000_000,
+  }));
+  on('start_recording', (args) => {
+    recording = true;
+    paused = false;
+    source = String(args?.source ?? 'microphone');
+  });
+  on('pause_recording', () => {
+    paused = true;
+  });
+  on('resume_recording', () => {
+    paused = false;
+  });
+  on('stop_recording', () => {
+    const both = source === 'both';
+    recording = false;
+    paused = false;
+    return {
+      bundle_dir: STAGING,
+      audio_path: `${STAGING}/audio.m4a`,
+      tracks: both
+        ? [
+            { role: 'mic', path: `${STAGING}/mic.m4a` },
+            { role: 'system', path: `${STAGING}/system.m4a` },
+          ]
+        : [],
+      duration_secs: 4503,
+      peak: 0.4,
+      sample_rate: 48_000,
+      dropped_frames: 0,
+      warnings: [],
+    };
+  });
+  on('discard_recording', () => {
+    recording = false;
+    paused = false;
+  });
+  on('finalize_recording_bundle', (args) => {
+    const stagingDir = String(args?.stagingDir);
+    const destRecordingsDir = String(args?.destRecordingsDir);
+    log.finalized.push({ stagingDir, destRecordingsDir });
+    const name = stagingDir.split('/').pop() ?? 'Recording';
+    const dir = `${destRecordingsDir}/${name}`;
+    const both = source === 'both';
+    return {
+      bundle_dir: dir,
+      audio_path: `${dir}/audio.m4a`,
+      tracks: both
+        ? [
+            { role: 'mic', path: `${dir}/mic.m4a` },
+            { role: 'system', path: `${dir}/system.m4a` },
+          ]
+        : [],
+    };
+  });
+  on('recover_orphan_recordings', () => []);
+  on('get_recording_state', () => ({
+    recording,
+    paused,
+    source,
+    started_at_ms: recording ? Date.now() : null,
+    elapsed_recorded_ms: 0,
+  }));
+  on('list_whisper_models', () => [
+    { name: 'large-v3-turbo-q5_0', size_bytes: 574_000_000, downloaded: true },
+  ]);
+  on('file_size', () => 1_234_567);
+  on('get_device_name', () => "Peter's Mac");
+  on('write_file', (args) => {
+    log.written.push({ path: String(args?.path), content: String(args?.content) });
+  });
+  return log;
+}

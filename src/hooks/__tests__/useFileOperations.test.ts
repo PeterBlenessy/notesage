@@ -9,6 +9,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useInboxStore } from '@/stores/inbox-store';
+import { useRecordingsStore } from '@/stores/recordings-store';
 
 // Mock modules that useFileOperations imports but that aren't relevant to unit tests
 vi.mock('@/lib/refresh-notes-tree', () => ({
@@ -505,6 +506,49 @@ describe('openFile leaves the Inbox (the Inbox is a mode of the document column)
     });
     expect(useEditorStore.getState().activeTabId).toBe(before);
     expect(useInboxStore.getState().open).toBe(false);
+  });
+});
+
+// The Recordings list is the same kind of mode, and nothing ever closed it:
+// "Open transcript", a sidebar file and ⌘N all left the list covering the
+// document (recording review, U1).
+describe('openFile leaves the Recordings view too', () => {
+  beforeEach(() => {
+    resetStores();
+    useRecordingsStore.setState({ open: false });
+    setMockInvokeHandler('read_file', () => '# Transcript');
+  });
+
+  it('closes the Recordings view when a document is opened (a sidebar file, "Open transcript")', async () => {
+    useRecordingsStore.setState({ open: true });
+    const { result } = renderHook(() => useFileOperations());
+    await act(async () => {
+      await result.current.openFile('/lib/Recordings/Recording 1/Weekly sync.md', 'Weekly sync.md');
+    });
+    expect(useRecordingsStore.getState().open).toBe(false);
+    expect(useEditorStore.getState().activeTabId).not.toBeNull();
+  });
+
+  it('closes it even when that transcript was already the active document behind the list', async () => {
+    const { result } = renderHook(() => useFileOperations());
+    await act(async () => {
+      await result.current.openFile('/lib/Recordings/Recording 1/Weekly sync.md', 'Weekly sync.md');
+    });
+    const before = useEditorStore.getState().activeTabId;
+    useRecordingsStore.setState({ open: true });
+    await act(async () => {
+      await result.current.openFile('/lib/Recordings/Recording 1/Weekly sync.md', 'Weekly sync.md');
+    });
+    expect(useEditorStore.getState().activeTabId).toBe(before);
+    expect(useRecordingsStore.getState().open).toBe(false);
+  });
+
+  it('closes it when a new note becomes the active document (⌘N)', () => {
+    useRecordingsStore.setState({ open: true });
+    act(() => {
+      useEditorStore.getState().openTab('/lib/Untitled.md', 'Untitled.md', '', null, 'markdown');
+    });
+    expect(useRecordingsStore.getState().open).toBe(false);
   });
 });
 

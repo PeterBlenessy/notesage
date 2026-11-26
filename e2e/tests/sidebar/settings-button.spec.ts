@@ -172,4 +172,112 @@ tauriTest.describe('Sidebar footer — Settings button', () => {
       .click();
     await expect(page.getByRole('dialog').filter({ hasText: 'Settings' }).first()).toBeVisible();
   });
+
+  // The recording indicator is the third thing to arrive next to this footer
+  // (after the status strip and the indexing bar). It gets a row of its own
+  // ABOVE the footer, so the footer row must be exactly what it was: same
+  // height, same button position, nothing over the button or the strip —
+  // with the indexing bar up at the same time, and with a warning making the
+  // indicator taller.
+  for (const translucent of [false, true]) {
+    tauriTest(`is not covered while a recording is live (translucent chrome ${translucent ? 'on' : 'off'})`, async ({ page }) => {
+      await page.evaluate((on) => {
+        document.querySelector('.app')?.setAttribute('data-quiet-chrome-transparent', on ? 'true' : 'false');
+      }, translucent);
+
+      const footerIdle = await page.evaluate(() => {
+        const button = document.querySelector<HTMLElement>(
+          'nav[aria-label="Workspace sidebar"] button[aria-label="Settings"]',
+        );
+        const footer = button?.parentElement;
+        if (!button || !footer) return null;
+        const nav = footer.closest('nav')!.getBoundingClientRect();
+        return {
+          height: footer.getBoundingClientRect().height,
+          // Measured from the sidebar's bottom edge: the footer stays put.
+          fromBottom: nav.bottom - button.getBoundingClientRect().bottom,
+        };
+      });
+      expect(footerIdle).not.toBeNull();
+
+      await page.keyboard.press('Meta+Shift+r');
+      const indicator = page.locator('[data-recording-indicator="sidebar"]');
+      await expect(indicator).toBeVisible();
+      await expect(indicator.locator('[data-recording-state]')).toHaveText('Recording');
+      // Both at once: indexing bar and a recording with a warning.
+      await emitTauriEvent(page, 'index-progress', { project_path: null, current: 1200, total: 3000 });
+      await expect(page.locator('[data-activity-bar]')).toHaveCount(1);
+      await emitTauriEvent(page, 'recording-warning', { kind: 'silence', message: 'no signal', fatal: false });
+      await expect(indicator.locator('[data-recording-warning="silence"]')).toBeVisible();
+
+      for (const width of SIDEBAR_WIDTHS) {
+        await page.evaluate((w) => {
+          document.documentElement.style.setProperty('--quiet-sidebar-width', `${w}px`);
+          const nav = document.querySelector<HTMLElement>('nav[aria-label="Workspace sidebar"]');
+          if (nav) nav.style.width = `${w}px`;
+        }, width);
+
+        const result = await topElementAtSettingsButton(page);
+        expect(result.found, `Settings button exists at ${width}px`).toBe(true);
+        expect(result.overlap, `status strip overlaps the button at ${width}px`).toBe(false);
+        expect(result.onTop, `button is the top element at ${width}px`).toEqual([true, true, true]);
+
+        const m = await page.evaluate(() => {
+          const ind = document.querySelector<HTMLElement>('[data-recording-indicator="sidebar"]');
+          const button = document.querySelector<HTMLElement>(
+            'nav[aria-label="Workspace sidebar"] button[aria-label="Settings"]',
+          );
+          const strip = document.querySelector<HTMLElement>('[data-quiet-status]');
+          const footer = button?.parentElement ?? null;
+          if (!ind || !button || !strip || !footer) return null;
+          const overlaps = (a: DOMRect, b: DOMRect) =>
+            a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+          const i = ind.getBoundingClientRect();
+          const f = footer.getBoundingClientRect();
+          const s = strip.getBoundingClientRect();
+          const nav = footer.closest('nav')!.getBoundingClientRect();
+          const stripHit = document.elementFromPoint(s.left + s.width / 2, s.top + s.height / 2);
+          return {
+            // A sibling of the footer, entirely above it.
+            inFooter: footer.contains(ind),
+            aboveFooter: i.bottom <= f.top,
+            coversFooter: overlaps(i, f),
+            coversButton: overlaps(i, button.getBoundingClientRect()),
+            coversStrip: overlaps(i, s),
+            stripOnTop: stripHit !== null && strip.contains(stripHit),
+            insideSidebar: i.left >= nav.left && i.right <= nav.right,
+            footerHeight: f.height,
+            buttonFromBottom: nav.bottom - button.getBoundingClientRect().bottom,
+          };
+        });
+        expect(m, `indicator, button and strip exist at ${width}px`).not.toBeNull();
+        if (!m || !footerIdle) continue;
+        expect(m.inFooter, `indicator is not inside the footer row at ${width}px`).toBe(false);
+        expect(m.aboveFooter, `indicator is above the footer at ${width}px`).toBe(true);
+        expect(m.coversFooter, `indicator covers the footer at ${width}px`).toBe(false);
+        expect(m.coversButton, `indicator covers the Settings button at ${width}px`).toBe(false);
+        expect(m.coversStrip, `indicator covers the status strip at ${width}px`).toBe(false);
+        expect(m.stripOnTop, `status strip is the top element at ${width}px`).toBe(true);
+        expect(m.insideSidebar, `indicator stays inside the sidebar at ${width}px`).toBe(true);
+        expect(m.footerHeight, `footer height is unchanged at ${width}px`).toBe(footerIdle.height);
+        expect(m.buttonFromBottom, `Settings button has not moved at ${width}px`).toBe(footerIdle.fromBottom);
+      }
+
+      // Still clickable with the indicator up.
+      await page
+        .locator('nav[aria-label="Workspace sidebar"]')
+        .getByRole('button', { name: 'Settings' })
+        .click();
+      const dialog = page.getByRole('dialog').filter({ hasText: 'Settings' }).first();
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      // The recording ends: the indicator goes and the footer is as it was.
+      await page.keyboard.press('Meta+Shift+r');
+      await expect(indicator).toHaveCount(0);
+      const after = await topElementAtSettingsButton(page);
+      expect(after.onTop).toEqual([true, true, true]);
+    });
+  }
 });

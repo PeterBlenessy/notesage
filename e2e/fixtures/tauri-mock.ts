@@ -90,6 +90,34 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
       const HOME_DIR = '/tmp/notesage-e2e-home';
       const NOTESAGE_LIB = `${HOME_DIR}/Notesage`;
 
+      // State behind the recording command handlers below. Exposed on
+      // `window.__RECORDING_MOCK__` so a spec can change the preflight answer
+      // or pretend an hour has been recorded.
+      const RECORDING_STAGING = `${HOME_DIR}/.notesage/recordings-staging/Recording 2026-11-25 101500`;
+      const recordingMock = {
+        recording: false,
+        paused: false,
+        source: 'microphone',
+        startedAt: 0,
+        pausedAt: 0,
+        pausedTotal: 0,
+        /** When set, the recorded time reported, whatever the clock says. */
+        elapsedMs: null as number | null,
+        preflight: {
+          microphone: 'granted',
+          system_audio: 'available',
+          input_device: 'MacBook Pro Microphone',
+          output_device: 'MacBook Pro Speakers',
+          free_bytes: 50_000_000_000,
+        } as Record<string, unknown>,
+      };
+      const recordingMockElapsed = (): number => {
+        if (recordingMock.elapsedMs !== null) return recordingMock.elapsedMs;
+        const end = recordingMock.paused ? recordingMock.pausedAt : Date.now();
+        return Math.max(0, end - recordingMock.startedAt - recordingMock.pausedTotal);
+      };
+      (window as Record<string, unknown>).__RECORDING_MOCK__ = recordingMock;
+
       const defaultHandlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
         // File operations
         list_directory: () => fileTree,
@@ -145,6 +173,89 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Transcription
         list_whisper_models: () => [],
+        transcribe_file: () => ({
+          segments: [{ start: 0, end: 2, text: 'Hello from the mock.', speaker: null }],
+          duration_secs: 2,
+          language: 'en',
+          decoder: 'mock',
+        }),
+        cancel_transcription: () => true,
+        audio_file_status: () => ({ exists: true, size: 1024, local: true }),
+        file_size: () => 1024,
+        icloud_ensure_downloaded: () => 'ready',
+        get_device_name: () => 'E2E Mac',
+        // Import: a new bundle named after the picked file, as `import_media` makes one.
+        import_media: (args) => {
+          const source = String(args?.sourcePath ?? '');
+          const name = source.slice(source.lastIndexOf('/') + 1);
+          const dir = `${String(args?.destRecordingsDir ?? '')}/Import ${name.replace(/\.[^.]+$/, '')} 2026-01-01 000000`;
+          return { bundle_dir: dir, audio_path: `${dir}/audio.m4a`, duration_secs: 60, original_name: name };
+        },
+
+        // Recording (recording contract, 2026-11): a small in-page recorder so
+        // a spec can start, pause, stop and discard. The clock is the wall
+        // clock minus paused time; a spec that needs a long recording sets
+        // `window.__RECORDING_MOCK__.elapsedMs`. Levels and warnings are not
+        // produced here: a spec emits `recording-level` / `recording-warning`.
+        recording_preflight: () => recordingMock.preflight,
+        start_recording: (args) => {
+          recordingMock.recording = true;
+          recordingMock.paused = false;
+          recordingMock.source = String(args?.source ?? 'microphone');
+          recordingMock.startedAt = Date.now();
+          recordingMock.pausedAt = 0;
+          recordingMock.pausedTotal = 0;
+          recordingMock.elapsedMs = null;
+          return null;
+        },
+        pause_recording: () => {
+          recordingMock.paused = true;
+          recordingMock.pausedAt = Date.now();
+          return null;
+        },
+        resume_recording: () => {
+          if (recordingMock.paused) recordingMock.pausedTotal += Date.now() - recordingMock.pausedAt;
+          recordingMock.paused = false;
+          return null;
+        },
+        stop_recording: () => {
+          const durationSecs = recordingMockElapsed() / 1000;
+          const both = recordingMock.source === 'both';
+          recordingMock.recording = false;
+          recordingMock.paused = false;
+          return {
+            bundle_dir: RECORDING_STAGING,
+            audio_path: `${RECORDING_STAGING}/audio.m4a`,
+            tracks: both
+              ? [
+                  { role: 'mic', path: `${RECORDING_STAGING}/mic.m4a` },
+                  { role: 'system', path: `${RECORDING_STAGING}/system.m4a` },
+                ]
+              : [],
+            duration_secs: durationSecs,
+            peak: 0.4,
+            sample_rate: 48000,
+            dropped_frames: 0,
+            warnings: [],
+          };
+        },
+        discard_recording: () => {
+          recordingMock.recording = false;
+          recordingMock.paused = false;
+          return null;
+        },
+        finalize_recording_bundle: (args) => {
+          const dir = `${String(args?.destRecordingsDir)}/Recording 2026-11-25 101500`;
+          return { bundle_dir: dir, audio_path: `${dir}/audio.m4a`, tracks: [] };
+        },
+        recover_orphan_recordings: () => [],
+        get_recording_state: () => ({
+          recording: recordingMock.recording,
+          paused: recordingMock.paused,
+          source: recordingMock.recording ? recordingMock.source : null,
+          started_at_ms: recordingMock.recording ? recordingMock.startedAt : null,
+          elapsed_recorded_ms: recordingMock.recording ? recordingMockElapsed() : 0,
+        }),
 
         // Skills / Agents
         discover_skills: () => [],

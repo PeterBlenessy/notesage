@@ -93,7 +93,7 @@ interface Finding {
  * A ceiling that cannot see the thing it counts is worse than no ceiling: it
  * reports success while the work goes backwards. Move it DOWN from here.
  */
-const CEILING = 1011;
+const CEILING = 977;
 
 /**
  * Directories that ARE finished. These get a hard zero — once an area is fully

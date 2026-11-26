@@ -18,7 +18,10 @@ import {
   bundleDirForEvent,
   isRecordingBundleName,
   manifestLanguage,
+  heldByAnotherDevice,
   BUNDLE_REEVALUATE_DEBOUNCE_MS,
+  CLAIM_RECHECK_MS,
+  CLAIM_REFRESH_MS,
   RUNNING_CLAIM_TTL_MS,
   type EligibleBundle,
 } from '@/hooks/useRecordingsInbox';
@@ -207,7 +210,7 @@ beforeEach(() => {
   installFs();
   window.addEventListener(START_TRANSCRIPTION_EVENT, onStart);
   useActivityStore.setState({ tasks: [] });
-  useRecordingStore.setState({ defaultModel: 'large-v3-turbo-q5_0', speechLanguage: 'en' });
+  useRecordingStore.setState({ defaultModel: 'large-v3-turbo-q5_0', speechLanguage: 'en', availableModels: [] });
   useSettingsStore.setState({
     startupReady: true,
     notesRootPath: '/lib',
@@ -257,10 +260,40 @@ describe('evaluateBundle', () => {
       manifest({ transcription: { status: 'running', device, updatedAt: iso(msAgo) } });
     expect(evaluateBundle(facts({ manifest: running(5 * 60_000, "Peter's iMac") }), ctx())).toMatchObject({ verdict: 'skip', reason: 'running-elsewhere' });
     expect(evaluateBundle(facts({ manifest: running(RUNNING_CLAIM_TTL_MS + 1, "Peter's iMac") }), ctx()).verdict).toBe('eligible');
-    // Our own stale claim (a crash mid-run) is ours to retake.
-    expect(evaluateBundle(facts({ manifest: running(1000, MAC) }), ctx()).verdict).toBe('eligible');
     // An undatable claim never locks the bundle forever.
     expect(evaluateBundle(facts({ manifest: running(0, 'X') }), { ...ctx(), now: NaN }).verdict).toBe('eligible');
+  });
+  // U17: this Mac's own `running` claim with no job behind it is what a quit
+  // mid-transcription leaves. It is neither "running" nor silently restarted.
+  it('reports our own claim with no job behind it as stale, and as running while the job exists', () => {
+    const ours = manifest({ transcription: { status: 'running', device: MAC, updatedAt: iso(1000) } });
+    expect(evaluateBundle(facts({ manifest: ours }), ctx()).verdict).toBe('stale-own-claim');
+    const tracked = new Set([`${dir}/audio.m4a`]);
+    expect(evaluateBundle(facts({ manifest: ours }), { ...ctx(), trackedAudioPaths: tracked })).toMatchObject({
+      verdict: 'skip',
+      reason: 'already-tracked',
+    });
+  });
+  it('leaves a bundle the user cancelled alone', () => {
+    expect(evaluateBundle(facts({ manifest: manifest({ autoTranscribe: false }) }), ctx())).toMatchObject({
+      verdict: 'skip',
+      reason: 'cancelled-by-user',
+    });
+  });
+  // U28 / S3: a dataless iCloud file reports its full size and holds no data.
+  it('waits for audio that is on disk in name only', () => {
+    expect(evaluateBundle(facts({ audioLocal: false }), ctx())).toMatchObject({ verdict: 'wait', reason: 'not-downloaded' });
+    expect(evaluateBundle(facts({ audioLocal: true }), ctx()).verdict).toBe('eligible');
+  });
+  it('heldByAnotherDevice: only a fresh running claim by someone else', () => {
+    const claim = (device: string, msAgo: number) =>
+      manifest({ transcription: { status: 'running', device, updatedAt: iso(msAgo) } });
+    const now = Date.now();
+    expect(heldByAnotherDevice(claim("Peter's iMac", 1000), MAC, now)).toBe(true);
+    expect(heldByAnotherDevice(claim(MAC, 1000), MAC, now)).toBe(false);
+    expect(heldByAnotherDevice(claim("Peter's iMac", RUNNING_CLAIM_TTL_MS + 1), MAC, now)).toBe(false);
+    expect(heldByAnotherDevice(manifest(), MAC, now)).toBe(false);
+    expect(heldByAnotherDevice(null, MAC, now)).toBe(false);
   });
   it('skips a bundle the activity store already tracks by audioPath', () => {
     const tracked = new Set([`${dir}/audio.m4a`]);
@@ -424,13 +457,197 @@ describe('useRecordingsInbox — skip rules on disk', () => {
     expect(status(failed)).toMatchObject({ status: 'failed', error: 'boom' });
   });
 
-  it('skips a bundle the activity store already tracks by audioPath', async () => {
+  it('skips a bundle that already has a job running for its audio', async () => {
+    const a = bundle('Recording 2026-09-05 14-02-11');
+    useActivityStore.getState().addTranscriptionJob({ id: 'pre', label: 'Recording', audioPath: `${a}/audio.m4a` });
+    mount();
+    await flush();
+    expect(dispatched).toHaveLength(0);
+  });
+
+  // U17: a card left over from an earlier attempt says nothing about now. It
+  // used to hide the bundle from the scanner for as long as it stayed listed.
+  it('does not treat a finished or failed card as "already tracked"', async () => {
     const a = bundle('Recording 2026-09-05 14-02-11');
     useActivityStore.getState().addTranscriptionJob({ id: 'pre', label: 'Recording', audioPath: `${a}/audio.m4a` });
     useActivityStore.getState().setTranscriptionError('pre');
     mount();
     await flush();
+    expect(dispatched.map((d) => d.audioPath)).toEqual([`${a}/audio.m4a`]);
+  });
+});
+
+// ===========================================================================
+// S4 — what the startup scan costs
+// ===========================================================================
+
+describe('useRecordingsInbox — cost of the startup scan (S4)', () => {
+  it('lists one level deep, once, and reads only what each bundle\'s state needs', async () => {
+    const done = bundle('Recording 2026-09-01 09-00-00', { transcript: true });
+    const noManifest = bundle('Recording 2026-09-02 09-00-00', { manifest: null });
+    const pending = bundle('Recording 2026-09-03 09-00-00');
+    const failed = bundle('Recording 2026-09-04 09-00-00', {
+      manifest: manifest({ transcription: { status: 'failed', device: MAC, updatedAt: iso(1000), error: 'boom' } }),
+    });
+
+    const calls: Array<{ cmd: string; path: string; maxDepth?: unknown }> = [];
+    const names = (dir: string) => {
+      const out = new Set<string>();
+      for (const k of [...texts.keys(), ...sizes.keys()]) {
+        if (k.startsWith(`${dir}/`)) out.add(k.slice(dir.length + 1).split('/')[0]);
+      }
+      return [...out];
+    };
+    // The real command at depth 1: the bundle folders, each with its files.
+    setMockInvokeHandler('list_directory', (args) => {
+      calls.push({ cmd: 'list_directory', path: String(args?.path), maxDepth: args?.maxDepth });
+      return names(String(args?.path)).map((name) => {
+        const path = `${String(args?.path)}/${name}`;
+        return {
+          name,
+          path,
+          is_directory: true,
+          hidden: false,
+          children: names(path).map((f) => ({ name: f, path: `${path}/${f}`, is_directory: false, hidden: false })),
+        };
+      });
+    });
+    for (const cmd of ['read_file', 'path_exists', 'file_size'] as const) {
+      const inner =
+        cmd === 'read_file'
+          ? (path: string) => {
+              if (!texts.has(path)) throw new Error(`ENOENT ${path}`);
+              return texts.get(path);
+            }
+          : cmd === 'path_exists'
+            ? (path: string) => texts.has(path) || sizes.has(path) || isDir(path)
+            : (path: string) => {
+                if (!sizes.has(path)) throw new Error(`ENOENT ${path}`);
+                return sizes.get(path);
+              };
+      setMockInvokeHandler(cmd, (args) => {
+        calls.push({ cmd, path: String(args?.path) });
+        return inner(String(args?.path));
+      });
+    }
+    setMockInvokeHandler('audio_file_status', (args) => {
+      const path = String(args?.path);
+      calls.push({ cmd: 'audio_file_status', path });
+      return { exists: sizes.has(path), size: sizes.get(path) ?? 0, local: true };
+    });
+
+    mount();
+    await flush();
+
+    const count = (cmd: string, dir?: string) => calls.filter((c) => c.cmd === cmd && (!dir || c.path.startsWith(dir))).length;
+    // One listing, one level deep. Never the unbounded walk.
+    expect(calls.filter((c) => c.cmd === 'list_directory')).toEqual([{ cmd: 'list_directory', path: DIR, maxDepth: 1 }]);
+    // The file names came with the listing: no existence checks at all.
+    expect(count('path_exists')).toBe(0);
+    // A bundle with no manifest costs nothing more.
+    expect(count('read_file', noManifest)).toBe(0);
+    expect(count('audio_file_status', noManifest)).toBe(0);
+    // A finished or failed one: its manifest, and nothing about its audio.
+    expect(count('read_file', done)).toBe(1);
+    expect(count('audio_file_status', done)).toBe(0);
+    expect(count('audio_file_status', failed)).toBe(0);
+    // Only the one that needs transcribing has its audio looked at, once.
+    expect(count('audio_file_status', pending)).toBe(1);
+    expect(dispatched.map((d) => d.audioPath)).toEqual([`${pending}/audio.m4a`]);
+  });
+
+  it('waits, without a job, while no model is downloaded; goes when one is', async () => {
+    useRecordingStore.setState({
+      availableModels: [{ name: 'large-v3-turbo-q5_0', size_bytes: 1, downloaded: false }],
+    } as Partial<ReturnType<typeof useRecordingStore.getState>>);
+    const a = bundle('Recording 2026-09-05 14-02-11');
+    mount();
+    await flush();
+    // No job, no failure toast, no claim: the recording simply is not transcribed yet.
     expect(dispatched).toHaveLength(0);
+    expect(status(a)).toBeNull();
+
+    useRecordingStore.setState({
+      availableModels: [{ name: 'medium', size_bytes: 1, downloaded: true }],
+    } as Partial<ReturnType<typeof useRecordingStore.getState>>);
+    await flush();
+    expect(dispatched).toHaveLength(1);
+    // The default is not downloaded, so the one that is gets named.
+    expect(dispatched[0]).toMatchObject({ audioPath: `${a}/audio.m4a`, model: 'medium' });
+  });
+});
+
+// ===========================================================================
+// U17 — a quit mid-transcription, cancelling, and two Macs claiming one bundle
+// ===========================================================================
+
+describe('useRecordingsInbox — interrupted jobs, cancel and claims', () => {
+  it("rewrites this Mac's own stale claim as failed/interrupted instead of leaving it running or restarting it", async () => {
+    const a = bundle('Recording 2026-09-05 14-02-11', {
+      manifest: manifest({ transcription: { status: 'running', device: MAC, updatedAt: iso(60_000) } }),
+    });
+    mount();
+    await flush();
+    expect(status(a)).toMatchObject({ status: 'failed', device: MAC, error: 'interrupted' });
+    // Not restarted behind the user's back: a job that took the app down once
+    // would otherwise do so on every launch.
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('a cancelled job leaves the recording untranscribed, not failed, and is not restarted', async () => {
+    const a = bundle('Recording 2026-09-05 14-02-11');
+    mount();
+    await flush();
+    expect(status(a)).toMatchObject({ status: 'running', device: MAC });
+    const task = runningJobs()[0];
+    useActivityStore.getState().setTranscriptionCancelled(task.id);
+    await flush();
+    expect(status(a)).toBeNull();
+    expect(manifestOnDisk(a)?.autoTranscribe).toBe(false);
+
+    // The manifest write is itself a watcher event; it must not start the job again.
+    dispatched.length = 0;
+    emitMockEvent('file-changed-batch', [{ path: `${a}/recording.json`, kind: 'modify' }]);
+    await debounce();
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('refreshes the claim while a long job runs, so it never looks stale to another Mac', async () => {
+    const a = bundle('Recording 2026-09-05 14-02-11');
+    mount();
+    await flush();
+    const first = status(a)?.updatedAt;
+    await vi.advanceTimersByTimeAsync(CLAIM_REFRESH_MS + 1000);
+    await flush();
+    const second = status(a)?.updatedAt;
+    expect(status(a)).toMatchObject({ status: 'running', device: MAC });
+    expect(second).not.toBe(first);
+    expect(Date.parse(second ?? '')).toBeGreaterThan(Date.parse(first ?? ''));
+  });
+
+  it("yields when another Mac's claim is found a few seconds after claiming, and leaves that claim in place", async () => {
+    const cancelled: Array<Record<string, unknown> | undefined> = [];
+    setMockInvokeHandler('cancel_transcription', (args) => {
+      cancelled.push(args);
+      return false; // nothing ran under that id in this stand-in: the hook flips the card itself
+    });
+    const a = bundle('Recording 2026-09-05 14-02-11');
+    mount();
+    await flush();
+    const task = runningJobs()[0];
+    // iCloud delivers the other Mac's write over ours.
+    const theirs = { status: 'running' as const, device: "Peter's iMac", updatedAt: iso(0) };
+    texts.set(`${a}/recording.json`, serializeRecordingManifest({ ...manifestOnDisk(a)!, transcription: theirs }));
+
+    await vi.advanceTimersByTimeAsync(CLAIM_RECHECK_MS + 100);
+    await flush();
+
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0]).toMatchObject({ jobId: task.id, audioPath: `${a}/audio.m4a` });
+    expect(useActivityStore.getState().tasks.find((t) => t.id === task.id)?.status).toBe('cancelled');
+    // Their claim stays; we do not clear it or mark the bundle as cancelled by the user.
+    expect(status(a)).toMatchObject({ status: 'running', device: "Peter's iMac" });
+    expect(manifestOnDisk(a)?.autoTranscribe).toBeUndefined();
   });
 });
 

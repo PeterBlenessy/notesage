@@ -13,14 +13,20 @@ export type { TrayRecentFile };
  * Must be mounted in App.tsx.
  */
 export function useTraySync() {
-  // Sync badge count from activity store
-  const tasks = useActivityStore((s) => s.tasks);
+  // Sync badge count from activity store.
+  //
+  // The selector returns the COUNT, a primitive, not the `tasks` array. This
+  // hook is mounted in `App`, so subscribing to the array re-rendered the
+  // whole app on every task update: a transcription's progress stream, an
+  // agent's token stream. A count only changes when a task starts or ends.
+  const pendingCount = useActivityStore((s) => {
+    let count = 0;
+    for (const task of s.tasks) if (task.status === "running") count += 1;
+    return count;
+  });
   useEffect(() => {
-    const pendingCount = tasks.filter(
-      (t) => t.status === "running"
-    ).length;
     invoke("update_tray_badge", { count: pendingCount }).catch(() => {});
-  }, [tasks]);
+  }, [pendingCount]);
 
   // Sync recent files from editor store, filtered by active chat scope.
   // `files` is the scoped list (primary submenu); `allFiles` is the unfiltered
