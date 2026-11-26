@@ -193,6 +193,18 @@ cpal = "0.17"
 symphonia = { version = "0.6", default-features = false, features = [
     "wav", "pcm", "mp3", "aac", "alac", "isomp4", "flac", "ogg", "vorbis", "aiff", "caf",
 ] }
+# Speaker identification: runs the ONNX voice-embedding model. Pure Rust
+# (MIT OR Apache-2.0), so there is no native library to ship, sign or load,
+# and nothing is downloaded at build time. Desktop only, for the same reason
+# as `whisper-rs`: the mobile reader identifies no speakers. See
+# `docs/features/speakers.md` for why this and not ONNX Runtime.
+#
+# 0.22.2 is the floor: earlier releases have RUSTSEC-2026-0217 (integer
+# overflow in the NNEF tensor parser). The patched 0.21.x releases cannot be
+# used, since their tract-linalg requires `time < 0.3.42`, which collides
+# with the `time` that Tauri's plist needs. The voice model gives identical
+# embeddings on 0.21.10 and 0.22.6 (compared on the real model file).
+tract-onnx = "0.22.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }

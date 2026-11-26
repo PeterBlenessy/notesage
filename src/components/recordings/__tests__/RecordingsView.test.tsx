@@ -1123,7 +1123,7 @@ describe("RecordingsView — in Swedish (U33)", () => {
 
     openMenu(within(row).getByRole("button", { name: "Fler åtgärder: Veckomöte" }));
     const items = (await screen.findAllByRole("menuitem")).map((i) => i.textContent);
-    expect(items).toEqual(["Byt namn", "Talare", "Lägg till Teams-transkription…", "Visa i Finder", "Radera…"]);
+    expect(items).toEqual(["Byt namn", "Talare", "Identifiera talare…", "Lägg till Teams-transkription…", "Visa i Finder", "Radera…"]);
   });
 });
 

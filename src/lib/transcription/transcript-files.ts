@@ -20,15 +20,18 @@ import {
   type RecordingManifestTrack,
 } from '@/lib/transcription/manifest';
 import { parseTranscriptSegments } from '@/lib/transcription/render-transcript';
+import { isGenericLabel } from '@/lib/speakers/display-names';
 import {
   SEGMENTS_FILENAME,
   SPEAKERS_FILENAME,
   SPEAKER_ME,
+  SPEAKER_NUMBERED,
   SPEAKER_OTHERS,
   freeTranscriptFileName,
   hashTranscript,
   parseSegmentsFile,
   parseSpeakersFile,
+  parseSpeakersExtras,
   renderTranscriptBody,
   renderTranscriptNote,
   replaceSpeakerNameInText,
@@ -39,6 +42,7 @@ import {
   speakerLabels,
   type Segment,
   type SpeakerNames,
+  type SpeakersFileExtras,
 } from '@/lib/transcription/segments';
 import {
   assignSpeakers,
@@ -67,6 +71,9 @@ export function defaultSpeakerNames(): SpeakerNames {
   return {
     [SPEAKER_ME]: t('transcription.speakerMe'),
     [SPEAKER_OTHERS]: t('transcription.speakerOthers'),
+    // The template for the voices analysis numbers: `speaker-2` shows as
+    // "Speaker 2" until the user names it. Not a label (see `SPEAKER_NUMBERED`).
+    [SPEAKER_NUMBERED]: t('speakers.speakerN', { n: '{n}' }),
   };
 }
 
@@ -84,8 +91,49 @@ export async function readSpeakers(bundleDir: string): Promise<SpeakerNames> {
   }
 }
 
-export async function writeSpeakers(bundleDir: string, names: SpeakerNames): Promise<void> {
-  await tauriApi.writeFile(joinPath(bundleDir, SPEAKERS_FILENAME), serializeSpeakersFile(names));
+/**
+ * What `speakers.json` holds besides names: the participants the user listed
+ * and the labels voice analysis found.
+ */
+export async function readSpeakersExtras(bundleDir: string): Promise<{ participants: string[]; labels: string[] }> {
+  try {
+    return parseSpeakersExtras(await tauriApi.readFile(joinPath(bundleDir, SPEAKERS_FILENAME)));
+  } catch {
+    return { participants: [], labels: [] };
+  }
+}
+
+/** Everything in `speakers.json`, in one read. */
+export async function readSpeakersFile(
+  bundleDir: string,
+): Promise<{ names: SpeakerNames; participants: string[]; labels: string[] }> {
+  try {
+    const json = await tauriApi.readFile(joinPath(bundleDir, SPEAKERS_FILENAME));
+    return { names: parseSpeakersFile(json), ...parseSpeakersExtras(json) };
+  } catch {
+    return { names: {}, participants: [], labels: [] };
+  }
+}
+
+/**
+ * Write `speakers.json`. The participant list and the analysis labels live in
+ * the same file; whichever of them `extras` omits is kept as it is on disk,
+ * so renaming a speaker never forgets who was in the meeting.
+ */
+export async function writeSpeakers(
+  bundleDir: string,
+  names: SpeakerNames,
+  extras: SpeakersFileExtras = {},
+): Promise<void> {
+  const current =
+    extras.participants && extras.labels ? { participants: [], labels: [] } : await readSpeakersExtras(bundleDir);
+  await tauriApi.writeFile(
+    joinPath(bundleDir, SPEAKERS_FILENAME),
+    serializeSpeakersFile(names, {
+      participants: extras.participants ?? current.participants,
+      labels: extras.labels ?? current.labels,
+    }),
+  );
 }
 
 /**
@@ -466,9 +514,11 @@ export async function attachTeamsTranscript(options: AttachTeamsOptions): Promis
   for (const label of speakerLabels(segments)) {
     // `me` / `others` have translated defaults; writing them here would
     // freeze the label itself as the name.
-    if (!(label in names) && label !== SPEAKER_ME && label !== SPEAKER_OTHERS) names[label] = label;
+    // The same goes for a voice-analysis label (`speaker-2`).
+    if (!(label in names) && !isGenericLabel(label)) names[label] = label;
   }
-  await writeSpeakers(bundleDir, names);
+  // The labels of an earlier voice analysis are gone with its segments.
+  await writeSpeakers(bundleDir, names, { labels: [] });
 
   // The text is still ours in `names` mode, so the note keeps saying which
   // model and language produced it: the existing note knows, the manifest may.

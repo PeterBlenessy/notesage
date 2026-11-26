@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { t } from "@/lib/i18n";
 import { transcriptFileOf, readRecordingManifest } from "@/lib/transcription/bundle";
+import { compareLabels, namesToStore } from "@/lib/speakers/display-names";
 import { speakerDisplayName, speakerLabels, type SpeakerNames } from "@/lib/transcription/segments";
 import {
   defaultSpeakerNames,
@@ -185,7 +186,11 @@ export function SpeakersDialog({
       ]);
       if (cancelled) return;
       const defaults = defaultSpeakerNames();
-      const labels = [...new Set([...speakerLabels(segments), ...Object.keys(names)])];
+      const labels = [...new Set([...speakerLabels(segments), ...Object.keys(names)])].sort(
+        // Voices found by analysis in their own order (Speaker 2 before Speaker 10);
+        // everything else stays in order of first appearance.
+        (a, b) => (/^speaker-\d+$/.test(a) && /^speaker-\d+$/.test(b) ? compareLabels(a, b) : 0),
+      );
       setFields(
         labels.map((label) => {
           const shown = speakerDisplayName(label, names, defaults);
@@ -204,14 +209,9 @@ export function SpeakersDialog({
     if (!bundle || !fields || saving) return;
     setSaving(true);
     try {
-      const defaults = defaultSpeakerNames();
-      const names: SpeakerNames = {};
-      for (const field of fields) {
-        const value = field.value.replace(/\s+/g, " ").trim();
-        // A name equal to the built-in default is not stored, so "Me" keeps
-        // following the app language.
-        if (value && value !== defaults[field.label]) names[field.label] = value;
-      }
+      // A name equal to the built-in default ("Me", "Speaker 2") is not
+      // stored, so it keeps following the app language.
+      const names: SpeakerNames = namesToStore(fields, defaultSpeakerNames());
       const result = await renameSpeakers(bundle.dir, names);
       refresh();
       const changes = fields

@@ -246,3 +246,4 @@ Chronological log of major implementation milestones and changes.
 | 240 | [Release v0.63.0](240-release-v0.63.0.md) | Fast again with a large iCloud library and a full Inbox; the app no longer waits for indexing, and the second round of review fixes |
 | 241 | [Release v0.64.0](241-release-v0.64.0.md) | MCP servers work in chat and with agents, the sidebar Settings button is clickable again, and indexing is visible |
 | 242 | [Release v0.65.0](242-release-v0.65.0.md) | Recording rebuilt: system audio, video import, Teams transcript with speaker names, an always-visible indicator, and no more silently lost recordings |
+| 243 | [Release v0.66.0](243-release-v0.66.0.md) | Speaker identification on your Mac: tell voices apart, name them with samples and suggestions, and optionally remember voices locally |

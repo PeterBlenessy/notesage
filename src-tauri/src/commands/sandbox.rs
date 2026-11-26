@@ -161,6 +161,32 @@ pub(crate) fn exec_protected_write_deny(home: &str) -> String {
     format!("(deny file-write*\n{})", lines.join("\n"))
 }
 
+/// `$HOME`-relative directories no sandboxed process may read or write.
+///
+/// `~/.notesage` as a whole is granted to every agent (their managed
+/// binaries and state live there), and agents can reach the network. The
+/// remembered voices of speaker identification are biometric data that must
+/// not leave this Mac, so their folder is carved out of that grant.
+///
+/// The same ancestor-rename gap as for [`EXEC_PROTECTED_SUBPATHS`] applies
+/// to WRITES (issue #1096); a renamed-aside folder is still unreadable,
+/// because everything else under `$HOME` is denied by default.
+pub(crate) const PRIVATE_DATA_SUBPATHS: &[&str] = &[".notesage/voice-profiles"];
+
+/// The Seatbelt rules that close [`PRIVATE_DATA_SUBPATHS`]. Must be emitted
+/// after every allow (Seatbelt applies the LAST matching rule).
+///
+/// Not `cfg(macos)`-gated so its text can be unit-tested on any host.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn private_data_deny(home: &str) -> String {
+    let lines: Vec<String> = PRIVATE_DATA_SUBPATHS
+        .iter()
+        .map(|rel| format!("  (subpath \"{}/{}\")", home, rel))
+        .collect();
+    let lines = lines.join("\n");
+    format!("(deny file-read*\n{lines})\n(deny file-write*\n{lines})")
+}
+
 /// Generate a macOS Seatbelt (.sb) sandbox profile for an agent process.
 ///
 /// The profile is written to a temp file tied to the agent's instance ID.
@@ -495,6 +521,10 @@ pub fn generate_seatbelt_profile(
 ;; file-write allow above so it overrides the ~/.notesage and ~/.config grants.
 {exec_protected_write_deny}
 
+;; Remembered voices (speaker identification) are biometric data: no agent
+;; reads or writes them, although ~/.notesage is otherwise granted.
+{private_data_deny}
+
 {network_block}
 
 ;; Allow process execution (agents spawn git, grep, etc.)
@@ -513,6 +543,7 @@ pub fn generate_seatbelt_profile(
         agent_config_read_allow = agent_config_read_allow,
         agent_config_write_allow = agent_config_write_allow,
         exec_protected_write_deny = exec_protected_write_deny(&home_str),
+        private_data_deny = private_data_deny(&home_str),
         home = home_str,
         network_block = network_block,
     );
@@ -671,6 +702,23 @@ mod tests {
     // -------------------------------------------------------------------------
     // Exec-protected paths (host-independent: checks the rule text only)
     // -------------------------------------------------------------------------
+
+    #[test]
+    fn voice_profiles_are_closed_to_sandboxed_agents_for_reading_and_writing() {
+        let rule = private_data_deny("/Users/t");
+        assert_eq!(
+            rule,
+            "(deny file-read*\n  (subpath \"/Users/t/.notesage/voice-profiles\"))\n\
+             (deny file-write*\n  (subpath \"/Users/t/.notesage/voice-profiles\"))"
+        );
+        // The folder named here is the one the profile store uses.
+        #[cfg(desktop)]
+        {
+            let dir = crate::commands::speakers::profiles::default_profiles_dir();
+            let home = dirs::home_dir().unwrap();
+            assert_eq!(dir, home.join(PRIVATE_DATA_SUBPATHS[0]));
+        }
+    }
 
     #[test]
     fn exec_protected_deny_covers_every_path_the_app_later_executes() {

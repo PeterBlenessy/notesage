@@ -8,6 +8,7 @@ import { appVersion } from "@/lib/version";
 import { RECORDINGS_FOLDER_NAME, recordingsDir, resolveNotesRoot } from "@/lib/notes-root";
 import {
   basename,
+  dirname,
   findAudioFile,
   joinPath,
   moveBundleToProject,
@@ -28,13 +29,13 @@ import {
   type RecordingSource,
 } from "@/lib/transcription/manifest";
 import { isImportCancellation } from "@/lib/transcription/errors";
-import { SPEAKERS_FILENAME, speakerDisplayName } from "@/lib/transcription/segments";
+import { SPEAKERS_FILENAME, SPEAKER_ME, SPEAKER_OTHERS, speakerDisplayName } from "@/lib/transcription/segments";
 import {
   TEAMS_TRANSCRIPT_STEM,
   adoptOrphanBundle,
   defaultSpeakerNames,
   listBundleFiles,
-  readSpeakers,
+  readSpeakersFile,
   renameRecording,
   startFromBundleName,
   type TranscriptWriteMode,
@@ -43,6 +44,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
+import { useSpeakersStore } from "@/stores/speakers-store";
 
 /**
  * The Recordings place (Peter, 2026-09-07: *"I think inbox and recordings
@@ -294,11 +296,15 @@ async function describeBundle(
 
   let speakers: string[] = [];
   if (files.includes(SPEAKERS_FILENAME)) {
-    const names = await readSpeakers(dir);
+    // One read for the names and for the labels voice analysis found, so a
+    // voice nobody has named yet is still listed ("Anna, Speaker 2").
+    const { names, labels: found } = await readSpeakersFile(dir);
     const defaults = defaultSpeakerNames();
-    speakers = [...new Set(Object.keys(names).map((label) => speakerDisplayName(label, names, defaults)))];
+    const labels = [...new Set([...found, ...Object.keys(names)])];
+    speakers = [...new Set(labels.map((label) => speakerDisplayName(label, names, defaults)))];
   } else if (manifest?.source === "both" && transcriptExists) {
-    speakers = Object.values(defaultSpeakerNames());
+    const defaults = defaultSpeakerNames();
+    speakers = [defaults[SPEAKER_ME], defaults[SPEAKER_OTHERS]];
   }
 
   const tracks: RecordingBundle["tracks"] = [];
@@ -473,6 +479,8 @@ export const useRecordingsStore = create<RecordingsStore>((set, get) => ({
     await tauriApi.trashPath(dir);
     // The card would point at files that are in the Trash now.
     if (task) useActivityStore.getState().removeTask(task.id);
+    // And so would a voice analysis held for it.
+    if (useSpeakersStore.getState().prepared[dir]) useSpeakersStore.getState().setPrepared(dir, null);
     set({ bundles: get().bundles.filter((b) => b.dir !== dir) });
     get().refresh();
   },
@@ -482,6 +490,8 @@ export const useRecordingsStore = create<RecordingsStore>((set, get) => ({
     const task = bundle?.audioPath ? findTranscriptionTask(bundle.audioPath) : undefined;
     if (task?.status === "running") throw new Error(t("recordings.moveWhileTranscribing"));
     const newDir = await moveBundleToProject(dir, projectPath);
+    // A voice analysis held for the old place points at audio that moved.
+    if (useSpeakersStore.getState().prepared[dir]) useSpeakersStore.getState().setPrepared(dir, null);
     if (task && bundle?.audioPath) {
       // The card's paths moved with the folder; without this its "Open" and
       // "Transcribe again" point at a place that no longer exists.
@@ -630,5 +640,37 @@ if (typeof useActivityStore.subscribe === "function") {
     if (signature === lastSignature) return;
     lastSignature = signature;
     if (useRecordingsStore.getState().dir) useRecordingsStore.getState().refresh();
+  });
+
+  // "Identify speakers automatically after transcription" (off by default):
+  // a transcription that goes from running to done on this Mac is followed by
+  // a voice analysis that only PREPARES suggestions. The module is loaded on
+  // demand, and only when the setting is on.
+  const lastStatus = new Map<string, string>();
+  useActivityStore.subscribe((state) => {
+    for (const task of state.tasks) {
+      if (task.kind !== "transcription") continue;
+      const before = lastStatus.get(task.id);
+      lastStatus.set(task.id, task.status);
+      // A new transcription replaces the segments an earlier voice analysis
+      // was made for: what it prepared no longer applies.
+      if (before !== "running" && task.status === "running" && task.audioPath) {
+        const dir = dirname(task.audioPath);
+        if (useSpeakersStore.getState().prepared[dir]) useSpeakersStore.getState().setPrepared(dir, null);
+      }
+      if (before !== "running" || task.status !== "done" || !task.audioPath) continue;
+      if (!useSpeakersStore.getState().autoIdentify) continue;
+      const audioPath = task.audioPath;
+      void (async () => {
+        // The list as it is AFTER the transcript was written.
+        await useRecordingsStore.getState().load();
+        const bundle = useRecordingsStore.getState().bundles.find((b) => b.audioPath === audioPath);
+        if (!bundle) return;
+        const { autoIdentifySpeakers } = await import("@/lib/speakers/auto-identify");
+        await autoIdentifySpeakers(bundle);
+      })().catch(() => {
+        // Background work nobody clicked for: a failure here is not reported.
+      });
+    }
   });
 }

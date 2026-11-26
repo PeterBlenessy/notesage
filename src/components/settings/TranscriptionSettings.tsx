@@ -30,6 +30,7 @@ import {
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import type { ModelMetadata } from '@/lib/tauri';
 import { RecordingSourcePicker } from '@/components/activity/RecordingSourcePicker';
+import { VoiceProfilesSettings } from '@/components/recordings/VoiceProfilesSettings';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { t } from '@/lib/i18n';
@@ -425,6 +426,9 @@ export function TranscriptionSettings() {
           </p>
         )}
       </div>
+
+      {/* Speakers: the voice model, remembered voices (opt-in), my voice. */}
+      <VoiceProfilesSettings />
     </div>
   );
 }

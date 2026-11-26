@@ -815,6 +815,7 @@ async fn download_model_inner(
         temp_path: state.models_dir.join(temp_file_name(size)),
         catalogue_size: Some(meta.size_bytes),
         sha256: meta.sha256.map(|h| h.to_string()),
+        magic: Some(super::transcribe::model_download::GGML_MAGIC),
     };
 
     log::info!(target: "notesage::transcription", "Downloading model '{}' from {}", size, spec.url);

@@ -16,6 +16,8 @@ import {
   Trash2,
   Users,
   Captions,
+  AudioLines,
+  Sparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RerunTranscriptionMenu, type RerunChoice } from "@/components/activity/cards/RerunTranscriptionMenu";
 import { useActivityStore, type AgentTask } from "@/stores/activity-store";
+import { useSpeakersStore } from "@/stores/speakers-store";
 import type { RecordingBundle } from "@/stores/recordings-store";
 import { getFormatLocale, t } from "@/lib/i18n";
 import { basename } from "@/lib/transcription/bundle";
@@ -42,7 +45,7 @@ import { speechLanguageLabel } from "@/lib/transcription/languages";
 import { formatRecordingLength } from "@/lib/transcription/segments";
 import { useNow } from "./useNow";
 
-export type RowDialog = "rename" | "delete" | "speakers" | "teams";
+export type RowDialog = "rename" | "delete" | "speakers" | "identify" | "teams";
 
 export interface RecordingRowProps {
   bundle: RecordingBundle;
@@ -157,6 +160,11 @@ export const RecordingRow = memo(function RecordingRow({
     }),
   );
   const busy = job.state === "queued" || job.state === "running";
+  // Voice analysis of this recording: a job in progress, or a finished one
+  // whose suggestions are waiting for the user. Both are small objects that
+  // keep their identity until they change, so this row re-renders only then.
+  const speakerJob = useSpeakersStore((s) => s.jobs[bundle.dir]);
+  const speakerNames = useSpeakersStore((s) => s.prepared[bundle.dir]);
   const now = useNow(job.state === "running");
 
   const locale = getFormatLocale();
@@ -261,6 +269,43 @@ export const RecordingRow = memo(function RecordingRow({
               {t("recordings.speakersList", { names: bundle.speakers.join(", ") })}
             </p>
           )}
+
+          {speakerJob ? (
+            <p
+              className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums"
+              data-testid="recording-speaker-job"
+              data-phase={speakerJob.phase}
+            >
+              <Loader2
+                className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+              {speakerJob.phase === "waiting"
+                ? t("speakers.rowWaiting")
+                : speakerJob.phase === "running"
+                  ? t("speakers.rowAnalysing", { percent: speakerJob.percent })
+                  : t("speakers.rowStarting")}
+            </p>
+          ) : speakerNames ? (
+            <p className="mt-0.5 text-xs" data-testid="recording-speaker-suggestions">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-sm text-foreground underline decoration-dotted underline-offset-2 transition-colors duration-150 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                aria-label={named(
+                  speakerNames.hasSuggestions
+                    ? t("speakers.rowSuggested")
+                    : t("speakers.rowVoicesFound", { count: speakerNames.voices }),
+                )}
+                onClick={() => onDialog("identify", bundle)}
+              >
+                <Sparkles className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                {speakerNames.hasSuggestions
+                  ? t("speakers.rowSuggested")
+                  : t("speakers.rowVoicesFound", { count: speakerNames.voices })}
+              </button>
+            </p>
+          ) : null}
 
           {/* Status on the left, what can be done about it on the right, on
               one line; the actions drop below when the status is a long
@@ -379,6 +424,13 @@ export const RecordingRow = memo(function RecordingRow({
                     <DropdownMenuItem disabled={busy} onSelect={() => onDialog("speakers", bundle)}>
                       <Users className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
                       {t("recordings.speakers")}
+                    </DropdownMenuItem>
+                  )}
+                  {/* Teams already names the speakers, so there is nothing to find out. */}
+                  {bundle.transcriptPath && bundle.audioPath && !bundle.hasTeamsTranscript && (
+                    <DropdownMenuItem disabled={busy} onSelect={() => onDialog("identify", bundle)}>
+                      <AudioLines className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                      {t("speakers.identify")}
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem

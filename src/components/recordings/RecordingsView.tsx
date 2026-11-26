@@ -27,6 +27,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { RecordingRow, ROW_ESTIMATE_PX, ROW_GAP_PX, type RowDialog } from "./RecordingRow";
 import { DeleteRecordingDialog, RenameRecordingDialog, SpeakersDialog } from "./RecordingDialogs";
 import { TeamsTranscriptDialog, type TeamsRequest } from "./TeamsTranscriptDialog";
+import { IdentifySpeakersDialog } from "./IdentifySpeakersDialog";
 import {
   ReplaceTranscriptDialog,
   guardTranscriptWrite,
@@ -178,6 +179,7 @@ export function RecordingsView() {
   const [renaming, setRenaming] = useState<RecordingBundle | null>(null);
   const [deleting, setDeleting] = useState<RecordingBundle | null>(null);
   const [naming, setNaming] = useState<RecordingBundle | null>(null);
+  const [identifying, setIdentifying] = useState<RecordingBundle | null>(null);
   const [teams, setTeams] = useState<TeamsRequest | null>(null);
   const [pendingWrite, setPendingWrite] = useState<PendingTranscriptWrite | null>(null);
 
@@ -291,6 +293,7 @@ export function RecordingsView() {
     if (kind === "rename") setRenaming(bundle);
     else if (kind === "delete") setDeleting(bundle);
     else if (kind === "speakers") setNaming(bundle);
+    else if (kind === "identify") setIdentifying(bundle);
     else {
       void tauriApi
         .openFileDialog(t("recordings.teamsFilter"), ["vtt", "docx"])
@@ -532,6 +535,7 @@ export function RecordingsView() {
       <RenameRecordingDialog bundle={renaming} onClose={() => setRenaming(null)} />
       <DeleteRecordingDialog bundle={deleting} onClose={() => setDeleting(null)} />
       <SpeakersDialog bundle={naming} onClose={() => setNaming(null)} />
+      <IdentifySpeakersDialog bundle={identifying} onClose={() => setIdentifying(null)} />
       <TeamsTranscriptDialog request={teams} onClose={() => setTeams(null)} />
       <ReplaceTranscriptDialog pending={pendingWrite} onClose={() => setPendingWrite(null)} />
     </div>
