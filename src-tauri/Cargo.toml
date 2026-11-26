@@ -193,6 +193,17 @@ cpal = "0.17"
 symphonia = { version = "0.6", default-features = false, features = [
     "wav", "pcm", "mp3", "aac", "alac", "isomp4", "flac", "ogg", "vorbis", "aiff", "caf",
 ] }
+# Speaker identification: runs the ONNX voice-embedding model. Pure Rust
+# (MIT OR Apache-2.0), so there is no native library to ship, sign or load,
+# and nothing is downloaded at build time. Desktop only, for the same reason
+# as `whisper-rs`: the mobile reader identifies no speakers. See
+# `docs/features/speakers.md` for why this and not ONNX Runtime.
+#
+# Cargo.lock holds 0.21.10, not the newest 0.21.x (0.21.20 when this was
+# added): the newer tract-linalg requires `time < 0.3.42`, which collides
+# with the `time` that reqwest's cookie store needs, so cargo settles on the
+# newest release without that bound. 0.21.10 is what the model was run on.
+tract-onnx = "0.21"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }

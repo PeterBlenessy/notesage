@@ -538,6 +538,22 @@ pub fn run() {
             download_whisper_model,
             cancel_model_download,
             delete_whisper_model,
+            // Speaker identification
+            speaker_models_status,
+            download_speaker_models,
+            cancel_speaker_models_download,
+            delete_speaker_models,
+            analyze_speakers,
+            embed_speaker_turns,
+            voice_profiles_list,
+            voice_profile_save,
+            voice_profile_rename,
+            voice_profiles_merge,
+            voice_profile_delete,
+            voice_profiles_delete_all,
+            voice_profiles_match,
+            enrol_own_voice,
+            extract_audio_clip,
             // Local AI inference
             get_system_memory,
             list_local_models,
@@ -638,6 +654,9 @@ pub fn run() {
                     app_handle
                         .state::<RecordingState>()
                         .stop_for_exit(commands::recording::EXIT_STOP_TIMEOUT);
+                    // Speaker sample clips are voice data: none outlive the app.
+                    #[cfg(desktop)]
+                    commands::speakers::clip::purge_all(&commands::speakers::clip::default_clip_dir());
                     // Stop all ACP agent subprocesses
                     app_handle.state::<AcpState>().stop_all_sync();
                     // Stop all network proxies (after ACP agents so connections close first)

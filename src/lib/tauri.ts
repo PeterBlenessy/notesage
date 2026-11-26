@@ -640,6 +640,200 @@ export interface AudioFileStatus {
   local: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Speaker identification (voice analysis). Shapes follow the backend's
+// contract note: structs crossing IPC are snake_case, command ARGUMENTS are
+// camelCase, fields inside an argument object are as written here.
+// ---------------------------------------------------------------------------
+
+export interface SpeakerModelInfo {
+  id: string;
+  name: string;
+  size_bytes: number;
+  installed: boolean;
+  /** Licence and attribution line, shown as the backend gives it. */
+  licence: string;
+  source: string;
+  download_url: string;
+}
+
+export interface SpeakerModelsStatus {
+  /** `true` when every voice model is installed. */
+  installed: boolean;
+  models: SpeakerModelInfo[];
+}
+
+/** Payload of `speaker-model-download-progress`. `total` may be 0. */
+export interface SpeakerModelDownloadProgressEvent {
+  model: string;
+  downloaded: number;
+  total: number;
+}
+
+/** One stretch of speech by one speaker. `speaker` is a LABEL (`me`, `speaker-1`). */
+export interface SpeakerTurn {
+  start: number;
+  end: number;
+  speaker: string;
+}
+
+/** A named stretch handed to `embed_speaker_turns`: `speaker` is the person's real name. */
+export type NamedSpeakerTurn = SpeakerTurn;
+
+export interface SpeakerSample {
+  /** The audio file the sample is in: play it with `extractAudioClip`. */
+  track_path: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * One voice found by `analyze_speakers`.
+ *
+ * `embedding` is a VOICEPRINT: biometric data. It is kept in memory only and
+ * handed back to `voiceProfileSave` / `voiceProfilesMatch`. It is never
+ * written to a bundle, a persisted store, a log or the DOM.
+ */
+export interface AnalyzedSpeaker {
+  label: string;
+  total_secs: number;
+  sample: SpeakerSample;
+  embedding: number[];
+}
+
+/** A transcript segment as `analyze_speakers` takes and returns it. */
+export interface SpeakerSegment {
+  start: number;
+  end: number;
+  text: string;
+  speaker?: string | null;
+}
+
+export interface SpeakerAnalysisResult {
+  turns: SpeakerTurn[];
+  /** `me` first (if present), then `speaker-1`, `speaker-2`, … */
+  speakers: AnalyzedSpeaker[];
+  /** Absent when no segments were passed. May be LONGER than what went in. */
+  segments?: SpeakerSegment[];
+  duration_secs: number;
+  /** Pass back as `model` to `voiceProfileSave` / `voiceProfilesMatch`. */
+  model: string;
+}
+
+export interface AnalyzeSpeakersArgs {
+  /** Pass one: a path-only cancel would also cancel a transcription of the same file. */
+  jobId?: string | null;
+  audioPath: string;
+  tracks?: TranscriptionTrack[] | null;
+  /** 1..30, not counting `me`. `null` = find out. */
+  expectedSpeakers?: number | null;
+  segments?: SpeakerSegment[] | null;
+  /** Diarise the microphone track too (no `me`). */
+  sharedMicrophone?: boolean | null;
+}
+
+/** Payload of `speaker-analysis-progress`. A queued job emits nothing. */
+export interface SpeakerAnalysisProgressEvent {
+  job_id: string | null;
+  audio_path: string;
+  stage: "loading" | "analyzing" | "finishing";
+  percent: number;
+}
+
+export interface EmbeddedSpeaker {
+  speaker: string;
+  embedding: number[];
+  total_secs: number;
+}
+
+export interface SkippedSpeaker {
+  speaker: string;
+  reason: string;
+  total_secs: number;
+}
+
+export interface EmbedSpeakerTurnsResult {
+  speakers: EmbeddedSpeaker[];
+  skipped: SkippedSpeaker[];
+  model: string;
+}
+
+export type VoiceProfileSourceKind = "manual" | "teams" | "enrolment";
+
+export interface VoiceProfileSource {
+  kind: VoiceProfileSourceKind;
+  recording: string | null;
+  at: string;
+}
+
+/** A stored voice, WITHOUT its voiceprint: embeddings never leave the profile store. */
+export interface VoiceProfileSummary {
+  id: string;
+  name: string;
+  is_me: boolean;
+  created_at: string;
+  updated_at: string;
+  sources: VoiceProfileSource[];
+  model: string;
+  exemplar_count: number;
+  /** `false` = made with another voice model: listed, never matched. */
+  usable: boolean;
+}
+
+export interface VoiceProfilesList {
+  profiles: VoiceProfileSummary[];
+  /** Unreadable profile files that were moved aside. */
+  quarantined: number;
+  directory: string;
+}
+
+export interface VoiceProfileSaveArgs {
+  /** The user's opt-in setting. Never a literal `true`. */
+  consent: boolean;
+  name: string;
+  embedding: number[];
+  source: { kind: VoiceProfileSourceKind; recording?: string | null };
+  profileId?: string | null;
+  isMe?: boolean | null;
+  model?: string | null;
+}
+
+export interface VoiceProfileSaved {
+  profile: VoiceProfileSummary;
+  created: boolean;
+}
+
+export interface VoiceMatchCandidate {
+  profile_id: string;
+  name: string;
+  is_me: boolean;
+  /** Cosine similarity, -1..1. */
+  score: number;
+  confidence: "likely" | "possible";
+  participant: boolean;
+}
+
+/** SUGGESTIONS ONLY: a candidate is never applied without the user confirming it. */
+export interface VoiceMatch {
+  label: string;
+  candidates: VoiceMatchCandidate[];
+}
+
+export interface VoiceProfilesMatchArgs {
+  /** The user's opt-in setting. Never a literal `true`. */
+  consent: boolean;
+  speakers: Array<{ label: string; embedding: number[] }>;
+  participants?: string[] | null;
+  model?: string | null;
+}
+
+export const SPEAKER_ANALYSIS_PROGRESS_EVENT = "speaker-analysis-progress";
+export const SPEAKER_MODEL_DOWNLOAD_PROGRESS_EVENT = "speaker-model-download-progress";
+/** What the consent-gated commands reject with when `consent` is not `true`. */
+export const VOICE_RECOGNITION_DISABLED = "Voice recognition is not enabled";
+/** What `analyze_speakers` / `embed_speaker_turns` reject with after a cancel. */
+export const SPEAKER_ANALYSIS_CANCELLED = "Speaker analysis cancelled";
+
 /**
  * Result of `transcribe_file` — ordered timestamped segments for a whole audio
  * file. Mirrors the Rust `TranscriptionResult` struct (no serde rename, so the
@@ -1822,9 +2016,14 @@ export const tauriApi = {
     return await invoke<RecordingPreflight>("recording_preflight", { source });
   },
 
-  /** Stop the live capture and delete its staging bundle. */
-  async discardRecording(): Promise<void> {
-    await invoke("discard_recording");
+  /**
+   * Stop the live capture and delete its staging bundle. With `bundleDir`,
+   * delete that (already stopped) staging bundle instead: the backend refuses
+   * anything outside the staging folder and forgets the bundle, so it is not
+   * recovered as a lost recording at the next launch.
+   */
+  async discardRecording(bundleDir?: string): Promise<void> {
+    await invoke("discard_recording", bundleDir ? { bundleDir } : undefined);
   },
 
   /**
@@ -1915,6 +2114,102 @@ export const tauriApi = {
   async copyFileInto(source: string, destination: string): Promise<void> {
     assertLibraryUnlocked(destination);
     await invoke("copy_file", { source, destination });
+  },
+
+  // Speaker identification. See the types above for what must never be stored.
+  async speakerModelsStatus(): Promise<SpeakerModelsStatus> {
+    return await invoke<SpeakerModelsStatus>("speaker_models_status");
+  },
+
+  /** Resumes a partial download. Emits `speaker-model-download-progress`. */
+  async downloadSpeakerModels(): Promise<void> {
+    await invoke("download_speaker_models");
+  },
+
+  /** `true` when a download was running; it then rejects with `Download cancelled`. */
+  async cancelSpeakerModelsDownload(): Promise<boolean> {
+    return await invoke<boolean>("cancel_speaker_models_download");
+  },
+
+  /** Voice profiles are kept: they work again once the model is downloaded again. */
+  async deleteSpeakerModels(): Promise<void> {
+    await invoke("delete_speaker_models");
+  },
+
+  /**
+   * Find the distinct voices in a recording. Takes its turn in the same queue
+   * as transcriptions; cancel with `cancelTranscription(jobId, null)`, after
+   * which this rejects with `Speaker analysis cancelled`.
+   */
+  async analyzeSpeakers(args: AnalyzeSpeakersArgs): Promise<SpeakerAnalysisResult> {
+    return await invoke<SpeakerAnalysisResult>("analyze_speakers", {
+      jobId: args.jobId ?? null,
+      audioPath: args.audioPath,
+      tracks: args.tracks && args.tracks.length > 0 ? args.tracks : null,
+      expectedSpeakers: args.expectedSpeakers ?? null,
+      segments: args.segments ?? null,
+      sharedMicrophone: args.sharedMicrophone ?? null,
+    });
+  },
+
+  /** Voiceprints for people a Teams transcript already names. */
+  async embedSpeakerTurns(audioPath: string, turns: NamedSpeakerTurn[]): Promise<EmbedSpeakerTurnsResult> {
+    return await invoke<EmbedSpeakerTurnsResult>("embed_speaker_turns", { audioPath, turns });
+  },
+
+  async voiceProfilesList(): Promise<VoiceProfilesList> {
+    return await invoke<VoiceProfilesList>("voice_profiles_list");
+  },
+
+  /** Rejects with `Voice recognition is not enabled` unless `consent` is `true`. */
+  async voiceProfileSave(args: VoiceProfileSaveArgs): Promise<VoiceProfileSaved> {
+    return await invoke<VoiceProfileSaved>("voice_profile_save", {
+      consent: args.consent,
+      name: args.name,
+      embedding: args.embedding,
+      source: { kind: args.source.kind, recording: args.source.recording ?? null },
+      profileId: args.profileId ?? null,
+      isMe: args.isMe ?? null,
+      model: args.model ?? null,
+    });
+  },
+
+  async voiceProfileRename(profileId: string, name: string): Promise<VoiceProfileSummary> {
+    return await invoke<VoiceProfileSummary>("voice_profile_rename", { profileId, name });
+  },
+
+  /** `fromId` is folded into `intoId`, which keeps its name. */
+  async voiceProfilesMerge(intoId: string, fromId: string): Promise<VoiceProfileSummary> {
+    return await invoke<VoiceProfileSummary>("voice_profiles_merge", { intoId, fromId });
+  },
+
+  async voiceProfileDelete(profileId: string): Promise<void> {
+    await invoke("voice_profile_delete", { profileId });
+  },
+
+  /** Removes every stored voice and every sample clip. Resolves with the number of files removed. */
+  async voiceProfilesDeleteAll(): Promise<number> {
+    return await invoke<number>("voice_profiles_delete_all");
+  },
+
+  /** Suggestions only. Rejects with `Voice recognition is not enabled` unless `consent` is `true`. */
+  async voiceProfilesMatch(args: VoiceProfilesMatchArgs): Promise<VoiceMatch[]> {
+    return await invoke<VoiceMatch[]>("voice_profiles_match", {
+      consent: args.consent,
+      speakers: args.speakers,
+      participants: args.participants && args.participants.length > 0 ? args.participants : null,
+      model: args.model ?? null,
+    });
+  },
+
+  /** Needs at least 8 s of speech by the user alone. */
+  async enrolOwnVoice(consent: boolean, audioPath: string, name?: string | null): Promise<VoiceProfileSaved> {
+    return await invoke<VoiceProfileSaved>("enrol_own_voice", { consent, audioPath, name: name ?? null });
+  },
+
+  /** A short WAV in the system temp folder (at most 30 s), playable through the asset protocol. */
+  async extractAudioClip(audioPath: string, start: number, end: number): Promise<{ path: string }> {
+    return await invoke<{ path: string }>("extract_audio_clip", { audioPath, start, end });
   },
 
   // Local AI inference

@@ -1834,6 +1834,113 @@ pub struct TranscriptionState {
 - `models_dir`: Path to `~/.notesage/whisper-models/`
 - `download_cancels`: Per-model cancel signals for concurrent downloads
 
+## Speakers
+
+Located in `src-tauri/src/commands/speakers/` (commands in `speakers/commands.rs`; the rest of the folder is plain logic). Desktop only; the iOS build has a stub for every command in `transcription_stub.rs`. Feature overview, privacy properties and accuracy limits: `docs/features/speakers.md`.
+
+Conventions are those of the transcription commands: arguments are camelCase on the frontend side, fields of result structs, of argument objects and of events are snake_case, and every command returns `Result<T, String>`.
+
+**Voiceprints.** The `embedding` arrays returned by `analyze_speakers` and `embed_speaker_turns` are biometric data. They exist to be passed back to `voice_profile_save` and `voice_profiles_match`; they must never be written into a recording bundle, a note, a log or anything that syncs. The three commands that create or compare voiceprints (`voice_profile_save`, `voice_profiles_match`, `enrol_own_voice`) take a `consent` argument and reject with exactly `Voice recognition is not enabled` when it is not `true`.
+
+### speaker_models_status / download_speaker_models / cancel_speaker_models_download / delete_speaker_models
+
+```rust
+pub async fn speaker_models_status() -> Result<SpeakerModelsStatus, String>
+pub async fn download_speaker_models(app: AppHandle) -> Result<(), String>
+pub async fn cancel_speaker_models_download() -> Result<bool, String>
+pub async fn delete_speaker_models() -> Result<(), String>
+```
+
+`SpeakerModelsStatus`: `{ installed: bool, models: [{ id, name, size_bytes, installed, licence, source, download_url }] }`. Models live in `~/.notesage/speaker-models/`. The download resumes a partial file and verifies size and SHA-256 before the file is used; it emits `speaker-model-download-progress` (`{ model, downloaded, total }`). Cancelling makes it reject with `Download cancelled` and removes the partial file. `delete_speaker_models` keeps voice profiles and fails with `The voice models are in use by a running analysis. Try again when it finishes.` while an analysis is listed.
+
+### analyze_speakers
+
+Finds who spoke when. Runs on a blocking thread and takes turns with transcriptions in the same job queue, so the two never run at once.
+
+```rust
+pub async fn analyze_speakers(
+    app: AppHandle,
+    job_id: Option<String>,
+    audio_path: String,
+    tracks: Option<Vec<SpeakerTrack>>,      // [{ role: "mic" | "system", path }]
+    expected_speakers: Option<u32>,          // 1..=30, not counting "me"
+    segments: Option<Vec<Segment>>,          // [{ start, end, text, speaker? }]
+    shared_microphone: Option<bool>,
+) -> Result<AnalysisOut, String>
+```
+
+**Returns:** `{ turns: [{ start, end, speaker }], speakers: [{ label, total_secs, sample: { track_path, start, end }, embedding }], segments?, duration_secs, model }`.
+
+- Without `tracks` the file at `audio_path` is diarised into `speaker-1`, `speaker-2`, … (order of first appearance).
+- With a `mic` and a `system` track the microphone is `me` and only the system track is diarised; `shared_microphone: true` diarises the microphone too.
+- With `segments`, they come back labelled (the speaker with the most time in a segment; a segment is split only at a sentence end near the change of speaker). The key is absent when none were passed.
+- **Event** `speaker-analysis-progress`: `{ job_id, audio_path, stage: "loading" | "analyzing" | "finishing", percent }`, integer percent, on change only.
+- **Cancel** with `cancel_transcription` (by `job_id`, or by `audio_path`); the command then rejects with exactly `Speaker analysis cancelled`.
+- **Errors:** `Voice models are not downloaded. Download them from Settings > Transcription.`, `Audio file not found: <path>`, `The audio file is still in iCloud and could not be downloaded: <detail>`, `Unknown track role: <role>`, `expected_speakers must be at most 30`, decode errors as for `transcribe_file`.
+
+### embed_speaker_turns
+
+One voiceprint per named speaker from turns that are already known (a merged Teams transcript).
+
+```rust
+pub async fn embed_speaker_turns(audio_path: String, turns: Vec<Turn>) -> Result<NamedEmbeddings, String>
+```
+
+**Returns:** `{ speakers: [{ speaker, embedding, total_secs }], skipped: [{ speaker, reason, total_secs }], model }`. Only speech where nobody else has a turn is used; a speaker with less than six seconds of it is listed under `skipped` with a `reason` starting `Too little clean speech`.
+
+### Voice profiles
+
+```rust
+pub async fn voice_profiles_list() -> Result<ProfileList, String>
+pub async fn voice_profile_save(
+    consent: bool, name: String, embedding: Vec<f32>, source: SaveSource,   // { kind: "manual" | "teams" | "enrolment", recording? }
+    profile_id: Option<String>, is_me: Option<bool>, model: Option<String>,
+) -> Result<SaveOutcome, String>                                            // { profile, created }
+pub async fn voice_profile_rename(profile_id: String, name: String) -> Result<ProfileSummary, String>
+pub async fn voice_profiles_merge(into_id: String, from_id: String) -> Result<ProfileSummary, String>
+pub async fn voice_profile_delete(profile_id: String) -> Result<(), String>
+pub async fn voice_profiles_delete_all() -> Result<usize, String>
+pub async fn voice_profiles_match(
+    consent: bool, speakers: Vec<SpeakerEmbedding>,                         // [{ label, embedding }]
+    participants: Option<Vec<String>>, model: Option<String>,
+) -> Result<Vec<SpeakerMatch>, String>
+pub async fn enrol_own_voice(consent: bool, audio_path: String, name: Option<String>) -> Result<SaveOutcome, String>
+```
+
+- `ProfileList`: `{ profiles: ProfileSummary[], quarantined, directory }`. `ProfileSummary`: `{ id, name, is_me, created_at, updated_at, sources: [{ kind, recording, at }], model, exemplar_count, usable }`. A summary never contains an embedding. `usable: false` marks a profile made with another voice model: listed, never matched, repaired by saving the person's voice again.
+- Profiles are stored only in `~/.notesage/voice-profiles/` (folder `0700`, one `0600` JSON file per person). An unreadable file is moved aside (`<name>.corrupt-<time>`) and counted in `quarantined`, never deleted except by `voice_profiles_delete_all`, which removes every profile, quarantined file, the folder and all sample clips.
+- `voice_profile_save` without `profile_id` adds to an existing profile of the same name unless the voice is clearly different (then a new profile is made); with `is_me` it adds to the one profile that is the user.
+- `voice_profiles_match` returns, per speaker, up to three candidates `{ profile_id, name, is_me, score, confidence: "likely" | "possible", participant }`, best first. It only suggests: the frontend asks the user to confirm. `participants` restricts the candidates to the named people (and the user's own profile).
+- `enrol_own_voice` needs at least eight seconds of speech (`Not enough speech to learn the voice: …`).
+
+### extract_audio_clip
+
+```rust
+pub async fn extract_audio_clip(audio_path: String, start: f64, end: f64) -> Result<ClipResult, String>   // { path }
+```
+
+Writes at most 30 seconds of the recording as a 16 kHz mono WAV into `<temp>/notesage-speaker-clips/` (folder `0700`, file `0600`) for playing a speaker's sample. Clips are removed after an hour, by `voice_profiles_delete_all`, and when the app quits. Errors: `Invalid clip range`, `A clip can be at most 30 seconds long`, `Audio file not found: <path>`, `The recording has no audio in that range`.
+
+**Frontend usage:**
+
+```typescript
+const result = await invoke<SpeakerAnalysis>('analyze_speakers', {
+  jobId, audioPath: rec.path, tracks: rec.tracks, segments,
+});
+// Play a speaker's sample
+const { path } = await invoke<{ path: string }>('extract_audio_clip', {
+  audioPath: result.speakers[0].sample.track_path,
+  start: result.speakers[0].sample.start,
+  end: result.speakers[0].sample.end,
+});
+// Only when the user has opted in to voice recognition:
+const suggestions = await invoke('voice_profiles_match', {
+  consent: settings.voiceRecognition,
+  speakers: result.speakers.map(({ label, embedding }) => ({ label, embedding })),
+  participants, model: result.model,
+});
+```
+
 ## MCP Operations
 
 Located in `src-tauri/src/commands/mcp/mod.rs` (helpers in `mcp/{transport,launch,state,types,config,validation,catalog,stderr_drain}.rs`) and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.

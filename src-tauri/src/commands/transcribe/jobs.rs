@@ -25,6 +25,9 @@ pub const IDLE_UNLOAD_SECS: u64 = 10 * 60;
 pub enum JobKind {
     Transcription,
     Import,
+    /// Speaker analysis (`commands::speakers`). Takes turns with
+    /// transcriptions: both use every core.
+    SpeakerAnalysis,
 }
 
 pub struct JobHandle {
@@ -124,6 +127,11 @@ impl JobRegistry {
         self.lock_jobs()
             .iter()
             .any(|j| j.kind == JobKind::Transcription && j.model.as_deref() == Some(model))
+    }
+
+    /// Whether any job of `kind` is listed, running or waiting.
+    pub fn has_kind(&self, kind: JobKind) -> bool {
+        self.lock_jobs().iter().any(|j| j.kind == kind)
     }
 
     /// `(running, waiting)` transcription jobs.
@@ -367,6 +375,41 @@ mod tests {
         let after_second = idle.touch();
         assert!(!idle.is_current(after_first), "a stale timer must not unload the model");
         assert!(idle.is_current(after_second));
+    }
+
+    #[tokio::test]
+    async fn a_speaker_analysis_takes_turns_with_transcriptions_and_can_be_cancelled() {
+        let reg = JobRegistry::new(1);
+        let mut transcription = job(&reg, "t", "/a.wav");
+        let mut analysis =
+            reg.register(JobKind::SpeakerAnalysis, Some("s".into()), "/a.wav".into(), None);
+        assert!(reg.has_kind(JobKind::SpeakerAnalysis));
+        assert!(!reg.has_kind(JobKind::Import));
+        transcription.wait_turn().await.unwrap();
+
+        // The analysis waits while the transcription runs…
+        let waiting = tokio::time::timeout(Duration::from_millis(50), analysis.wait_turn()).await;
+        assert!(waiting.is_err(), "the analysis must not start beside a transcription");
+        // …is not a transcription (it holds no Whisper model)…
+        assert_eq!(reg.counts(), (1, 0));
+        // …and starts when the transcription is done.
+        drop(transcription);
+        tokio::time::timeout(Duration::from_secs(1), analysis.wait_turn()).await.unwrap().unwrap();
+        assert!(analysis.handle().is_running());
+        assert_eq!(reg.running_model(), None);
+
+        // Cancelled by job id while it runs.
+        assert!(reg.cancel(Some("s"), None));
+        assert!(analysis.handle().is_cancelled());
+        drop(analysis);
+        assert!(!reg.has_kind(JobKind::SpeakerAnalysis));
+
+        // Cancelled while waiting: it never starts.
+        let mut running = job(&reg, "t2", "/b.wav");
+        running.wait_turn().await.unwrap();
+        let mut queued = reg.register(JobKind::SpeakerAnalysis, None, "/c.wav".into(), None);
+        assert!(reg.cancel(None, Some("/c.wav")));
+        assert!(queued.wait_turn().await.is_err());
     }
 
     #[test]

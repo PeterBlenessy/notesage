@@ -324,3 +324,127 @@ pub async fn delete_whisper_model(
 ) -> Result<(), String> {
     Err(UNAVAILABLE.into())
 }
+
+// --- Speaker identification (mirrors `speakers/commands.rs`; desktop-only) ---
+//
+// Same command names and argument names as the desktop module, so
+// `generate_handler!` needs no platform gating. Arguments and results that
+// are structs on the desktop are plain JSON here: nothing on mobile calls
+// these, and every one that would do work answers with an error.
+
+#[tauri::command]
+pub async fn speaker_models_status() -> Result<serde_json::Value, String> {
+    // "Nothing installed, nothing offered" reads correctly in a settings
+    // screen; an error would surface as a spurious failure.
+    Ok(serde_json::json!({ "installed": false, "models": [] }))
+}
+
+#[tauri::command]
+pub async fn download_speaker_models(_app: AppHandle) -> Result<(), String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn cancel_speaker_models_download() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[tauri::command]
+pub async fn delete_speaker_models() -> Result<(), String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn analyze_speakers(
+    _app: AppHandle,
+    _job_id: Option<String>,
+    _audio_path: String,
+    _tracks: Option<Vec<TranscribeTrack>>,
+    _expected_speakers: Option<u32>,
+    _segments: Option<Vec<serde_json::Value>>,
+    _shared_microphone: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn embed_speaker_turns(
+    _audio_path: String,
+    _turns: Vec<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn voice_profiles_list() -> Result<serde_json::Value, String> {
+    // No voice profile can exist on this platform.
+    Ok(serde_json::json!({ "profiles": [], "quarantined": 0, "directory": "" }))
+}
+
+#[tauri::command]
+pub async fn voice_profile_save(
+    _consent: bool,
+    _name: String,
+    _embedding: Vec<f32>,
+    _source: serde_json::Value,
+    _profile_id: Option<String>,
+    _is_me: Option<bool>,
+    _model: Option<String>,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn voice_profile_rename(
+    _profile_id: String,
+    _name: String,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn voice_profiles_merge(
+    _into_id: String,
+    _from_id: String,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn voice_profile_delete(_profile_id: String) -> Result<(), String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn voice_profiles_delete_all() -> Result<usize, String> {
+    // Nothing exists, so nothing was removed.
+    Ok(0)
+}
+
+#[tauri::command]
+pub async fn voice_profiles_match(
+    _consent: bool,
+    _speakers: Vec<serde_json::Value>,
+    _participants: Option<Vec<String>>,
+    _model: Option<String>,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn enrol_own_voice(
+    _consent: bool,
+    _audio_path: String,
+    _name: Option<String>,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}
+
+#[tauri::command]
+pub async fn extract_audio_clip(
+    _audio_path: String,
+    _start: f64,
+    _end: f64,
+) -> Result<serde_json::Value, String> {
+    Err(UNAVAILABLE.into())
+}

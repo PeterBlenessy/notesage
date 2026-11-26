@@ -52,6 +52,10 @@ pub mod audio_decode;
 /// like `transcription`, whose commands are thin wrappers around this).
 #[cfg(desktop)]
 pub mod transcribe;
+/// Speaker identification: who spoke when, remembered voices (desktop only;
+/// the mobile build gets the same command names from `transcription_stub`).
+#[cfg(desktop)]
+pub mod speakers;
 pub mod local_inference;
 pub mod model_management;
 pub mod model_providers;
@@ -99,6 +103,8 @@ pub use health::*;
 pub use transcription::*;
 #[cfg(desktop)]
 pub use recording::*;
+#[cfg(desktop)]
+pub use speakers::commands::*;
 pub use local_inference::*;
 pub use model_management::*;
 pub use model_metadata::*;

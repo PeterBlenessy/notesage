@@ -118,6 +118,211 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
       };
       (window as Record<string, unknown>).__RECORDING_MOCK__ = recordingMock;
 
+      // State behind the speaker-identification handlers (voice-analysis
+      // contract, 2026-11). Exposed on `window.__SPEAKER_MOCK__` so a spec can
+      // seed stored voices, hold an analysis, or read what was sent. Like the
+      // real backend, the consent-gated commands REJECT unless `consent` is
+      // exactly `true`, and a stored voice never carries its voiceprint out.
+      type SpeakerArgs = Record<string, unknown> | undefined;
+      interface SpeakerMockProfile {
+        id: string;
+        name: string;
+        is_me: boolean;
+        created_at: string;
+        updated_at: string;
+        sources: Array<{ kind: string; recording: string | null; at: string }>;
+        model: string;
+        exemplar_count: number;
+        usable: boolean;
+      }
+      const SPEAKER_MODEL = 'wespeaker-voxceleb-resnet34-lm';
+      const speakerEmbedding = (seed: number): number[] => {
+        const raw = Array.from({ length: 256 }, (_, i) => Math.sin(seed * 7.13 + i * 0.37));
+        const norm = Math.sqrt(raw.reduce((sum, v) => sum + v * v, 0));
+        return raw.map((v) => v / norm);
+      };
+      const speakerMock = {
+        modelInstalled: true,
+        profiles: [] as SpeakerMockProfile[],
+        /** Every speaker command with its arguments, in call order. */
+        calls: [] as Array<{ cmd: string; args: SpeakerArgs }>,
+        /** When true `analyze_speakers` does not resolve until `releaseAnalysis()` is called. */
+        holdAnalysis: false,
+        releaseAnalysis: null as (() => void) | null,
+        /** Candidates `voice_profiles_match` returns, by speaker label. */
+        candidates: {} as Record<string, unknown[]>,
+        nextId: 1,
+      };
+      (window as Record<string, unknown>).__SPEAKER_MOCK__ = speakerMock;
+      const speakerCall = (cmd: string, args: SpeakerArgs) => speakerMock.calls.push({ cmd, args });
+      const speakerConsent = (args: SpeakerArgs) => {
+        if (args?.consent !== true) throw new Error('Voice recognition is not enabled');
+      };
+      const speakerProfile = (id: unknown): SpeakerMockProfile => {
+        const found = speakerMock.profiles.find((p) => p.id === id);
+        if (!found) throw new Error(`Voice profile not found: ${String(id)}`);
+        return found;
+      };
+      const speakerNewProfile = (name: string, isMe: boolean): SpeakerMockProfile => {
+        const at = new Date().toISOString();
+        const profile: SpeakerMockProfile = {
+          id: `vp-${speakerMock.nextId++}`,
+          name,
+          is_me: isMe,
+          created_at: at,
+          updated_at: at,
+          sources: [],
+          model: SPEAKER_MODEL,
+          exemplar_count: 0,
+          usable: true,
+        };
+        speakerMock.profiles.push(profile);
+        return profile;
+      };
+      const speakerAnalysis = (args: SpeakerArgs) => {
+        const segments = Array.isArray(args?.segments) ? (args?.segments as Array<Record<string, unknown>>) : null;
+        const tracks = Array.isArray(args?.tracks) ? (args?.tracks as Array<{ path: string }>) : [];
+        const twoTrack = tracks.length === 2 && args?.sharedMicrophone !== true;
+        const labels = twoTrack ? ['me', 'speaker-1', 'speaker-2'] : ['speaker-1', 'speaker-2'];
+        const trackPath = tracks.length > 0 ? tracks[tracks.length - 1].path : String(args?.audioPath);
+        return {
+          turns: labels.map((speaker, i) => ({ start: i * 10, end: i * 10 + 8, speaker })),
+          speakers: labels.map((label, i) => ({
+            label,
+            total_secs: 372 * (labels.length - i),
+            sample: { track_path: trackPath, start: i * 10 + 1, end: i * 10 + 7 },
+            embedding: speakerEmbedding(i + 1),
+          })),
+          ...(segments
+            ? {
+                segments: segments.map((s, i) => ({
+                  start: s.start,
+                  end: s.end,
+                  text: s.text,
+                  speaker: twoTrack && s.speaker === 'me' ? 'me' : `speaker-${(i % 2) + 1}`,
+                })),
+              }
+            : {}),
+          duration_secs: 1834,
+          model: SPEAKER_MODEL,
+        };
+      };
+      const speakerHandlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
+        speaker_models_status: () => ({
+          installed: speakerMock.modelInstalled,
+          models: [
+            {
+              id: SPEAKER_MODEL,
+              name: 'WeSpeaker ResNet34-LM',
+              size_bytes: 26_530_550,
+              installed: speakerMock.modelInstalled,
+              licence: 'CC-BY-4.0 (WeSpeaker, trained on VoxCeleb)',
+              source: 'wenet-e2e/wespeaker',
+              download_url: 'https://example.invalid/wespeaker_en_voxceleb_resnet34_LM.onnx',
+            },
+          ],
+        }),
+        download_speaker_models: () => {
+          speakerMock.modelInstalled = true;
+          return null;
+        },
+        cancel_speaker_models_download: () => false,
+        delete_speaker_models: () => {
+          speakerMock.modelInstalled = false;
+          return null;
+        },
+        analyze_speakers: (args) => {
+          if (!speakerMock.modelInstalled) {
+            throw new Error('Voice models are not downloaded. Download them from Settings > Transcription.');
+          }
+          if (!speakerMock.holdAnalysis) return speakerAnalysis(args);
+          return new Promise((resolve) => {
+            speakerMock.releaseAnalysis = () => resolve(speakerAnalysis(args));
+          });
+        },
+        embed_speaker_turns: (args) => {
+          const turns = Array.isArray(args?.turns) ? (args?.turns as Array<{ speaker: string }>) : [];
+          const names = [...new Set(turns.map((turn) => turn.speaker))];
+          return {
+            speakers: names.map((speaker, i) => ({ speaker, embedding: speakerEmbedding(100 + i), total_secs: 30 })),
+            skipped: [],
+            model: SPEAKER_MODEL,
+          };
+        },
+        voice_profiles_list: () => ({
+          profiles: speakerMock.profiles.map((p) => ({ ...p })),
+          quarantined: 0,
+          directory: `${HOME_DIR}/.notesage/voice-profiles`,
+        }),
+        voice_profile_save: (args) => {
+          speakerConsent(args);
+          const name = String(args?.name ?? '').trim();
+          const source = (args?.source ?? {}) as { kind?: string; recording?: string | null };
+          let profile =
+            (typeof args?.profileId === 'string' ? speakerProfile(args.profileId) : undefined) ??
+            (args?.isMe === true ? speakerMock.profiles.find((p) => p.is_me) : undefined) ??
+            speakerMock.profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
+          const created = !profile;
+          if (!profile) {
+            if (!name) throw new Error('A voice profile needs a name');
+            profile = speakerNewProfile(name, args?.isMe === true);
+          }
+          if (name) profile.name = name;
+          profile.sources.push({
+            kind: String(source.kind ?? 'manual'),
+            recording: source.recording ?? null,
+            at: new Date().toISOString(),
+          });
+          profile.exemplar_count += 1;
+          return { profile: { ...profile }, created };
+        },
+        voice_profile_rename: (args) => {
+          const profile = speakerProfile(args?.profileId);
+          profile.name = String(args?.name ?? '').trim() || profile.name;
+          return { ...profile };
+        },
+        voice_profiles_merge: (args) => {
+          const into = speakerProfile(args?.intoId);
+          const from = speakerProfile(args?.fromId);
+          into.exemplar_count += from.exemplar_count;
+          speakerMock.profiles = speakerMock.profiles.filter((p) => p.id !== from.id);
+          return { ...into };
+        },
+        voice_profile_delete: (args) => {
+          speakerProfile(args?.profileId);
+          speakerMock.profiles = speakerMock.profiles.filter((p) => p.id !== args?.profileId);
+          return null;
+        },
+        voice_profiles_delete_all: () => {
+          const count = speakerMock.profiles.length;
+          speakerMock.profiles = [];
+          return count;
+        },
+        voice_profiles_match: (args) => {
+          speakerConsent(args);
+          const speakers = Array.isArray(args?.speakers) ? (args?.speakers as Array<{ label: string }>) : [];
+          return speakers.map((s) => ({ label: s.label, candidates: speakerMock.candidates[s.label] ?? [] }));
+        },
+        enrol_own_voice: (args) => {
+          speakerConsent(args);
+          const profile = speakerMock.profiles.find((p) => p.is_me) ?? speakerNewProfile('Me', true);
+          const created = profile.exemplar_count === 0;
+          profile.sources.push({ kind: 'enrolment', recording: null, at: new Date().toISOString() });
+          profile.exemplar_count += 1;
+          return { profile: { ...profile }, created };
+        },
+        extract_audio_clip: (args) => ({
+          path: `/tmp/notesage-speaker-clips/clip-${String(args?.start)}-${String(args?.end)}.wav`,
+        }),
+      };
+      // Logged, so a spec can assert on what was (and was not) sent.
+      for (const [cmd, handler] of Object.entries(speakerHandlers)) {
+        speakerHandlers[cmd] = (args) => {
+          speakerCall(cmd, args);
+          return handler(args);
+        };
+      }
+
       const defaultHandlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
         // File operations
         list_directory: () => fileTree,
@@ -191,6 +396,9 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
           const dir = `${String(args?.destRecordingsDir ?? '')}/Import ${name.replace(/\.[^.]+$/, '')} 2026-01-01 000000`;
           return { bundle_dir: dir, audio_path: `${dir}/audio.m4a`, duration_secs: 60, original_name: name };
         },
+
+        // Speaker identification: the stateful handlers defined above.
+        ...speakerHandlers,
 
         // Recording (recording contract, 2026-11): a small in-page recorder so
         // a spec can start, pause, stop and discard. The clock is the wall

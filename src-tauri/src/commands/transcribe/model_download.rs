@@ -30,7 +30,7 @@ pub const MODEL_REVISION: &str = "main";
 
 /// The first four bytes of every ggml model file (`0x67676d6c`, stored
 /// little-endian).
-const GGML_MAGIC: [u8; 4] = *b"lmgg";
+pub const GGML_MAGIC: [u8; 4] = *b"lmgg";
 
 /// Free space required beyond the bytes still to download.
 const FREE_SPACE_MARGIN: u64 = 64 * 1024 * 1024;
@@ -184,6 +184,10 @@ pub struct DownloadSpec {
     pub catalogue_size: Option<u64>,
     /// Lowercase hex SHA-256 the finished file must have.
     pub sha256: Option<String>,
+    /// The first four bytes the finished file must have ([`GGML_MAGIC`] for
+    /// a Whisper model). `None` for a format without one (the ONNX voice
+    /// models, which are always checked by hash).
+    pub magic: Option<[u8; 4]>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,9 +218,22 @@ fn failed_verification(detail: &str) -> String {
     format!("Downloaded file failed verification ({detail}). It was removed; try again.")
 }
 
-/// Check a finished file. Blocking (reads the whole file when hashing).
+/// Check a finished Whisper model file. Blocking (reads the whole file when
+/// hashing).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn verify_model_file(
     path: &Path,
+    catalogue_size: Option<u64>,
+    sha256: Option<&str>,
+) -> Result<(), String> {
+    verify_file(path, Some(GGML_MAGIC), catalogue_size, sha256)
+}
+
+/// Check a finished file: its first bytes (when `expect_magic` is given),
+/// and its size and hash (when a hash is given).
+pub fn verify_file(
+    path: &Path,
+    expect_magic: Option<[u8; 4]>,
     catalogue_size: Option<u64>,
     sha256: Option<&str>,
 ) -> Result<(), String> {
@@ -224,8 +241,13 @@ pub fn verify_model_file(
     let mut file = std::fs::File::open(path).map_err(|e| format!("cannot open it: {e}"))?;
     let len = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut magic = [0u8; 4];
-    if file.read_exact(&mut magic).is_err() || magic != GGML_MAGIC {
-        return Err("not a Whisper model file".into());
+    let head_read = file.read_exact(&mut magic).is_ok();
+    if let Some(expected) = expect_magic {
+        if !head_read || magic != expected {
+            return Err("not a Whisper model file".into());
+        }
+    } else if !head_read {
+        return Err("the file is empty".into());
     }
     let Some(expected) = sha256 else {
         if let Some(size) = catalogue_size {
@@ -400,8 +422,8 @@ pub async fn download_with_resume(
 
     // Verify before the file gets the name the app loads models by.
     let temp = spec.temp_path.clone();
-    let (size, sha) = (spec.catalogue_size, spec.sha256.clone());
-    let verdict = tokio::task::spawn_blocking(move || verify_model_file(&temp, size, sha.as_deref()))
+    let (size, sha, magic) = (spec.catalogue_size, spec.sha256.clone(), spec.magic);
+    let verdict = tokio::task::spawn_blocking(move || verify_file(&temp, magic, size, sha.as_deref()))
         .await
         .map_err(|e| format!("Verification task failed: {e}"))?;
     if let Err(detail) = verdict {
@@ -586,6 +608,7 @@ mod tests {
             temp_path: dir.join("ggml-test.bin.downloading"),
             catalogue_size: Some(body.len() as u64),
             sha256: with_hash.then(|| sha_hex(body)),
+            magic: Some(GGML_MAGIC),
         }
     }
 
@@ -898,5 +921,18 @@ mod tests {
         std::fs::write(&short, b"lm").unwrap();
         assert_eq!(verify_model_file(&short, None, None), Err("not a Whisper model file".into()));
         assert!(verify_model_file(&dir.path().join("none.bin"), None, None).is_err());
+
+        // A format without a magic number (the ONNX voice models): checked
+        // by size and hash alone.
+        let other = dir.path().join("voice.onnx");
+        let onnx = b"\x08\x08not ggml at all".repeat(1000);
+        std::fs::write(&other, &onnx).unwrap();
+        assert_eq!(verify_file(&other, None, Some(onnx.len() as u64), Some(&sha_hex(&onnx))), Ok(()));
+        assert_eq!(verify_file(&other, None, Some(onnx.len() as u64), Some(&"ab".repeat(32))), Err("checksum mismatch".into()));
+        assert_eq!(verify_file(&other, None, Some(5), Some(&sha_hex(&onnx))), Err(format!("size {}, expected 5", onnx.len())));
+        assert_eq!(verify_file(&other, Some(GGML_MAGIC), None, None), Err("not a Whisper model file".into()));
+        let empty = dir.path().join("empty.onnx");
+        std::fs::write(&empty, b"").unwrap();
+        assert_eq!(verify_file(&empty, None, None, None), Err("the file is empty".into()));
     }
 }

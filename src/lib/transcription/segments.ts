@@ -38,6 +38,12 @@ export type SpeakerNames = Record<string, string>;
 /** The two labels a microphone + system-audio recording produces. */
 export const SPEAKER_ME = 'me';
 export const SPEAKER_OTHERS = 'others';
+/**
+ * Not a label: the key under which a `defaults` map carries the TEMPLATE for
+ * the labels voice analysis makes (`speaker-1`, `speaker-2`, …), e.g.
+ * `"Speaker {n}"`. No segment is ever labelled with it.
+ */
+export const SPEAKER_NUMBERED = 'speaker-#';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -108,8 +114,53 @@ export function parseSpeakersFile(json: string): SpeakerNames {
   return names;
 }
 
-export function serializeSpeakersFile(names: SpeakerNames): string {
-  return `${JSON.stringify({ version: SIDECAR_VERSION, names }, null, 2)}\n`;
+/** What `speakers.json` may hold besides the names. Both lists are optional. */
+export interface SpeakersFileExtras {
+  /**
+   * The people the user said were in the meeting. Names only: they narrow who
+   * is suggested for a voice.
+   */
+  participants?: readonly string[];
+  /**
+   * Every label voice analysis found, in order, named or not: so the list of
+   * a recording's speakers can say "Anna, Speaker 2" without reading the
+   * whole of `segments.json`.
+   */
+  labels?: readonly string[];
+}
+
+export function serializeSpeakersFile(names: SpeakerNames, extras: SpeakersFileExtras = {}): string {
+  const file: { version: typeof SIDECAR_VERSION; names: SpeakerNames; labels?: string[]; participants?: string[] } = {
+    version: SIDECAR_VERSION,
+    names,
+  };
+  // Only written when there are any, so a file without them is byte for byte
+  // what it was before they existed.
+  if (extras.labels && extras.labels.length > 0) file.labels = [...extras.labels];
+  if (extras.participants && extras.participants.length > 0) file.participants = [...extras.participants];
+  return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+function stringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    const value = typeof entry === 'string' ? entry.replace(/\s+/g, ' ').trim() : '';
+    if (value && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+/** The optional lists of `speakers.json`. Missing or unreadable is two empty lists. */
+export function parseSpeakersExtras(json: string): { participants: string[]; labels: string[] } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return { participants: [], labels: [] };
+  }
+  if (!isRecord(raw)) return { participants: [], labels: [] };
+  return { participants: stringList(raw.participants), labels: stringList(raw.labels) };
 }
 
 /** The labels that occur, in order of first appearance. */
@@ -122,14 +173,20 @@ export function speakerLabels(segments: readonly Segment[]): string[] {
 /**
  * The name to show for a label: the user's, else the translated default for
  * `me` / `others` (passed in, so this file stays free of the i18n table),
- * else the label itself, which for a Teams transcript already is a name.
+ * else "Speaker 2" for a voice-analysis label (`speaker-2`) when `defaults`
+ * carries the template for it, else the label itself, which for a Teams
+ * transcript already is a name.
  */
 export function speakerDisplayName(
   label: string,
   names: SpeakerNames,
   defaults: SpeakerNames = {},
 ): string {
-  return names[label] ?? defaults[label] ?? label;
+  const known = names[label] ?? defaults[label];
+  if (known !== undefined) return known;
+  const template = defaults[SPEAKER_NUMBERED];
+  const numbered = template ? /^speaker-([1-9]\d*)$/.exec(label) : null;
+  return numbered && template ? template.replace('{n}', numbered[1]) : label;
 }
 
 /** `hh:mm:ss`, always three fields, so every marker in a note has one width. */

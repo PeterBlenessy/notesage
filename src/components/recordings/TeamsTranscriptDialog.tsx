@@ -28,7 +28,9 @@ import {
   readSegments,
   readTeamsTranscript,
 } from "@/lib/transcription/transcript-files";
+import { offerTeamsVoiceLearning } from "@/lib/speakers/teams-learn";
 import { useRecordingsStore, type RecordingBundle } from "@/stores/recordings-store";
+import { useSpeakersStore } from "@/stores/speakers-store";
 import {
   ReplaceTranscriptDialog,
   guardTranscriptWrite,
@@ -146,6 +148,18 @@ export function TeamsTranscriptDialog({
         refresh();
         toast.success(t("recordings.teamsAdded", { title: bundle.title }), {
           action: { label: t("recordings.openTranscript"), onClick: () => openTranscript(written.path) },
+        });
+        // Teams names the speakers now: a voice analysis held for the old
+        // segments no longer applies.
+        if (useSpeakersStore.getState().prepared[bundle.dir]) useSpeakersStore.getState().setPrepared(bundle.dir, null);
+        // With both opt-ins on: OFFER to remember the voices Teams just named.
+        // A second toast with one action; nothing happens unless it is clicked.
+        void offerTeamsVoiceLearning({
+          bundleDir: bundle.dir,
+          title: bundle.title,
+          audioPath: bundle.audioPath,
+          tracks: bundle.tracks,
+          previousSegments: loaded.ours,
         });
         onClose();
       } catch (err) {

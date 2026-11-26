@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   renderWithProviders,
   screen,
   fireEvent,
   waitFor,
+  cleanup,
 } from '@/test/component-harness';
 import { setMockInvokeHandler, clearMockInvokeHandlers } from '@/test/tauri-mock';
 import { toast } from 'sonner';
@@ -63,6 +64,15 @@ function registerSaveHandlers(existingFile?: string): { saved: Array<Record<stri
 }
 
 describe('AddEditServerDialog', () => {
+  // Radix's FocusScope dispatches an event from a zero-delay timer when a
+  // dialog unmounts. If the file ends first, the timer fires after jsdom has
+  // been torn down and vitest fails the whole run with an unhandled error
+  // (seen under load). Unmount here and let that timer run.
+  afterEach(async () => {
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     clearMockInvokeHandlers();

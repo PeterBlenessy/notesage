@@ -70,6 +70,7 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 | Automations (triggers, steps, agent-step provider & permissions, builder) | docs/features/automations.md |
 | iOS mobile app (read-only reader + share capture) | docs/features/mobile.md |
 | Inbox on the desktop (read-later list, filing, the shared reading-progress sidecar) | docs/features/inbox.md |
+| Speaker identification (voices in a recording, remembered voices, privacy model, deleting them) | docs/features/speakers.md |
 
 ## Performance Tracking
 

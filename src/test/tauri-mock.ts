@@ -179,6 +179,10 @@ export function registerDefaultHandlers(): void {
     const dir = `${String(args?.destRecordingsDir ?? '')}/Import ${name.replace(/\.[^.]+$/, '')} 2026-01-01 000000`;
     return { bundle_dir: dir, audio_path: `${dir}/audio.m4a`, duration_secs: 60, original_name: name };
   });
+  // Speaker identification: nothing installed, nothing stored. A test of the
+  // feature itself calls `registerSpeakerHandlers()` for the stateful backend.
+  setMockInvokeHandler('speaker_models_status', () => ({ installed: false, models: [] }));
+  setMockInvokeHandler('voice_profiles_list', () => ({ profiles: [], quarantined: 0, directory: '' }));
 }
 
 // ---------------------------------------------------------------------------
@@ -303,4 +307,248 @@ export function registerRecordingHandlers(): RecordingMockLog {
     log.written.push({ path: String(args?.path), content: String(args?.content) });
   });
   return log;
+}
+
+// ---------------------------------------------------------------------------
+// Speaker identification commands (voice-analysis contract, 2026-11)
+// ---------------------------------------------------------------------------
+
+/** A stored voice as `voice_profiles_list` returns it (no embedding). */
+export interface MockVoiceProfile {
+  id: string;
+  name: string;
+  is_me: boolean;
+  created_at: string;
+  updated_at: string;
+  sources: Array<{ kind: string; recording: string | null; at: string }>;
+  model: string;
+  exemplar_count: number;
+  usable: boolean;
+}
+
+export interface SpeakerMockState {
+  /** Every speaker command, with its arguments, in call order. */
+  calls: Array<{ cmd: string; args: Record<string, unknown> }>;
+  /** Arguments of each call to one command. */
+  argsOf: (cmd: string) => Array<Record<string, unknown>>;
+  modelInstalled: boolean;
+  profiles: MockVoiceProfile[];
+  /** What `analyze_speakers` resolves with. Replace to defer, fail or inspect. */
+  analyze: (args: Record<string, unknown>) => unknown;
+  /** What `voice_profiles_match` resolves with (after the consent check). */
+  match: (args: Record<string, unknown>) => unknown;
+  /** What `embed_speaker_turns` resolves with. */
+  embed: (args: Record<string, unknown>) => unknown;
+  /** What `enrol_own_voice` does after the consent check. Throw to fail. */
+  enrol: (args: Record<string, unknown>) => void;
+  /** What `download_speaker_models` does. Throw to fail; return a promise to hold. */
+  download: () => unknown;
+}
+
+export const MOCK_VOICE_MODEL = 'wespeaker-voxceleb-resnet34-lm';
+const CONSENT_ERROR = 'Voice recognition is not enabled';
+
+/** A unit-length stand-in for a 256-float voiceprint, recognisable in a leak check. */
+export function mockEmbedding(seed: number): number[] {
+  const raw = Array.from({ length: 256 }, (_, i) => Math.sin(seed * 7.13 + i * 0.37));
+  const norm = Math.sqrt(raw.reduce((sum, v) => sum + v * v, 0));
+  return raw.map((v) => v / norm);
+}
+
+/**
+ * Register an in-memory voice-analysis backend that behaves like the contract:
+ * the consent-gated commands REJECT with the exact backend string unless
+ * `consent === true`, profiles never carry an embedding out, and every call is
+ * logged with its arguments so a test can assert what was (and was not) sent.
+ */
+export function registerSpeakerHandlers(
+  initial: Partial<Pick<SpeakerMockState, 'modelInstalled' | 'profiles'>> = {},
+): SpeakerMockState {
+  let nextId = 1;
+  const state: SpeakerMockState = {
+    calls: [],
+    argsOf: (cmd) => state.calls.filter((c) => c.cmd === cmd).map((c) => c.args),
+    modelInstalled: initial.modelInstalled ?? true,
+    profiles: initial.profiles ? initial.profiles.map((p) => ({ ...p })) : [],
+    analyze: (args) => {
+      const segments = Array.isArray(args.segments) ? (args.segments as Array<Record<string, unknown>>) : null;
+      const tracks = Array.isArray(args.tracks) ? (args.tracks as Array<{ path: string }>) : [];
+      const twoTrack = tracks.length === 2 && args.sharedMicrophone !== true;
+      const labels = twoTrack ? ['me', 'speaker-1', 'speaker-2'] : ['speaker-1', 'speaker-2'];
+      const trackPath = tracks.length > 0 ? String(tracks[tracks.length - 1].path) : String(args.audioPath);
+      return {
+        turns: labels.map((speaker, i) => ({ start: i * 10, end: i * 10 + 8, speaker })),
+        speakers: labels.map((label, i) => ({
+          label,
+          total_secs: 60 * (labels.length - i),
+          sample: { track_path: trackPath, start: i * 10 + 1, end: i * 10 + 7 },
+          embedding: mockEmbedding(i + 1),
+        })),
+        ...(segments
+          ? {
+              segments: segments.map((s, i) => ({
+                start: s.start,
+                end: s.end,
+                text: s.text,
+                speaker: twoTrack && s.speaker === 'me' ? 'me' : `speaker-${(i % 2) + 1}`,
+              })),
+            }
+          : {}),
+        duration_secs: 120,
+        model: MOCK_VOICE_MODEL,
+      };
+    },
+    match: (args) =>
+      (Array.isArray(args.speakers) ? (args.speakers as Array<{ label: string }>) : []).map((s) => ({
+        label: s.label,
+        candidates: [],
+      })),
+    embed: (args) => {
+      const turns = Array.isArray(args.turns) ? (args.turns as Array<{ speaker: string }>) : [];
+      const names = [...new Set(turns.map((turn) => turn.speaker))];
+      return {
+        speakers: names.map((speaker, i) => ({ speaker, embedding: mockEmbedding(100 + i), total_secs: 30 })),
+        skipped: [],
+        model: MOCK_VOICE_MODEL,
+      };
+    },
+    enrol: () => undefined,
+    download: () => {
+      state.modelInstalled = true;
+      return null;
+    },
+  };
+
+  const on = (cmd: string, handler: (args: Record<string, unknown>) => unknown) =>
+    setMockInvokeHandler(cmd, (args) => {
+      const a = args ?? {};
+      state.calls.push({ cmd, args: a });
+      return handler(a);
+    });
+  const requireConsent = (a: Record<string, unknown>) => {
+    if (a.consent !== true) throw new Error(CONSENT_ERROR);
+  };
+  const find = (id: unknown): MockVoiceProfile => {
+    const profile = state.profiles.find((p) => p.id === id);
+    if (!profile) throw new Error(`Voice profile not found: ${String(id)}`);
+    return profile;
+  };
+  const now = () => new Date().toISOString();
+  const blank = (name: string, isMe: boolean): MockVoiceProfile => ({
+    id: `vp-${nextId++}`,
+    name,
+    is_me: isMe,
+    created_at: now(),
+    updated_at: now(),
+    sources: [],
+    model: MOCK_VOICE_MODEL,
+    exemplar_count: 0,
+    usable: true,
+  });
+
+  on('speaker_models_status', () => ({
+    installed: state.modelInstalled,
+    models: [
+      {
+        id: MOCK_VOICE_MODEL,
+        name: 'WeSpeaker ResNet34-LM',
+        size_bytes: 26_530_550,
+        installed: state.modelInstalled,
+        licence: 'CC-BY-4.0 (WeSpeaker, trained on VoxCeleb)',
+        source: 'wenet-e2e/wespeaker',
+        download_url: 'https://example.invalid/wespeaker_en_voxceleb_resnet34_LM.onnx',
+      },
+    ],
+  }));
+  on('download_speaker_models', () => state.download());
+  on('cancel_speaker_models_download', () => true);
+  on('delete_speaker_models', () => {
+    state.modelInstalled = false;
+    return null;
+  });
+  on('analyze_speakers', (a) => {
+    if (!state.modelInstalled) {
+      throw new Error('Voice models are not downloaded. Download them from Settings > Transcription.');
+    }
+    return state.analyze(a);
+  });
+  on('embed_speaker_turns', (a) => state.embed(a));
+  on('voice_profiles_list', () => ({
+    profiles: state.profiles.map((p) => ({ ...p })),
+    quarantined: 0,
+    directory: '/Users/me/.notesage/voice-profiles',
+  }));
+  on('voice_profile_save', (a) => {
+    requireConsent(a);
+    const name = String(a.name ?? '').trim();
+    const embedding = Array.isArray(a.embedding) ? a.embedding : [];
+    if (embedding.length === 0) throw new Error('The voice embedding is empty or not a number');
+    const source = (a.source ?? {}) as { kind?: string; recording?: string | null };
+    let profile =
+      (typeof a.profileId === 'string' ? find(a.profileId) : undefined) ??
+      (a.isMe === true ? state.profiles.find((p) => p.is_me) : undefined) ??
+      state.profiles.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    const created = !profile;
+    if (!profile) {
+      if (!name) throw new Error('A voice profile needs a name');
+      profile = blank(name, a.isMe === true);
+      state.profiles.push(profile);
+    }
+    if (name) profile.name = name;
+    profile.sources.push({ kind: String(source.kind ?? 'manual'), recording: source.recording ?? null, at: now() });
+    profile.exemplar_count += 1;
+    profile.updated_at = now();
+    return { profile: { ...profile }, created };
+  });
+  on('voice_profile_rename', (a) => {
+    const profile = find(a.profileId);
+    const name = String(a.name ?? '').trim();
+    if (!name) throw new Error('A voice profile needs a name');
+    profile.name = name;
+    return { ...profile };
+  });
+  on('voice_profiles_merge', (a) => {
+    if (a.intoId === a.fromId) throw new Error('Cannot merge a voice profile with itself');
+    const into = find(a.intoId);
+    const from = find(a.fromId);
+    into.exemplar_count += from.exemplar_count;
+    into.sources.push(...from.sources);
+    state.profiles = state.profiles.filter((p) => p.id !== from.id);
+    return { ...into };
+  });
+  on('voice_profile_delete', (a) => {
+    find(a.profileId);
+    state.profiles = state.profiles.filter((p) => p.id !== a.profileId);
+    return null;
+  });
+  on('voice_profiles_delete_all', () => {
+    const count = state.profiles.length;
+    state.profiles = [];
+    return count;
+  });
+  on('voice_profiles_match', (a) => {
+    requireConsent(a);
+    return state.match(a);
+  });
+  on('enrol_own_voice', (a) => {
+    requireConsent(a);
+    state.enrol(a);
+    let profile = state.profiles.find((p) => p.is_me);
+    const created = !profile;
+    if (!profile) {
+      profile = blank(typeof a.name === 'string' && a.name ? a.name : 'Me', true);
+      state.profiles.push(profile);
+    }
+    profile.sources.push({ kind: 'enrolment', recording: null, at: now() });
+    profile.exemplar_count += 1;
+    return { profile: { ...profile }, created };
+  });
+  on('extract_audio_clip', (a) => {
+    const start = Number(a.start);
+    const end = Number(a.end);
+    if (!(end > start)) throw new Error('Invalid clip range');
+    if (end - start > 30) throw new Error('A clip can be at most 30 seconds long');
+    return { path: `/tmp/notesage-speaker-clips/clip-${Math.round(start * 10)}-${Math.round(end * 10)}.wav` };
+  });
+  return state;
 }
