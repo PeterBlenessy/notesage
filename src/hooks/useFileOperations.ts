@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
+import { useRecordingsStore } from "@/stores/recordings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { isHeldPath } from "@/lib/library-follow";
@@ -433,6 +434,8 @@ export function useFileOperations() {
   const leaveInbox = () => {
     const inbox = useInboxStore.getState();
     if (inbox.open) inbox.closeInbox();
+    // The Recordings list is the same kind of mode, and was a trap without this.
+    useRecordingsStore.getState().closeRecordings();
   };
 
   const openFile = useCallback(

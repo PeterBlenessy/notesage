@@ -23,6 +23,34 @@ export type RecordingManifestApp = "notesage-ios" | "notesage-macos";
 export type RecordingAudioCodec = "aac" | "pcm";
 export type TranscriptionState = "running" | "done" | "failed";
 export type TranscriptionEngine = "whisper" | "apple-speech";
+/** What was captured. `import` = audio extracted from a file the user brought in. */
+export type RecordingSource = "microphone" | "system" | "both" | "import";
+export type RecordingTrackRole = "mic" | "system" | "mix";
+
+/** One audio file of a multi-track bundle (`source: "both"`). */
+export interface RecordingManifestTrack {
+  role: RecordingTrackRole;
+  /** Filename inside the bundle. */
+  file: string;
+}
+
+/** Where an imported recording came from. The original is never copied into the library. */
+export interface RecordingOriginalFile {
+  name: string;
+  path: string;
+}
+
+/**
+ * Which file in the bundle is the transcript, and what it looked like when it
+ * was generated. `hash` is `hashTranscript` of the content as written, so a
+ * later rewrite (renaming a speaker, "Transcribe again") can tell a transcript
+ * the user has edited from one it may regenerate.
+ */
+export interface RecordingManifestTranscript {
+  file: string;
+  hash?: string;
+  generatedAt?: string;
+}
 
 export interface RecordingManifestCreator {
   /** The device label the Inbox reading-progress sidecar uses (`"Peter's iPhone"`). */
@@ -62,11 +90,25 @@ export interface RecordingManifest {
   startedAt: string;
   /** Pause-aware recorded length. */
   durationSecs: number;
-  source: "microphone";
+  /** Bundles from before system audio and import existed are all `"microphone"`. */
+  source: RecordingSource;
   /** One of the `SPEECH_LANGUAGES` codes; omitted when the phone's language is not one the Mac knows. */
   language?: string;
   audio: RecordingManifestAudio;
   transcription: TranscriptionStatus | null;
+  /** Only for `source: "both"`: the separate microphone and system-audio files. */
+  tracks?: RecordingManifestTrack[];
+  /** Only for `source: "import"`. */
+  originalFile?: RecordingOriginalFile;
+  /** The name the user gave the recording. The bundle folder name stays stable. */
+  title?: string;
+  /** Absent on bundles whose transcript is the legacy `transcript.md`. */
+  transcript?: RecordingManifestTranscript;
+  /**
+   * `false` once the user cancelled a transcription: the scanner must not
+   * start it again by itself. Absent means "transcribe when eligible".
+   */
+  autoTranscribe?: boolean;
 }
 
 const TOP_KEYS = [
@@ -78,6 +120,13 @@ const TOP_KEYS = [
   "language",
   "audio",
   "transcription",
+  // Added after v1 shipped. They follow the original keys so a manifest
+  // without them still serialises byte for byte as before.
+  "title",
+  "tracks",
+  "originalFile",
+  "transcript",
+  "autoTranscribe",
 ] as const;
 const CREATED_BY_KEYS = ["device", "app", "appVersion"] as const;
 const AUDIO_KEYS = ["file", "bytes", "codec", "sampleRate", "channels", "bitrate"] as const;
@@ -95,6 +144,8 @@ const APPS: readonly string[] = ["notesage-ios", "notesage-macos"];
 const CODECS: readonly string[] = ["aac", "pcm"];
 const STATES: readonly string[] = ["running", "done", "failed"];
 const ENGINES: readonly string[] = ["whisper", "apple-speech"];
+const SOURCES: readonly string[] = ["microphone", "system", "both", "import"];
+const TRACK_ROLES: readonly string[] = ["mic", "system", "mix"];
 
 type Rec = Record<string, unknown>;
 
@@ -168,12 +219,53 @@ export function parseRecordingManifest(json: string): RecordingManifest | null {
   if (!parseCreator(raw.createdBy)) return null;
   if (!isNonEmptyString(raw.startedAt)) return null;
   if (!isFiniteNumber(raw.durationSecs) || raw.durationSecs < 0) return null;
-  if (raw.source !== "microphone") return null;
+  if (typeof raw.source !== "string" || !SOURCES.includes(raw.source)) return null;
   if (raw.language !== undefined && !isNonEmptyString(raw.language)) return null;
   if (!parseAudio(raw.audio)) return null;
   if (!("transcription" in raw)) return null;
   if (parseTranscriptionStatus(raw.transcription) === undefined) return null;
-  return raw as unknown as RecordingManifest;
+  // The later, optional fields are read leniently: a malformed one is dropped
+  // from the parsed view rather than making the whole bundle unreadable (its
+  // audio is still there and still worth listing).
+  const manifest: Rec = { ...raw };
+  if (!isNonEmptyString(manifest.title)) delete manifest.title;
+  const tracks = parseTracks(manifest.tracks);
+  if (tracks) manifest.tracks = tracks;
+  else delete manifest.tracks;
+  if (
+    !isRecord(manifest.originalFile) ||
+    !isNonEmptyString(manifest.originalFile.name) ||
+    typeof manifest.originalFile.path !== "string"
+  ) {
+    delete manifest.originalFile;
+  }
+  if (
+    !isRecord(manifest.transcript) ||
+    !isSafeBundleFileName(manifest.transcript.file) ||
+    !isOptionalString(manifest.transcript.hash) ||
+    !isOptionalString(manifest.transcript.generatedAt)
+  ) {
+    delete manifest.transcript;
+  }
+  if (typeof manifest.autoTranscribe !== "boolean") delete manifest.autoTranscribe;
+  return manifest as unknown as RecordingManifest;
+}
+
+/** A plain file name: something that cannot point outside the bundle folder. */
+export function isSafeBundleFileName(v: unknown): v is string {
+  return isNonEmptyString(v) && !/[/\\]/.test(v) && v !== "." && v !== "..";
+}
+
+function parseTracks(v: unknown): RecordingManifestTrack[] | null {
+  if (!Array.isArray(v)) return null;
+  const tracks: RecordingManifestTrack[] = [];
+  for (const track of v) {
+    if (!isRecord(track)) continue;
+    if (typeof track.role !== "string" || !TRACK_ROLES.includes(track.role)) continue;
+    if (!isSafeBundleFileName(track.file)) continue;
+    tracks.push({ role: track.role as RecordingTrackRole, file: track.file });
+  }
+  return tracks.length > 0 ? tracks : null;
 }
 
 /** Known keys first, in contract order; anything else after, in its own order. */
@@ -256,13 +348,24 @@ export interface MacRecordingFacts {
   device: string;
   appVersion: string;
   language?: string;
+  /** Defaults to `"microphone"`. */
+  source?: RecordingSource;
+  /** The separate tracks of a `"both"` recording (basenames inside the bundle). */
+  tracks?: RecordingManifestTrack[];
+  title?: string;
+  originalFile?: RecordingOriginalFile;
+  /** Defaults by the audio file's extension: `.m4a` is AAC, anything else PCM. */
+  codec?: RecordingAudioCodec;
+  /** Defaults to 1 (the mix is mono). */
+  channels?: number;
 }
 
 /**
  * The manifest the Mac writes for its own bundles after `stop_recording`, so
  * the format is bilateral: a phone can show a Mac recording with its
  * duration, and the scanner treats both kinds of bundle by one rule.
- * `codec: "pcm"` — the desktop recorder writes 16-bit mono WAV.
+ * The desktop recorder writes 16-bit mono WAV and, on macOS, encodes it to
+ * AAC afterwards, so the codec follows the file that is actually there.
  */
 export function createMacRecordingManifest(facts: MacRecordingFacts): RecordingManifest {
   const manifest: RecordingManifest = {
@@ -270,16 +373,19 @@ export function createMacRecordingManifest(facts: MacRecordingFacts): RecordingM
     createdBy: { device: facts.device, app: "notesage-macos", appVersion: facts.appVersion },
     startedAt: isoWithOffset(facts.startedAtMs),
     durationSecs: facts.durationSecs,
-    source: "microphone",
+    source: facts.source ?? "microphone",
     audio: {
       file: facts.audioFile,
       bytes: facts.bytes,
-      codec: "pcm",
+      codec: facts.codec ?? (/\.(m4a|aac|mp4)$/i.test(facts.audioFile) ? "aac" : "pcm"),
       sampleRate: facts.sampleRate,
-      channels: 1,
+      channels: facts.channels ?? 1,
     },
     transcription: null,
   };
   if (facts.language && facts.language !== "auto") manifest.language = facts.language;
+  if (facts.title) manifest.title = facts.title;
+  if (facts.tracks && facts.tracks.length > 0) manifest.tracks = facts.tracks;
+  if (facts.originalFile) manifest.originalFile = facts.originalFile;
   return manifest;
 }

@@ -127,6 +127,7 @@ const GROUPS: ShortcutGroupDef[] = [
       // ProseMirror `handleKeyDown` in `extensions/comment-mark.ts`
       { action: "Add comment on selection", keys: ["⌘", "⌥", "C"] },
       "toggle-recording",
+      "toggle-recording-pause",
       // `Mod-Enter` / `Mod-Backspace` in `extensions/ai-suggestion.ts` and
       // `extensions/inline-diff.ts`
       { action: "Accept inline suggestion", keys: ["⌘", "↵"] },

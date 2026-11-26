@@ -48,9 +48,12 @@ test.describe('Settings — search / filter', () => {
 
     test('the result-count status reflects the query', async ({ page }) => {
         const dialog = await openSettings(page);
-        const status = dialog.getByRole('status');
+        // The search's own result count. Other panels may carry their own
+        // status regions (the Transcription panel's "model not downloaded").
+        const status = dialog.getByRole('status').filter({ hasText: /matches$/ });
 
-        await dialog.getByRole('searchbox').fill('Voice');
+        // The panel formerly labelled "Voice".
+        await dialog.getByRole('searchbox').fill('Transcription');
         await expect(status).toHaveText(/^1 of \d+ matches$/, { timeout: 5000 });
 
         await dialog.getByRole('searchbox').fill('zzqqxx-no-such-setting');

@@ -11,57 +11,64 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
-import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
+import { emitMockEvent, getListenerCount, registerRecordingHandlers } from '@/test/tauri-mock';
 import { useRecordingShortcut } from '@/hooks/useRecordingShortcut';
 import { __resetLiveRecordingItemId } from '@/hooks/useMeetingRecording';
-import { useRecordingStore } from '@/stores/recording-store';
+import { stopRecordedTimeTicker } from '@/hooks/useRecording';
+import { readRecordingLevels, resetRecordingLevels, useRecordingStore } from '@/stores/recording-store';
 import { useActivityStore } from '@/stores/activity-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 vi.mock('@/hooks/useTranscriptionJob', () => ({
   startTranscription: vi.fn(),
 }));
 
+vi.mock('@/stores/recordings-store', () => ({
+  useRecordingsStore: { getState: () => ({ openRecordings: vi.fn(), refresh: vi.fn() }) },
+}));
+
 import { startTranscription } from '@/hooks/useTranscriptionJob';
 
-const MOCK_AUDIO_INFO = {
-  path: '/tmp/recordings/meeting/audio.wav',
-  duration_secs: 5.2,
-  sample_rate: 16000,
-  source: 'microphone',
-  rms: 0.05,
-  peak: 0.3,
-};
-
-async function pressShortcut(): Promise<void> {
+async function dispatch(name: string): Promise<void> {
   await act(async () => {
-    window.dispatchEvent(new Event('notesage:toggle-recording'));
+    window.dispatchEvent(new Event(name));
     // start/stop are async chains of mocked invokes — let them settle.
     await vi.advanceTimersByTimeAsync(0);
   });
 }
+
+const pressShortcut = () => dispatch('notesage:toggle-recording');
+const pressPause = () => dispatch('notesage:toggle-recording-pause');
 
 describe('useRecordingShortcut', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     useRecordingStore.setState({
+      phase: 'idle',
       isRecording: false,
       recordingSource: 'microphone',
       recordingStartTime: null,
       isPaused: false,
       pauseStartedAt: null,
       pausedTotalMs: 0,
+      recordedSeconds: 0,
+      warnings: [],
+      lastUsedSource: 'microphone',
     });
     useActivityStore.setState({ tasks: [] });
+    useSettingsStore.setState({
+      icloudNotesagePath: null,
+      notesRootPath: '~/Notesage',
+      homeDir: '/Users/me',
+    });
+    resetRecordingLevels();
     __resetLiveRecordingItemId();
-    setMockInvokeHandler('start_recording', () => undefined);
-    setMockInvokeHandler('stop_recording', () => MOCK_AUDIO_INFO);
-    setMockInvokeHandler('file_size', () => 166_444);
-    setMockInvokeHandler('get_device_name', () => 'Mac');
-    setMockInvokeHandler('write_file', () => undefined);
+    registerRecordingHandlers();
   });
 
   afterEach(() => {
+    stopRecordedTimeTicker();
     vi.useRealTimers();
   });
 
@@ -76,16 +83,17 @@ describe('useRecordingShortcut', () => {
     await pressShortcut();
     expect(useRecordingStore.getState().isRecording).toBe(true);
 
-    // A recording in progress: ten seconds of elapsed-time ticks, a burst of
-    // audio-callback level events, pause/resume, and unrelated store writes.
+    // A recording in progress: ten seconds of recorded-time ticks, a burst of
+    // level events, a warning, pause/resume, and unrelated store writes.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
       for (let i = 0; i < 100; i++) {
         emitMockEvent('recording-level', { mic: 0.5, system: 0.5 });
       }
+      emitMockEvent('recording-warning', { kind: 'low-disk', message: 'x', fatal: false });
       useRecordingStore.getState().pauseRecording();
       useRecordingStore.getState().resumeRecording();
-      useRecordingStore.getState().setTranscriptionProgress(0.4);
+      useRecordingStore.getState().setRecordedSeconds(10);
     });
 
     await pressShortcut();
@@ -106,14 +114,47 @@ describe('useRecordingShortcut', () => {
     expect(useActivityStore.getState().tasks.filter((t) => t.kind === 'recording')).toHaveLength(0);
     expect(startTranscription).toHaveBeenCalledTimes(1);
     expect(vi.mocked(startTranscription).mock.calls[0][0]).toMatchObject({
-      audioPath: MOCK_AUDIO_INFO.path,
+      audioPath: '/Users/me/Notesage/Recordings/Recording 2026-11-25 101500/audio.m4a',
     });
+  });
+
+  it('pauses and resumes on the pause event (⌘⇧U), and ignores it when idle', async () => {
+    renderHook(() => useRecordingShortcut());
+
+    await pressPause();
+    expect(useRecordingStore.getState().phase).toBe('idle');
+
+    await pressShortcut();
+    await pressPause();
+    expect(useRecordingStore.getState().phase).toBe('paused');
+    await pressPause();
+    expect(useRecordingStore.getState().phase).toBe('recording');
+  });
+
+  it('is where the backend events are heard: levels and warnings arrive whatever is on screen', async () => {
+    renderHook(() => useRecordingShortcut());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getListenerCount('recording-level')).toBe(1);
+    expect(getListenerCount('recording-warning')).toBe(1);
+
+    await pressShortcut();
+    emitMockEvent('recording-level', { mic: 0.25, system: null });
+    expect(readRecordingLevels().mic).toBe(0.25);
+    emitMockEvent('recording-warning', { kind: 'low-disk', message: 'x', fatal: false });
+    expect(useRecordingStore.getState().warnings).toEqual([{ kind: 'low-disk', source: null }]);
   });
 
   it('stops listening on unmount', async () => {
     const { unmount } = renderHook(() => useRecordingShortcut());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     unmount();
     await pressShortcut();
     expect(useRecordingStore.getState().isRecording).toBe(false);
+    expect(getListenerCount('recording-level')).toBe(0);
+    expect(getListenerCount('recording-warning')).toBe(0);
   });
 });

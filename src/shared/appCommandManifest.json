@@ -272,7 +272,7 @@
     },
     {
       "id": "toggle-recording",
-      "label": "Toggle recording",
+      "label": "Start or stop recording",
       "display": "⌘⇧R",
       "scope": "global",
       "firesWhileTyping": true,
@@ -280,6 +280,22 @@
         {
           "key": "r",
           "code": "KeyR",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
+      ]
+    },
+    {
+      "id": "toggle-recording-pause",
+      "label": "Pause or resume recording",
+      "display": "⌘⇧U",
+      "scope": "global",
+      "firesWhileTyping": true,
+      "chords": [
+        {
+          "key": "u",
+          "code": "KeyU",
           "mod": true,
           "shiftKey": true,
           "altKey": false

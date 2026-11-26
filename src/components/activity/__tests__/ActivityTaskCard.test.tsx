@@ -12,7 +12,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderWithProviders, screen, fireEvent, waitFor, act } from '@/test/component-harness';
 import { renderHook } from '@testing-library/react';
-import { setMockInvokeHandler } from '@/test/tauri-mock';
+import { registerRecordingHandlers, setMockInvokeHandler } from '@/test/tauri-mock';
+import { stopRecordedTimeTicker } from '@/hooks/useRecording';
 import { ActivityTaskCard } from '../ActivityTaskCard';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -28,10 +29,11 @@ const toastError = toast.error as ReturnType<typeof vi.fn>;
 
 // Hoisted spy — `vi.mock` factories are hoisted above the module body, so any
 // variable they close over must be created via `vi.hoisted` to exist at that point.
-const { moveBundleToProjectMock, openFileMock, startTranscriptionMock } = vi.hoisted(() => ({
+const { moveBundleToProjectMock, openFileMock, startTranscriptionMock, cancelTranscriptionJobMock } = vi.hoisted(() => ({
   moveBundleToProjectMock: vi.fn<(dir: string, root: string) => Promise<string>>(),
   openFileMock: vi.fn<(path: string, name: string) => Promise<void>>(),
   startTranscriptionMock: vi.fn(),
+  cancelTranscriptionJobMock: vi.fn<(id: string) => Promise<void>>(async () => {}),
 }));
 
 // Mock the bundle move so the move-to-project flow doesn't touch Tauri.
@@ -52,9 +54,16 @@ vi.mock('@/hooks/useFileOperations', () => ({
 
 // Mock the transcription-job trigger — the re-run action (#698) dispatches
 // through it; assert on the payload without mounting the real background job.
-vi.mock('@/hooks/useTranscriptionJob', () => ({
-  startTranscription: (detail: unknown) => startTranscriptionMock(detail),
-}));
+vi.mock('@/hooks/useTranscriptionJob', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useTranscriptionJob')>(
+    '@/hooks/useTranscriptionJob',
+  );
+  return {
+    ...actual,
+    startTranscription: (detail: unknown) => startTranscriptionMock(detail),
+    cancelTranscriptionJob: (id: string) => cancelTranscriptionJobMock(id),
+  };
+});
 
 // Radix DropdownMenu uses PointerEvent APIs jsdom lacks — stub them so the
 // menu opens in tests (mirrors the polyfills in AgentOrb.test.tsx).
@@ -292,11 +301,80 @@ describe('ActivityTaskCard — transcription kind', () => {
     });
   });
 
-  it('shows a spinner + "Starting…" while running with progress 0', () => {
+  it('says "Starting…" while running with nothing reported yet', () => {
     renderWithProviders(<ActivityTaskCard task={txTask({ progress: 0 })} />);
     expect(screen.getByText('Recording 2026-05-30')).toBeTruthy();
-    expect(screen.getByText(/transcribing/i)).toBeTruthy();
-    expect(screen.getByText(/starting/i)).toBeTruthy();
+    expect(screen.getByTestId('transcription-status').textContent).toMatch(/starting/i);
+  });
+
+  // U16: what the backend is doing, how long it has taken, how long is left.
+  it('names the stage the backend reports', () => {
+    const { rerender } = renderWithProviders(
+      <ActivityTaskCard task={txTask({ progress: 0, transcriptionStage: 'loading' })} />,
+    );
+    expect(screen.getByTestId('transcription-status').textContent).toMatch(/loading the model/i);
+    rerender(<ActivityTaskCard task={txTask({ progress: 0, transcriptionStage: 'decoding' })} />);
+    expect(screen.getByTestId('transcription-status').textContent).toMatch(/reading the audio/i);
+    rerender(<ActivityTaskCard task={txTask({ progress: 42, transcriptionStage: 'transcribing' })} />);
+    // The live region carries the state, not the ticking percent.
+    expect(screen.getByTestId('transcription-status').textContent).toBe('Transcribing…');
+    expect(screen.getByText('42%')).toBeTruthy();
+  });
+
+  it('shows elapsed time and, once there is enough progress, an estimate of what is left', () => {
+    const now = Date.now();
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          progress: 50,
+          transcriptionStage: 'transcribing',
+          runStartedAt: now - 5 * 60_000,
+          progressAnchorAt: now - 4 * 60_000,
+          progressAnchorPercent: 10,
+        })}
+      />,
+    );
+    const timing = screen.getByTestId('transcription-timing').textContent ?? '';
+    expect(timing).toMatch(/5:0\d elapsed/);
+    // 40 points in 4 minutes → 50 more points is 5 minutes.
+    expect(timing).toMatch(/about 5 min left/);
+  });
+
+  it('gives no estimate before there is progress to estimate from', () => {
+    renderWithProviders(
+      <ActivityTaskCard task={txTask({ progress: 0, transcriptionStage: 'loading', runStartedAt: Date.now() - 20_000 })} />,
+    );
+    const timing = screen.getByTestId('transcription-timing').textContent ?? '';
+    expect(timing).toMatch(/elapsed/);
+    expect(timing).not.toMatch(/left/);
+  });
+
+  it('has a Cancel button while running, wired to the job', () => {
+    cancelTranscriptionJobMock.mockClear();
+    renderWithProviders(<ActivityTaskCard task={txTask({ progress: 12, transcriptionStage: 'transcribing' })} />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel transcription: recording 2026-05-30/i }));
+    expect(cancelTranscriptionJobMock).toHaveBeenCalledWith('tx-1');
+  });
+
+  it('a cancelled job is not drawn as a failure', () => {
+    renderWithProviders(<ActivityTaskCard task={txTask({ status: 'cancelled', completedAt: Date.now() })} />);
+    expect(screen.getByTestId('transcription-status').textContent).toMatch(/cancelled/i);
+    expect(screen.queryByTestId('transcription-error')).toBeNull();
+  });
+
+  it('a job the app quit under says so and can be retried at once', async () => {
+    startTranscriptionMock.mockReset();
+    setMockInvokeHandler('read_file', () => { throw new Error('ENOENT'); });
+    setMockInvokeHandler('path_exists', () => false);
+    renderWithProviders(
+      <ActivityTaskCard task={txTask({ status: 'error', interrupted: true, completedAt: Date.now() })} />,
+    );
+    expect(screen.getByTestId('transcription-status').textContent).toMatch(/interrupted when notesage quit/i);
+    expect(screen.queryByTestId('transcription-error')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() =>
+      expect(startTranscriptionMock).toHaveBeenCalledWith(expect.objectContaining({ jobId: 'tx-1' })),
+    );
   });
 
   it('renders a progress bar with the percentage while running', () => {
@@ -329,8 +407,57 @@ describe('ActivityTaskCard — transcription kind', () => {
     renderWithProviders(
       <ActivityTaskCard task={txTask({ status: 'error', completedAt: Date.now() })} />,
     );
-    expect(screen.getByText(/re-runnable from the inbox/i)).toBeTruthy();
+    expect(screen.getByTestId('transcription-status').textContent).toBe('Transcription failed');
     expect(screen.queryByRole('button', { name: /move to project/i })).toBeNull();
+  });
+
+  // U19: the card says WHY, where to retry, and how to fix a missing model.
+  it('shows the reason a transcription failed and where to retry it', () => {
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({ status: 'error', completedAt: Date.now(), errorMessage: 'Whisper state exploded' })}
+      />,
+    );
+    expect(screen.getByTestId('transcription-error').textContent).toBe('Whisper state exploded');
+    expect(screen.getByRole('button', { name: 'Retry from Recordings' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /download a model/i })).toBeNull();
+  });
+
+  it('offers "Download a model…" when the cause is a missing model, opening Settings by section id', () => {
+    const opened: unknown[] = [];
+    const onOpen = (e: Event) => opened.push((e as CustomEvent).detail);
+    window.addEventListener('notesage:open-settings', onOpen);
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'error',
+          completedAt: Date.now(),
+          errorMessage: "Model 'large-v3-turbo-q5_0' not downloaded. Download it from Settings > Transcription.",
+        })}
+      />,
+    );
+    expect(screen.getByTestId('transcription-error').textContent).toBe(
+      'The model “large-v3-turbo-q5_0” is not downloaded.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Download a model…' }));
+    window.removeEventListener('notesage:open-settings', onOpen);
+    expect(opened).toEqual([{ tab: 'voice' }]);
+  });
+
+  it('gives every corner action a target of at least 24px that does not depend on hover', () => {
+    setMockInvokeHandler('reveal_in_finder', () => undefined);
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({ status: 'done', completedAt: Date.now(), transcriptPath: '/x/transcript.md' })}
+        onRemove={() => {}}
+      />,
+    );
+    for (const name of [/re-run transcription/i, /reveal in finder/i, /^Remove from this list/]) {
+      const button = screen.getByRole('button', { name });
+      expect(button.className).toMatch(/\bh-6\b/);
+      expect(button.className).toMatch(/\bw-6\b/);
+      expect(button.className).not.toMatch(/opacity-0/);
+    }
   });
 
   it('opens the transcript when a completed card is clicked', async () => {
@@ -642,10 +769,12 @@ describe('ActivityTaskCard — transcription kind', () => {
         fireEvent.pointerUp(trigger, { button: 0 });
         fireEvent.click(trigger);
       });
-      const item = await screen.findByRole('menuitem', { name: 'Small' });
+      const item = await screen.findByRole('menuitem', { name: /^Small/ });
       act(() => { fireEvent.click(item); });
-      expect(startTranscriptionMock).toHaveBeenCalledWith(
-        expect.objectContaining({ audioPath: '/lib/Recordings/Recording 2026-09-05 14-02-11/audio.m4a', jobId: 'tx-1', model: 'small' }),
+      await waitFor(() =>
+        expect(startTranscriptionMock).toHaveBeenCalledWith(
+          expect.objectContaining({ audioPath: '/lib/Recordings/Recording 2026-09-05 14-02-11/audio.m4a', jobId: 'tx-1', model: 'small' }),
+        ),
       );
     });
   });
@@ -728,14 +857,55 @@ describe('ActivityTaskCard — transcription kind', () => {
         fireEvent.click(item);
       });
 
-      expect(startTranscriptionMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          audioPath: task.audioPath,
-          jobId: 'tx-1',
-          model: 'large-v3',
-          language: 'sv',
-        }),
+      // Asynchronous now: the card first looks whether a transcript exists,
+      // and here there is none on the (mock) disk, so it runs without asking.
+      await waitFor(() =>
+        expect(startTranscriptionMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            audioPath: task.audioPath,
+            jobId: 'tx-1',
+            model: 'large-v3',
+            language: 'sv',
+          }),
+        ),
       );
+    });
+
+    // U23: "Transcribe again" never overwrites a transcript without asking.
+    it('asks before replacing an existing transcript, and passes the answer on', async () => {
+      const dir = '/Users/me/Notesage/Recordings/Recording 2026-05-30';
+      setMockInvokeHandler('read_file', (args) => {
+        if (String(args?.path) === `${dir}/transcript.md`) return '# Recording\n\nold text\n';
+        throw new Error('ENOENT');
+      });
+      setMockInvokeHandler('path_exists', (args) => String(args?.path) === `${dir}/transcript.md`);
+      const task = txTask({ status: 'done', completedAt: Date.now(), transcriptPath: `${dir}/transcript.md` });
+      renderWithProviders(<ActivityTaskCard task={task} />);
+
+      openRerunMenu();
+      act(() => { fireEvent.click(screen.getByRole('menuitem', { name: 'Large V3' })); });
+
+      const dialog = await screen.findByTestId('replace-transcript-dialog');
+      expect(startTranscriptionMock).not.toHaveBeenCalled();
+      expect(dialog.textContent).toMatch(/already has a transcript/i);
+      fireEvent.click(screen.getByRole('button', { name: 'Keep both' }));
+      expect(startTranscriptionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ jobId: 'tx-1', model: 'large-v3', transcriptMode: 'keep-both' }),
+      );
+      // Answering the dialog must not also count as a click on the card.
+      expect(openFileMock).not.toHaveBeenCalled();
+    });
+
+    it('with no model downloaded, points to where one is downloaded instead of a dead end', async () => {
+      useRecordingStore.setState({ availableModels: [{ name: 'small', size_bytes: 2, downloaded: false }] });
+      const opened: unknown[] = [];
+      const onOpen = (e: Event) => opened.push((e as CustomEvent).detail);
+      window.addEventListener('notesage:open-settings', onOpen);
+      renderWithProviders(<ActivityTaskCard task={txTask({ status: 'error', completedAt: Date.now() })} />);
+      openRerunMenu();
+      act(() => { fireEvent.click(screen.getByRole('menuitem', { name: 'Download a model…' })); });
+      window.removeEventListener('notesage:open-settings', onOpen);
+      expect(opened).toEqual([{ tab: 'voice' }]);
     });
 
     it('is hidden while a transcription is running', () => {
@@ -773,80 +943,68 @@ describe('ActivityTaskCard — recording kind', () => {
   /** Seed the live-capture state the card's hooks read. */
   function seedRecordingStore() {
     useRecordingStore.setState({
+      phase: 'recording',
       isRecording: true,
       recordingSource: 'microphone',
       recordingStartTime: Date.now(),
       isPaused: false,
       pauseStartedAt: null,
       pausedTotalMs: 0,
+      recordedSeconds: 0,
+      discardConfirmOpen: false,
     });
   }
 
   beforeEach(() => {
     __resetLiveRecordingItemId();
     useActivityStore.setState({ tasks: [] });
-    setMockInvokeHandler('pause_recording', () => undefined);
-    setMockInvokeHandler('resume_recording', () => undefined);
-    setMockInvokeHandler('stop_recording', () => ({
-      path: '/tmp/rec/audio.wav',
-      duration_secs: 1,
-      sample_rate: 16000,
-      source: 'microphone',
-      rms: 0.05,
-      peak: 0.3,
-    }));
+    registerRecordingHandlers();
   });
 
-  describe('stopwatch (fake timers)', () => {
+  afterEach(() => {
+    stopRecordedTimeTicker();
+    useRecordingStore.getState().stopRecording();
+  });
+
+  describe('recorded time', () => {
     beforeEach(() => {
-      vi.useFakeTimers();
       seedRecordingStore();
     });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
 
-    it('renders a recording indicator with a live MM:SS stopwatch', () => {
+    it('says what is happening and from which source, with the recorded time', () => {
       renderWithProviders(<ActivityTaskCard task={recTask()} />);
-
-      // Status line specifically (label is "Recording", status is "Recording…").
-      expect(screen.getByText('Recording…')).toBeTruthy();
+      expect(screen.getByText('Recording · Microphone')).toBeTruthy();
       expect(screen.getByText('00:00')).toBeTruthy();
 
-      // Advance 65s — the stopwatch ticks to 01:05.
+      // The card shows the store's recorded seconds — the same number, in
+      // the same format, as the indicator and the orb.
       act(() => {
-        vi.advanceTimersByTime(65_000);
+        useRecordingStore.getState().setRecordedSeconds(65);
       });
       expect(screen.getByText('01:05')).toBeTruthy();
+      act(() => {
+        useRecordingStore.getState().setRecordedSeconds(3913);
+      });
+      expect(screen.getByText('1:05:13')).toBeTruthy();
     });
 
-    it('freezes the stopwatch while paused and excludes the paused stretch', () => {
+    it('names the source for a two-track recording, and says Paused while paused', () => {
+      useRecordingStore.setState({ recordingSource: 'both' });
       renderWithProviders(<ActivityTaskCard task={recTask()} />);
-
-      act(() => {
-        vi.advanceTimersByTime(10_000);
-      });
-      expect(screen.getByText('00:10')).toBeTruthy();
-
-      // Pause (store-level — the invoke round-trip is covered separately).
+      expect(screen.getByText('Recording · Microphone + system audio')).toBeTruthy();
       act(() => {
         useRecordingStore.getState().pauseRecording();
       });
-      expect(screen.getByText('Paused')).toBeTruthy();
-      act(() => {
-        vi.advanceTimersByTime(30_000);
-      });
-      // Frozen at the pause instant — the 30 paused seconds don't count.
-      expect(screen.getByText('00:10')).toBeTruthy();
+      expect(screen.getByText('Paused · Microphone + system audio')).toBeTruthy();
+    });
 
-      act(() => {
-        useRecordingStore.getState().resumeRecording();
-      });
-      expect(screen.getByText('Recording…')).toBeTruthy();
-      act(() => {
-        vi.advanceTimersByTime(5_000);
-      });
-      expect(screen.getByText('00:15')).toBeTruthy();
+    it('shows Saving… and locks the controls while the audio is being saved', () => {
+      useRecordingStore.setState({ phase: 'stopping' });
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+      expect(screen.getByText('Saving… · Microphone')).toBeTruthy();
+      for (const name of ['Pause', 'Stop and save', 'Discard recording']) {
+        expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
+      }
     });
   });
 
@@ -858,24 +1016,39 @@ describe('ActivityTaskCard — recording kind', () => {
     it('pause and resume buttons drive the backend + store', async () => {
       renderWithProviders(<ActivityTaskCard task={recTask()} />);
 
-      fireEvent.click(screen.getByRole('button', { name: /pause recording/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
       await waitFor(() => {
         expect(useRecordingStore.getState().isPaused).toBe(true);
       });
-      expect(screen.getByText('Paused')).toBeTruthy();
+      expect(screen.getByText('Paused · Microphone')).toBeTruthy();
 
-      fireEvent.click(screen.getByRole('button', { name: /resume recording/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
       await waitFor(() => {
         expect(useRecordingStore.getState().isPaused).toBe(false);
       });
-      expect(screen.getByText('Recording…')).toBeTruthy();
+      expect(screen.getByText('Recording · Microphone')).toBeTruthy();
+    });
+
+    it('every control is at least 24px (U32)', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+      for (const name of ['Pause', 'Stop and save', 'Discard recording']) {
+        const classes = screen.getByRole('button', { name }).className.split(/\s+/);
+        expect(classes).toContain('h-6');
+        expect(classes).toContain('w-6');
+      }
+    });
+
+    it('discard asks first: the button only opens the confirmation', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }));
+      expect(useRecordingStore.getState().discardConfirmOpen).toBe(true);
+      expect(useRecordingStore.getState().phase).toBe('recording');
     });
 
     it('stop button stops a capture started from another surface and clears the orb item', async () => {
       // Start from a DIFFERENT surface (the MicButton-equivalent hook instance)
       // so the live-item id is registered exactly as in production.
-      setMockInvokeHandler('start_recording', () => undefined);
-      useRecordingStore.setState({ isRecording: false, recordingStartTime: null });
+      useRecordingStore.getState().stopRecording();
       const starter = renderHook(() => useMeetingRecording());
       await act(async () => {
         await starter.result.current.toggleRecording();
@@ -886,7 +1059,7 @@ describe('ActivityTaskCard — recording kind', () => {
 
       // Stop from the orb panel's RecordingCard.
       renderWithProviders(<ActivityTaskCard task={task} />);
-      fireEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Stop and save' }));
 
       await waitFor(() => {
         expect(useRecordingStore.getState().isRecording).toBe(false);

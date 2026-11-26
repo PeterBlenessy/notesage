@@ -66,7 +66,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Add comment | `⌘⌥C` | Create inline comment on selected text (C = Comment). **Handled by a ProseMirror `handleKeyDown` in `comment-mark.ts` (matched via `event.code === "KeyC"` to dodge the Option+C dead key), not the global dispatcher** — it needs the editor's live selection. See Implementation Notes |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
-| Toggle meeting recording | `⌘⇧R` | Start/stop meeting recording (capture audio → background transcription on stop) |
+| Start or stop recording | `⌘⇧R` | Start a recording from the source chosen last (Microphone / System audio / Both); press again to stop **and save** it (the audio goes into the library's Recordings folder and is transcribed in the background). Stopping never asks and never deletes. Ignored while a recording is starting or being saved, and on key auto-repeat, so a held or doubled press cannot start two recordings or end one by accident. Works with any document type open, or none |
+| Pause or resume recording | `⌘⇧U` | Pause the live recording, or resume a paused one. Does nothing when no recording is live. Discarding a recording has no shortcut on purpose: it is the one action that deletes audio, and it always asks first (the bin button on the recording indicator) |
 
 ## Document Navigation
 

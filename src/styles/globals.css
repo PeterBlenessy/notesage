@@ -1213,6 +1213,39 @@ body {
   }
 }
 
+/* =========================================================================
+ * Recording indicator — which of its two placements is on screen
+ *
+ * `RecordingIndicator` renders twice while a recording is live: a row above
+ * the sidebar footer, and a floating chip (`[data-recording-chip]`) at the
+ * bottom-left of the document column. Exactly one should be visible, and one
+ * ALWAYS is: a live microphone is never hidden chrome.
+ *
+ *   - Sidebar shown  → the sidebar row; the chip is hidden.
+ *   - Sidebar hidden → the chip (`data-sidebar-pinned="false"`, set by the
+ *     component from settings).
+ *   - Focus mode     → the sidebar slides away, so the chip takes over, at
+ *     the window's left edge (the sidebar's reserved width is gone).
+ *   - Fade-on-type with the sidebar set to fade → the sidebar goes to
+ *     opacity 0 while typing, so the chip takes over. It stays offset by the
+ *     sidebar's width: the sidebar is invisible but still there, and the chip
+ *     must not sit over the Settings button.
+ *
+ * The chip is deliberately absent from the fade-on-type, focus-mode-dim and
+ * inactive-window rules above: none of them may touch it. Every selector here
+ * targets `[data-recording-chip]` and nothing else.
+ * ========================================================================= */
+.app [data-recording-chip][data-sidebar-pinned="true"] {
+  display: none;
+}
+.app.focus-mode [data-recording-chip][data-sidebar-pinned="true"],
+.app.typing[data-quiet-chrome-sidebar="fade"] [data-recording-chip][data-sidebar-pinned="true"] {
+  display: flex;
+}
+.app.focus-mode [data-recording-chip] {
+  left: 12px;
+}
+
 /* ============================================================================
  * Radix UI surfaces — reduced-motion guard (#86)
  * ============================================================================

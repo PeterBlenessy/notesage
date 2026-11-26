@@ -20,31 +20,10 @@ Written because the session ran out of context. Everything needed to continue is
 - `BRIEF.md`: every finding (C*, S*, T*, U*), the new capabilities (N1 system audio, N2 media import, N3 Teams transcript merge, speakers) and the binding CONTRACT between backend and frontend.
 - `RULES.md`: working rules given to the four lanes.
 - `CONTRACT-NOTE-<lane>.md`: what each lane implemented or planned (exact payload shapes, deviations).
-- `control.partial.patch` + `control.partial-newfiles.tgz`, `library.partial.patch` + `library.partial-newfiles.tgz`: snapshots of the two FRONTEND lanes' uncommitted work at the moment of the handoff, relative to main `45f0b1a`. The patch holds changes to tracked files; the archive holds new files (extract at the repo root). They may be incomplete and are untested as a whole. Apply with `git apply --3way --index <patch>`.
 
-## Lanes
+## Status update, 2026-11-26
 
-| Lane | Status | Where |
-|---|---|---|
-| `capture` (Rust: device loss, write errors, crash recovery, system audio, staging + finalize, AAC, preflight) | DONE, on the branch | `src-tauri/src/commands/recording/` |
-| `transcribe` (Rust: streaming decode, 10-minute parts, progress, cancel, queue, multi-track me/others, media import, model download resume, undownloaded iCloud audio) | DONE, on the branch | `src-tauri/src/commands/transcribe/`, `audio_decode.rs` |
-| `control` (frontend: start/stop flow, always-visible indicator + level meter, source picker, recovery at startup, Transcription settings) | IN PROGRESS when the session stopped; snapshot here | see BRIEF |
-| `library` (frontend: Recordings view trap, list management, jobs and cards, transcripts + `segments.json` + `speakers.json`, import UI, Teams transcript merge) | IN PROGRESS when the session stopped; snapshot here | see BRIEF |
-
-## To continue
-
-1. Finish `control` and `library`: re-run them from `BRIEF.md` and their scope, starting from the snapshots if they apply and look sound, otherwise redo. They must follow the CONTRACT and the backend notes.
-2. Apply both, then check the frontend against `CONTRACT-NOTE-capture.md` and `CONTRACT-NOTE-transcribe.md`. Known points:
-   - `transcription-progress` keys are `job_id` and `audio_path` (no `jobId`, no per-segment text).
-   - `stop_recording.tracks` holds only `mic` and `system` for source "both" and is empty for a single source; `mix` is not a track role.
-   - Preflight never returns `system_audio: "denied"`; denial shows up as a `silence` warning with `source: "system"`.
-   - There is no close/quit veto (declined: a wrong guess could make the app unquittable); a quit mid-recording is recovered at next launch via `recover_orphan_recordings`.
-   - `import_media` returns `audio.m4a` only when `afconvert` succeeded on macOS, else `audio.wav`: use the returned `audio_path`.
-   - A waiting transcription job emits no events (no "queued" stage from the backend).
-3. After merging: re-add a WAV writer → real decoder round-trip test (dropped by `capture` because `transcribe` was changing the decoder); set the i18n CEILING in `src/lib/__tests__/i18n-coverage.test.ts` to what its stale-ceiling check asks; update `docs/features/ai-workflows.md` (still describes the old recorder).
-4. Gates: `pnpm typecheck`; `pnpm test` (check the exit code and the `Errors` line); Playwright with a local config pointing at the preinstalled Chromium (`playwright.local-chromium.config.ts`, not committed: extends `playwright.config.ts` with `launchOptions.executablePath: '/opt/pw-browsers/chromium'`; run with `--project=chromium --trace off`); `cargo check` and `cargo check --tests` with `PKG_CONFIG_PATH="$(pwd)/.pkg-config-stubs"` after `src-tauri/scripts/generate-pkg-config-stubs.sh`. `cargo test` only runs on macOS CI.
-5. Then: commit, push, open a PR, watch CI, release as v0.65.0 (bump `package.json`, add `docs/history/242-release-v0.65.0.md` and a README row, `pnpm generate-changelog`). Tags cannot be pushed from the cloud session; the owner creates them:
-   `gh api repos/PeterBlenessy/notesage/git/refs -f ref=refs/tags/v0.65.0 -f sha=$(gh api repos/PeterBlenessy/notesage/commits/main --jq .sha)`
+All four recording lanes (`capture`, `transcribe`, `control`, `library`) are finished, merged on the branch and released as v0.65.0. The partial snapshots that were stored here have been removed. The contract and the per-lane notes remain as the reference for the speaker-identification work that follows (voice analysis backend in progress; the owner approved all options A to F).
 
 ## Never verified on a real Mac
 

@@ -17,13 +17,14 @@ import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run
 import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { recordedElapsedMs, formatStopwatchMs } from '@/lib/recording-time';
+import { formatRecordedTime } from '@/lib/recording-time';
 import { cn } from '@/lib/utils';
 import { log, PERF } from '@/lib/logger';
 import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
 import type { AgentTask } from '@/stores/activity-store';
 import { AgentPanel } from './AgentPanel';
 import { RecordingRays } from './RecordingRays';
+import { RecordingStatusHost } from './RecordingStatusHost';
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
 
@@ -116,44 +117,26 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   const needsAttention = unwatchedNeedsPermission && !reducedMotion;
 
   // Recording state — the orb narrates the live-capture leg of the
-  // Recording → Transcribing → Ready story. We surface the EARLIEST active
-  // recording's elapsed time (there is normally just one) as an `MM:SS`
-  // stopwatch driven by a 1 s text tick. This is plain text, not an
-  // animation, so it does not interact with the reduced-motion gate on the
-  // CSS pulse — it stays correct regardless of the motion preference.
-  // Pause state comes from recording-store (the live-capture source of
-  // truth): while paused the stopwatch freezes and the resumed time
-  // excludes the paused stretch.
-  const activeRecordingStart = tasks
-    .filter((t) => t.kind === 'recording' && t.status === 'running')
-    .map((t) => t.recordingStartedAt ?? t.startedAt)
-    .sort((a, b) => a - b)[0];
-  const isRecording = activeRecordingStart !== undefined;
+  // Recording → Transcribing → Ready story. Everything comes from
+  // recording-store, the live-capture source of truth: whether a capture
+  // exists, whether it is paused, and the RECORDED seconds (samples written,
+  // so the time freezes while paused). The same number, in the same format,
+  // as the indicator and the cards — the orb used to run its own wall clock
+  // and could be a second off the card beside it.
+  const isRecording = useRecordingStore((s) => s.isRecording);
   const isPaused = recordingPausedStore;
-  const pauseStartedAt = useRecordingStore((s) => s.pauseStartedAt);
-  const pausedTotalMs = useRecordingStore((s) => s.pausedTotalMs);
-
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!isRecording) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [isRecording]);
-
-  const recordingElapsedMs = isRecording
-    ? recordedElapsedMs(activeRecordingStart!, pausedTotalMs, pauseStartedAt, now)
-    : 0;
-  const recordingElapsed = isRecording ? formatStopwatchMs(recordingElapsedMs) : null;
+  const recordedSeconds = useRecordingStore((s) => s.recordedSeconds);
+  const recordingElapsed = isRecording ? formatRecordedTime(recordedSeconds) : null;
 
   const ariaLabel = isRecording
     ? isPaused
-      ? `Recording paused — ${recordingElapsed}`
-      : `Recording — ${recordingElapsed}`
+      ? t("recording.orb.paused", { time: recordingElapsed ?? '' })
+      : t("recording.orb.recording", { time: recordingElapsed ?? '' })
     : unwatchedNeedsPermission
-      ? 'Agent — a background session needs your approval'
+      ? t("recording.orb.needsApproval")
       : runningCount === 1
-        ? 'Agent — 1 running'
-        : `Agent — ${runningCount} running`;
+        ? t("recording.orb.oneRunning")
+        : t("recording.orb.running", { total: runningCount });
 
   // Log when the panel opens — keeps the perf:orb breadcrumb that existed on
   // the pre-#79 click stub. Only fires on the open transition, not on close.
@@ -181,6 +164,12 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   }, [open, runningCount]);
 
   return (
+    <>
+    {/* The recording chip, live region and discard confirmation. Mounted HERE and
+        not inside the orb button: the orb is `display: none` while the
+        command bar is pinned, and a recording must stay visible and
+        stoppable then too (U2). */}
+    <RecordingStatusHost />
     <Popover open={open} onOpenChange={handleOpenChange}>
       <TooltipProvider delayDuration={500}>
         <Tooltip>
@@ -256,7 +245,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
                 distinct from the agent-activity pulse. */}
             {isRecording && (
               <RecordingRays
-                elapsedSeconds={recordingElapsedMs / 1000}
+                elapsedSeconds={recordedSeconds}
                 paused={isPaused}
                 reducedMotion={reducedMotion}
               />
@@ -269,11 +258,18 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
                 className="flex flex-col items-center justify-center gap-0.5 leading-none"
               >
                 <Mic
-                  className="h-3.5 w-3.5 text-[var(--color-accent-primary)]"
+                  className="h-3.5 w-3.5 text-[var(--color-destructive)]"
                   strokeWidth={1.5}
                   aria-hidden="true"
                 />
-                <span className="font-mono text-[8px] font-medium tabular-nums text-[var(--color-accent-primary)]">
+                <span
+                  className={cn(
+                    "font-mono font-medium tabular-nums text-foreground",
+                    // h:mm:ss is two characters longer: one step smaller so it
+                    // still fits the 46px orb. Never the old 8px.
+                    recordedSeconds >= 3600 ? "text-[9px] tracking-tighter" : "text-[10px]",
+                  )}
+                >
                   {recordingElapsed}
                 </span>
               </span>
@@ -333,6 +329,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
         />
       </PopoverContent>
     </Popover>
+    </>
   );
 }
 

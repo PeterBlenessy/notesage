@@ -1,0 +1,80 @@
+WEBVTT
+
+NOTE
+Hand-written fixture in the shape Microsoft Teams exports. Three speakers,
+Swedish and English. Transcription was switched on 37 seconds into the
+recording, and nothing was said to Teams for its first 23 seconds, so the
+first minute of the recording has no cue.
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/12-0
+00:00:23.120 --> 00:00:27.480
+<v Anna Svensson>Okej, då har jag startat
+transkriberingen också.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/12-1
+00:00:28.000 --> 00:00:33.900
+<v Anna Svensson>Välkomna allihopa till veckomötet om leveransplanen.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/19-0
+00:00:34.500 --> 00:00:40.200
+<v Peter Lindberg>Tack Anna. Jag tänkte börja med statusen för migreringen av biblioteket.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/19-1
+00:00:40.800 --> 00:00:47.300
+<v Peter Lindberg>Vi har flyttat ungefär åttio procent av dokumenten till den nya strukturen.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/27-0
+00:00:48.000 --> 00:00:53.600
+<v James Carter>Sorry, could we switch to English for a moment? I missed the percentage.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/31-0
+00:00:54.100 --> 00:00:58.900
+<v Peter Lindberg>Sure. About eighty percent of the documents have been migrated.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/36-0
+00:00:59.400 --> 00:01:05.700
+<v James Carter>Great. And the remaining twenty percent, is that blocked by the indexing bug?</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/40-0
+00:01:06.200 --> 00:01:12.800
+<v Peter Lindberg>Partly. The indexer crashes on very large spreadsheets, so those are waiting.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/44-0
+00:01:13.500 --> 00:01:19.900
+<v Anna Svensson>Vi behöver en uppskattning till torsdag, annars hinner vi inte med releasen.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/48-0
+00:01:20.400 --> 00:01:26.000
+<v Peter Lindberg>Jag kan ha en uppskattning klar på onsdag eftermiddag.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/52-0
+00:01:26.700 --> 00:01:32.300
+<v James Carter>Wednesday afternoon works for me. I will prepare the test environment.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/57-0
+00:01:33.000 --> 00:01:39.400
+<v Anna Svensson>Bra. Då går vi vidare till nästa punkt, som är kundintervjuerna.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/57-1
+00:01:40.000 --> 00:01:47.200
+<v Anna Svensson>Vi har genomfört sex intervjuer och det tydligaste önskemålet är bättre sökning.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/63-0
+00:01:47.900 --> 00:01:54.100
+<v James Carter>That matches what we see in the support tickets. Search comes up every week.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/68-0
+00:01:54.800 --> 00:02:01.500
+<v Peter Lindberg>Då föreslår jag att vi prioriterar sökningen före exportfunktionen.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/72-0
+00:02:02.000 --> 00:02:06.400
+<v Anna Svensson>Håller med. James, do you agree?</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/75-0
+00:02:06.900 --> 00:02:11.300
+<v James Carter>Yes, I agree. Search first, export later.</v>
+
+3f0e6c1a-7b1d-4c52-9a41-5d1a2b3c4d5e/79-0
+00:02:12.000 --> 00:02:18.600
+<v Anna Svensson>Perfekt. Då sammanfattar jag besluten &amp; skickar ut dem efter mötet.</v>

@@ -6,6 +6,10 @@ import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
 import { SessionStatusBadge } from '@/components/cmd/SessionStatusBadge';
 import { ActivityTaskCard } from './ActivityTaskCard';
 import { RecordingControl } from './RecordingControl';
+import { RecordingSourcePicker } from './RecordingSourcePicker';
+import { useRecordingStore } from '@/stores/recording-store';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 interface AgentPanelProps {
   onCancelTask?: (taskId: string) => void;
@@ -26,8 +30,11 @@ interface AgentPanelProps {
  * `AgentOrb.tsx` — this component is intentionally unaware of open state.
  */
 export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: AgentPanelProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const tasks = useActivityStore((s) => s.tasks);
   const removeTask = useActivityStore((s) => s.removeTask);
+  const recordingIdle = useRecordingStore((s) => s.phase === 'idle');
 
   // Unwatched chat sessions (task #14) — running/awaiting sessions the user
   // isn't currently watching. Subscribe to the raw store slices and derive the
@@ -61,13 +68,22 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
           id="agent-panel-heading"
           className="text-xs font-medium text-foreground whitespace-nowrap"
         >
-          Activity
+          {t("recording.panel.title")}
         </span>
         {/* Recording starts HERE (#696): the orb already owns recording and
             transcription state, and unlike the editor-scoped status tray it
             is always mounted. */}
         <RecordingControl />
       </div>
+
+      {/* What the next recording captures. Only while idle: a live
+          recording's source cannot change, and its card below shows it. */}
+      {recordingIdle ? (
+        <div className="flex shrink-0 flex-col gap-1 border-b border-border px-3 py-2">
+          <span className="text-[11px] text-muted-foreground">{t("recording.source.label")}</span>
+          <RecordingSourcePicker />
+        </div>
+      ) : null}
 
       {/* Session list + task list, or empty state */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
@@ -82,10 +98,10 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
               aria-hidden="true"
             />
             <span className="text-xs text-muted-foreground">
-              Nothing happening yet
+              {t("recording.panel.empty")}
             </span>
             <span className="text-xs text-muted-foreground">
-              Agent tasks, recordings, and transcriptions show up here
+              {t("recording.panel.emptyHint")}
             </span>
           </div>
         ) : (
@@ -95,7 +111,7 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
             {sessions.length > 0 && (
               <div data-testid="agent-panel-sessions" className="divide-y divide-border border-b border-border">
                 <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Sessions
+                  {t("recording.panel.sessions")}
                 </div>
                 {sessions.map((run) => (
                   <button
@@ -110,7 +126,7 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
                       {titleFor(run.conversationId)}
                     </span>
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {run.status === 'awaiting_permission' ? 'Needs you' : 'Running'}
+                      {run.status === 'awaiting_permission' ? t("recording.panel.needsYou") : t("recording.panel.running")}
                     </span>
                   </button>
                 ))}

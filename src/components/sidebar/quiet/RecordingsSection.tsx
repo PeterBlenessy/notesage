@@ -1,7 +1,9 @@
 import { useEffect, type KeyboardEvent } from "react";
 import { Mic } from "lucide-react";
 import { useRecordingsStore } from "@/stores/recordings-store";
+import { useRecordingStore } from "@/stores/recording-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { t } from "@/lib/i18n";
 import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +25,10 @@ export function RecordingsSection({ filter = "" }: { filter?: string }) {
   const dir = useRecordingsStore((s) => s.dir);
   const failed = useRecordingsStore((s) => s.failedCount());
   const load = useRecordingsStore((s) => s.load);
-  const openRecordings = useRecordingsStore((s) => s.openRecordings);
+  // A second click on the row leaves the view again: it is a toggle, like ⌘⇧I
+  // is for the Inbox, so the list is never a place you cannot get out of.
+  const toggleRecordings = useRecordingsStore((s) => s.toggleRecordings);
+  const isRecording = useRecordingStore((s) => s.isRecording);
   const homeDir = useSettingsStore((s) => s.homeDir);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
@@ -40,7 +45,7 @@ export function RecordingsSection({ filter = "" }: { filter?: string }) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      openRecordings();
+      toggleRecordings();
     }
   };
 
@@ -52,7 +57,7 @@ export function RecordingsSection({ filter = "" }: { filter?: string }) {
         aria-current={open ? "page" : undefined}
         data-active={open ? "true" : undefined}
         data-testid="recordings-row"
-        onClick={openRecordings}
+        onClick={toggleRecordings}
         onKeyDown={onKeyDown}
         className={cn(
           "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150 cursor-default",
@@ -71,10 +76,18 @@ export function RecordingsSection({ filter = "" }: { filter?: string }) {
           aria-hidden="true"
         />
         <span className="truncate min-w-0 flex-1">{RECORDINGS_FOLDER_NAME}</span>
+        {isRecording && (
+          <span
+            role="img"
+            data-testid="recordings-live-dot"
+            aria-label={t("recording.inProgress")}
+            className="h-2 w-2 shrink-0 rounded-full bg-destructive"
+          />
+        )}
         {failed > 0 && (
           <span
             data-testid="recordings-failed"
-            aria-label={`${failed} failed`}
+            aria-label={t("recordings.failedCount", { count: failed })}
             className="ml-auto shrink-0 rounded-full bg-destructive px-1.5 text-[11px] font-medium leading-4 tabular-nums text-destructive-foreground"
           >
             {failed}

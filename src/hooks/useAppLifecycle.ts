@@ -24,6 +24,7 @@ import { countFiles } from "@/lib/file-utils";
 import { beginStartupIndexPass, ensureProjectIndex, initIndexWithRecovery } from "@/lib/project-index-sync";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
+import { recoverOrphanRecordings } from "@/hooks/useMeetingRecording";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { toast } from "sonner";
 import { t } from '@/lib/i18n';
@@ -884,6 +885,14 @@ async function reloadTreesBody(progress: StartupProgress) {
   log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
   log.perf(PERF.startup, 'ready', { totalMs: Math.round(performance.now() - t0) });
+
+  // Recordings a crash or quit left in local staging are filed into the
+  // library now (and a capture still running under a reloaded webview gets
+  // its controls back). After `startupReady` on purpose: it needs the library
+  // root, and it must never delay startup. Fire-and-forget.
+  void recoverOrphanRecordings().catch((err) => {
+    log.warn("recording", "Recording recovery failed", err);
+  });
 
   // One-time migration: move user content out of hidden .notesage/ subdirectories
   // into user-visible sibling folders (issue #172). Fire-and-forget — must not

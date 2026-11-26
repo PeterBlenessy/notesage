@@ -590,8 +590,54 @@ export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
-  speaker_id: string | null;
-  speaker_name: string | null;
+  /**
+   * Who spoke, as a label: `"me"` (microphone track) / `"others"` (system
+   * audio track) from a job run with `tracks`. Absent or `null` otherwise.
+   */
+  speaker?: string | null;
+  /** Legacy spelling of `speaker`; read as a fallback, never written. */
+  speaker_id?: string | null;
+  speaker_name?: string | null;
+}
+
+/** One separately recorded track handed to `transcribe_file`. */
+export interface TranscriptionTrack {
+  role: "mic" | "system";
+  /** Absolute path of the track's audio file. */
+  path: string;
+}
+
+/** Payload of the `transcription-progress` event (snake_case keys). `percent` is an integer; an event is emitted when the percent or the stage changes. A job waiting its turn emits nothing. */
+export interface TranscriptionProgressEvent {
+  job_id?: string | null;
+  audio_path?: string;
+  stage?: "loading" | "decoding" | "transcribing" | "finishing";
+  percent: number;
+}
+
+/** Result of `import_media`: the new bundle holding the extracted audio. */
+export interface ImportMediaResult {
+  bundle_dir: string;
+  audio_path: string;
+  duration_secs: number;
+  original_name: string;
+}
+
+/** Payload of the `import-progress` event. */
+export interface ImportProgressEvent {
+  source_path: string;
+  percent: number;
+}
+
+/**
+ * Whether an audio file is really on this disk. An iCloud "dataless" file
+ * exists and reports its full size while holding no data: `local` is `false`
+ * for it, and reading it would block on the download.
+ */
+export interface AudioFileStatus {
+  exists: boolean;
+  size: number;
+  local: boolean;
 }
 
 /**
@@ -627,6 +673,98 @@ export interface RecordingResult {
   rms: number;
   peak: number;
 }
+
+/** One audio file of a recording: the mix, or a separate track for source "both". */
+export interface RecordingTrack {
+  role: "mic" | "system" | "mix";
+  path: string;
+}
+
+/**
+ * Result of `stop_recording` (recording contract, 2026-11). The bundle is
+ * still in LOCAL staging; `finalizeRecordingBundle` moves it into the library.
+ * snake_case like every other struct of the recording commands.
+ */
+export interface StoppedRecording {
+  bundle_dir: string;
+  audio_path: string;
+  tracks: RecordingTrack[];
+  /** Derived from samples actually WRITTEN. */
+  duration_secs: number;
+  peak: number;
+  sample_rate: number;
+  dropped_frames: number;
+  warnings: string[];
+}
+
+export type RecordingPermission = "granted" | "denied" | "undetermined" | "unknown";
+export type SystemAudioAvailability = "available" | "unsupported" | "denied" | "unknown";
+
+/** Result of `recording_preflight`. Never prompts for permission by itself. */
+export interface RecordingPreflight {
+  microphone: RecordingPermission;
+  system_audio: SystemAudioAvailability;
+  input_device: string | null;
+  output_device: string | null;
+  free_bytes: number;
+}
+
+/** Result of `finalize_recording_bundle`: the bundle's home in the library. */
+export interface FinalizedRecording {
+  bundle_dir: string;
+  audio_path: string;
+  tracks: RecordingTrack[];
+}
+
+/** One staging bundle left behind by a crash or quit (`recover_orphan_recordings`). */
+export interface OrphanRecording {
+  bundle_dir: string;
+  audio_path: string;
+  tracks: RecordingTrack[];
+  duration_secs: number;
+  started_at: string | null;
+  /** The recorded source, when the backend still knows it. */
+  source?: string | null;
+  /** `recording.json` is already in the bundle: the stop succeeded, the move did not. */
+  has_manifest?: boolean;
+}
+
+/** Result of `get_recording_state`. `elapsed_recorded_ms` counts samples written, not wall-clock. */
+export interface RecordingStateSnapshot {
+  recording: boolean;
+  paused: boolean;
+  source: string | null;
+  started_at_ms: number | null;
+  elapsed_recorded_ms: number;
+  /** The backend stopped capturing by itself; `stop_recording` collects what it saved. */
+  fatal?: boolean;
+}
+
+/** `recording-level` event: peak 0..1 per captured source since the last event (at most 10/s). */
+export interface RecordingLevelEvent {
+  mic: number | null;
+  system: number | null;
+}
+
+export type RecordingWarningKind =
+  | "silence"
+  | "device-lost"
+  | "device-changed"
+  | "write-error"
+  | "low-disk"
+  | "dropped-frames";
+
+/** `recording-warning` event. `fatal` = the backend already stopped and finalised the capture. */
+export interface RecordingWarningEvent {
+  kind: RecordingWarningKind;
+  message: string;
+  fatal: boolean;
+  /** Optional: which source a `silence` warning is about. */
+  source?: "microphone" | "system";
+}
+
+export const RECORDING_LEVEL_EVENT = "recording-level";
+export const RECORDING_WARNING_EVENT = "recording-warning";
 
 /** Mirrors the Rust `DownloadState` (`rename_all = "lowercase"`). */
 export type ICloudDownloadState = "ready" | "downloading" | "failed";
@@ -1658,21 +1796,125 @@ export const tauriApi = {
     await invoke("resume_recording");
   },
 
-  async stopRecording(): Promise<RecordingResult> {
-    return await invoke<RecordingResult>("stop_recording");
+  /**
+   * Stop the live capture. Can take tens of seconds: the backend compresses
+   * the audio before it returns. The bundle stays in local staging until
+   * `finalizeRecordingBundle`. Also accepts the pre-contract result (`path`
+   * only), so a frontend ahead of its backend still gets a usable bundle.
+   */
+  async stopRecording(): Promise<StoppedRecording> {
+    const raw = await invoke<Partial<StoppedRecording> & Partial<RecordingResult>>("stop_recording");
+    const audioPath = raw.audio_path ?? raw.path ?? "";
+    return {
+      bundle_dir: raw.bundle_dir ?? audioPath.replace(/\/[^/]*$/, ""),
+      audio_path: audioPath,
+      tracks: raw.tracks ?? [],
+      duration_secs: raw.duration_secs ?? 0,
+      peak: raw.peak ?? 0,
+      sample_rate: raw.sample_rate ?? 0,
+      dropped_frames: raw.dropped_frames ?? 0,
+      warnings: raw.warnings ?? [],
+    };
+  },
+
+  /** What can be recorded right now, and from which devices. Does not prompt. */
+  async recordingPreflight(source: string): Promise<RecordingPreflight> {
+    return await invoke<RecordingPreflight>("recording_preflight", { source });
+  },
+
+  /** Stop the live capture and delete its staging bundle. */
+  async discardRecording(): Promise<void> {
+    await invoke("discard_recording");
+  },
+
+  /**
+   * Move a staging bundle into the library's Recordings folder. Call it only
+   * AFTER `recording.json` is in the staging bundle, so a bundle never shows
+   * up in the library without a manifest.
+   */
+  async finalizeRecordingBundle(
+    stagingDir: string,
+    destRecordingsDir: string,
+  ): Promise<FinalizedRecording> {
+    return await invoke<FinalizedRecording>("finalize_recording_bundle", {
+      stagingDir,
+      destRecordingsDir,
+    });
+  },
+
+  /** Staging bundles left by a crash or quit, with their audio made readable. */
+  async recoverOrphanRecordings(): Promise<OrphanRecording[]> {
+    return await invoke<OrphanRecording[]>("recover_orphan_recordings");
+  },
+
+  async getRecordingState(): Promise<RecordingStateSnapshot> {
+    return await invoke<RecordingStateSnapshot>("get_recording_state");
   },
 
   /**
    * Transcribe a finalized audio file in a single whole-file Whisper pass.
-   * Emits `transcription-progress` events keyed by `jobId`.
+   * Emits `transcription-progress` events carrying this `job_id`.
    */
-  async transcribeFile(jobId: string, path: string, model: string, language?: string): Promise<TranscriptionResult> {
+  async transcribeFile(
+    jobId: string,
+    path: string,
+    model: string,
+    language?: string,
+    tracks?: TranscriptionTrack[],
+  ): Promise<TranscriptionResult> {
     return await invoke<TranscriptionResult>("transcribe_file", {
       jobId,
       path,
       model,
       language: language ?? null,
+      // Only sent for a multi-track recording, so a backend from before
+      // tracks existed sees exactly the arguments it always did.
+      ...(tracks && tracks.length > 0 ? { tracks } : {}),
     });
+  },
+
+  /**
+   * Abort a running or queued transcription. The pending `transcribeFile`
+   * then rejects with `Transcription cancelled`. Resolves `false` when no
+   * such job was found.
+   */
+  async cancelTranscription(jobId: string | null, audioPath: string | null): Promise<boolean> {
+    return await invoke<boolean>("cancel_transcription", { jobId, audioPath });
+  },
+
+  /**
+   * Extract the audio of a video or audio file into a new recording bundle
+   * under `destRecordingsDir`. The original is not copied. Emits
+   * `import-progress`; rejects with a readable message for a file with no
+   * audio track or an unsupported container, creating nothing.
+   */
+  async importMedia(sourcePath: string, destRecordingsDir: string): Promise<ImportMediaResult> {
+    assertLibraryUnlocked(destRecordingsDir);
+    return await invoke<ImportMediaResult>("import_media", { sourcePath, destRecordingsDir });
+  },
+
+  /**
+   * Is this audio file's data on disk? Falls back to `file_size` on a backend
+   * without `audio_file_status`: a size means local, a rejection means the
+   * file is missing or an evicted placeholder.
+   */
+  async audioFileStatus(path: string): Promise<AudioFileStatus> {
+    try {
+      return await invoke<AudioFileStatus>("audio_file_status", { path });
+    } catch {
+      try {
+        const size = await invoke<number>("file_size", { path });
+        return { exists: true, size, local: true };
+      } catch {
+        return { exists: false, size: 0, local: false };
+      }
+    }
+  },
+
+  /** Copy one file (the Teams transcript a user attaches to a recording). */
+  async copyFileInto(source: string, destination: string): Promise<void> {
+    assertLibraryUnlocked(destination);
+    await invoke("copy_file", { source, destination });
   },
 
   // Local AI inference

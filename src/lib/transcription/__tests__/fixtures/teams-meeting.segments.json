@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "segments": [
+    { "start": 2.0, "end": 7.5, "text": "Hör ni mig? Jag har lite problem med mikrofonen." },
+    { "start": 8.0, "end": 13.0, "text": "Ja, vi hör dig bra nu." },
+    { "start": 14.0, "end": 20.5, "text": "Is James joining today or is he on vacation?" },
+    { "start": 21.0, "end": 27.0, "text": "He said he would join a few minutes late." },
+    { "start": 30.0, "end": 38.0, "text": "Okej, vi väntar en liten stund till." },
+    { "start": 44.0, "end": 52.0, "text": "Nu ser jag att han är här. Hej James!" },
+    { "start": 53.0, "end": 58.5, "text": "Hi everyone, sorry I am late." },
+    { "start": 60.1, "end": 64.6, "text": "Okej då har jag startat transkriberingen också" },
+    { "start": 65.0, "end": 71.0, "text": "Välkomna allihopa till veckomötet om leveransplanen." },
+    { "start": 71.4, "end": 84.4, "text": "Tack Anna, jag tänkte börja med statusen för migreringen av biblioteket. Vi har flyttat ungefär 80 procent av dokumenten till den nya strukturen." },
+    { "start": 85.0, "end": 90.7, "text": "Sorry, could we switch to English for a moment? I missed the percentage." },
+    { "start": 91.0, "end": 102.8, "text": "Sure, about 80 percent of the documents have been migrated. Great, and the remaining 20 percent, is that blocked by the indexing bug?" },
+    { "start": 103.1, "end": 110.0, "text": "Partly. The indexer crashes on very large spreadsheets, so those are waiting." },
+    { "start": 110.4, "end": 117.0, "text": "Vi behöver en uppskattning till torsdag, annars hinner vi inte med releasen." },
+    { "start": 117.3, "end": 123.1, "text": "Jag kan ha en uppskattning klar på onsdag eftermiddag." },
+    { "start": 123.6, "end": 129.4, "text": "Wednesday afternoon works for me. I will prepare the test environment." },
+    { "start": 130.0, "end": 144.3, "text": "Bra, då går vi vidare till nästa punkt som är kundintervjuerna. Vi har genomfört sex intervjuer och det tydligaste önskemålet är bättre sökning." },
+    { "start": 144.8, "end": 151.2, "text": "That matches what we see in the support tickets. Search comes up every week." },
+    { "start": 151.7, "end": 158.6, "text": "Då föreslår jag att vi prioriterar sökningen före exportfunktionen." },
+    { "start": 159.0, "end": 163.5, "text": "Håller med. James, do you agree?" },
+    { "start": 163.8, "end": 168.4, "text": "Yes, I agree. Search first, export later." },
+    { "start": 169.0, "end": 175.7, "text": "Perfekt, då sammanfattar jag besluten och skickar ut dem efter mötet." }
+  ]
+}

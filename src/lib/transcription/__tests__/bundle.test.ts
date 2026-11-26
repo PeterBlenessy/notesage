@@ -10,7 +10,6 @@ import {
   transcriptPathForAudio,
   manifestPathForAudio,
   bundleTargetPath,
-  writeTranscriptToBundle,
   moveBundleToProject,
   readRecordingManifest,
   writeRecordingManifest,
@@ -53,21 +52,6 @@ describe('path derivation', () => {
     expect(bundleTargetPath(BUNDLE_DIR, '/Users/me/Projects/Acme')).toBe(
       '/Users/me/Projects/Acme/Meeting 2026-05-30 14-02',
     );
-  });
-});
-
-describe('writeTranscriptToBundle', () => {
-  it('writes transcript.md next to the audio and returns its path', async () => {
-    const writes: Array<{ path: string; content: string }> = [];
-    setMockInvokeHandler('write_file', (args) => {
-      writes.push({ path: args!.path as string, content: args!.content as string });
-      return undefined;
-    });
-
-    const result = await writeTranscriptToBundle(AUDIO, '# Note\n');
-
-    expect(result).toBe(`${BUNDLE_DIR}/transcript.md`);
-    expect(writes).toEqual([{ path: `${BUNDLE_DIR}/transcript.md`, content: '# Note\n' }]);
   });
 });
 
@@ -126,15 +110,6 @@ describe('phone bundles (audio.m4a)', () => {
     expect(transcriptPathForAudio(M4A)).toBe(`${DIR}/transcript.md`);
     expect(manifestPathForAudio(M4A)).toBe(`${DIR}/recording.json`);
     expect(manifestPathForAudio('/x/Recording 2026-05-30 14-02/audio.wav')).toBe('/x/Recording 2026-05-30 14-02/recording.json');
-  });
-
-  it('writes the transcript next to audio.m4a', async () => {
-    const written: Array<{ path: string; content: string }> = [];
-    setMockInvokeHandler('write_file', (args) => {
-      written.push({ path: String(args?.path), content: String(args?.content) });
-    });
-    await expect(writeTranscriptToBundle(M4A, '# T')).resolves.toBe(`${DIR}/transcript.md`);
-    expect(written).toEqual([{ path: `${DIR}/transcript.md`, content: '# T' }]);
   });
 
   it('moves the whole folder — audio, recording.json and transcript travel together', async () => {

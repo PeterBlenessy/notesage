@@ -47,8 +47,26 @@ export interface AgentTask {
   audioPath?: string;
   /** Output transcript note path, set when the job completes. */
   transcriptPath?: string;
-  /** Whole-file transcription progress, 0–100. */
+  /** Whole-file transcription progress, an integer 0–100. */
   progress?: number;
+  /** What the backend is doing with the file right now. Absent until the first progress event. */
+  transcriptionStage?: 'loading' | 'decoding' | 'transcribing' | 'finishing';
+  /** ms-epoch this RUN began (a re-run resets it; `startedAt` is when the card was created). */
+  runStartedAt?: number;
+  /**
+   * Where the remaining-time estimate measures from: the moment and percent of
+   * the first real progress, so model loading and decoding are not counted as
+   * transcription speed.
+   */
+  progressAnchorAt?: number;
+  progressAnchorPercent?: number;
+  /**
+   * The app quit (or crashed) while this job ran. Distinct from a failure:
+   * nothing went wrong with the recording, and it can be retried at once.
+   */
+  interrupted?: boolean;
+  /** Separate microphone / system-audio files of a two-track recording, kept so a re-run labels speakers too. */
+  tracks?: Array<{ role: 'mic' | 'system'; path: string }>;
 
   // --- recording-item fields (kind === 'recording' / 'transcription') ---
   /** ms-epoch when capture began, for the live elapsed-time affordance. */
@@ -128,12 +146,25 @@ interface ActivityStore {
     language?: string;
     /** Device label of the recorder when it was not this Mac. */
     sourceDevice?: string;
+    /** Separate tracks of a two-track recording. */
+    tracks?: Array<{ role: 'mic' | 'system'; path: string }>;
   }): void;
-  /** Update a transcription job's progress (0–100). */
-  setTranscriptionProgress(id: string, percent: number): void;
+  /**
+   * Update a transcription job's progress (integer 0–100) and stage. A no-op,
+   * with no new `tasks` array, when neither changed: progress events arrive
+   * in bursts and every store write wakes every subscriber.
+   */
+  setTranscriptionProgress(id: string, percent: number, stage?: AgentTask['transcriptionStage']): void;
+  /**
+   * Mark a transcription job as cancelled by the user. Not a failure: the
+   * recording goes back to "Not transcribed".
+   */
+  setTranscriptionCancelled(id: string): void;
+  /** Rename a transcription job's card (the recording was renamed). */
+  setTranscriptionLabel(id: string, label: string): void;
   /** Mark a transcription job done and record the output transcript path. */
   setTranscriptionDone(id: string, transcriptPath: string, detectedLanguage?: string): void;
-  /** Mark a transcription job as failed (re-runnable from the inbox), keeping the error text. */
+  /** Mark a transcription job as failed (it can be retried from Recordings), keeping the error text. */
   setTranscriptionError(id: string, errorMessage?: string): void;
   /**
    * Record that a completed transcription job's bundle has been moved into a
@@ -188,7 +219,7 @@ interface ActivityStore {
 
 export const useActivityStore = create<ActivityStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       tasks: [],
 
       addTask: (partial) => {
@@ -230,7 +261,9 @@ export const useActivityStore = create<ActivityStore>()(
         recordingDurationSecs,
         language,
         sourceDevice,
+        tracks,
       }) => {
+        const now = Date.now();
         const task: AgentTask = {
           id,
           kind: 'transcription',
@@ -244,9 +277,11 @@ export const useActivityStore = create<ActivityStore>()(
           recordingDurationSecs,
           language,
           sourceDevice,
+          ...(tracks && tracks.length > 0 ? { tracks } : {}),
           progress: 0,
           activities: [],
-          startedAt: Date.now(),
+          startedAt: now,
+          runStartedAt: now,
         };
         set((state) => {
           const updated = [task, ...state.tasks];
@@ -261,13 +296,46 @@ export const useActivityStore = create<ActivityStore>()(
         });
       },
 
-      setTranscriptionProgress: (id, percent) => {
-        const clamped = Math.max(0, Math.min(100, percent));
+      setTranscriptionProgress: (id, percent, stage) => {
+        const clamped = Math.max(0, Math.min(100, Math.round(Number.isFinite(percent) ? percent : 0)));
+        const current = get().tasks.find((t) => t.id === id);
+        if (!current) return;
+        const nextStage = stage ?? current.transcriptionStage;
+        // Checked BEFORE `set`, not inside it: an unchanged event must not
+        // reach the store at all. `set` would notify nobody for an identical
+        // state, but the persist middleware writes to disk on every call.
+        if (current.progress === clamped && current.transcriptionStage === nextStage) return;
+        const anchor =
+          current.progressAnchorAt === undefined && clamped > 0 && (nextStage ?? 'transcribing') === 'transcribing'
+            ? { progressAnchorAt: Date.now(), progressAnchorPercent: clamped }
+            : {};
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t.id === id ? { ...t, progress: clamped } : t
+            t.id === id ? { ...t, progress: clamped, transcriptionStage: nextStage, ...anchor } : t
           ),
         }));
+      },
+
+      setTranscriptionCancelled: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id && t.kind === 'transcription'
+              ? {
+                  ...t,
+                  status: 'cancelled' as const,
+                  completedAt: Date.now(),
+                  errorMessage: undefined,
+                  transcriptionStage: undefined,
+                }
+              : t
+          ),
+        }));
+      },
+
+      setTranscriptionLabel: (id, label) => {
+        const current = get().tasks.find((t) => t.id === id);
+        if (!current || current.kind !== 'transcription' || current.label === label) return;
+        set((state) => ({ tasks: state.tasks.map((t) => (t.id === id ? { ...t, label } : t)) }));
       },
 
       setTranscriptionDone: (id, transcriptPath, detectedLanguage) => {
@@ -280,6 +348,7 @@ export const useActivityStore = create<ActivityStore>()(
                   progress: 100,
                   transcriptPath,
                   detectedLanguage,
+                  transcriptionStage: undefined,
                   completedAt: Date.now(),
                 }
               : t
@@ -291,7 +360,7 @@ export const useActivityStore = create<ActivityStore>()(
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id
-              ? { ...t, status: 'error' as const, completedAt: Date.now(), errorMessage }
+              ? { ...t, status: 'error' as const, completedAt: Date.now(), errorMessage, transcriptionStage: undefined }
               : t
           ),
         }));
@@ -316,7 +385,18 @@ export const useActivityStore = create<ActivityStore>()(
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id && t.kind === 'transcription'
-              ? { ...t, status: 'running' as const, progress: 0, completedAt: undefined, errorMessage: undefined }
+              ? {
+                  ...t,
+                  status: 'running' as const,
+                  progress: 0,
+                  completedAt: undefined,
+                  errorMessage: undefined,
+                  interrupted: undefined,
+                  transcriptionStage: undefined,
+                  progressAnchorAt: undefined,
+                  progressAnchorPercent: undefined,
+                  runStartedAt: Date.now(),
+                }
               : t
           ),
         }));
@@ -539,6 +619,23 @@ export const useActivityStore = create<ActivityStore>()(
           // defaults to 'agent' so it renders unchanged.
           .map((t) => (t.kind ? t : { ...t, kind: 'agent' as const }))
           .map((t) => {
+            if (t.status === 'running' && t.kind === 'transcription') {
+              // The job died with the app. That is not a failed transcription:
+              // the audio is untouched and the run can start again at once, so
+              // it is marked interrupted (the card and the Recordings row say
+              // so and offer the retry) and carries no stale progress.
+              return {
+                ...t,
+                status: 'error' as const,
+                interrupted: true,
+                completedAt: now,
+                progress: 0,
+                transcriptionStage: undefined,
+                progressAnchorAt: undefined,
+                progressAnchorPercent: undefined,
+                errorMessage: undefined,
+              };
+            }
             if (t.status === 'running') {
               return {
                 ...t,
